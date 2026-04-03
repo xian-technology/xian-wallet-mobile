@@ -148,13 +148,11 @@ export function SendScreen({ navigation }: { navigation: any }) {
         <Card title="Send" subtitle="Transfer tokens to another address.">
           <View>
             <Text style={styles.fieldLabel}>Recipient</Text>
-            <View style={styles.inputRow}>
-              <View style={{ flex: 1 }}>
-                <Input value={to} onChangeText={setTo} placeholder="Wallet address" autoCapitalize="none" autoCorrect={false} />
-              </View>
+            <View style={styles.inputWithIcon}>
+              <Input value={to} onChangeText={setTo} placeholder="Wallet address" autoCapitalize="none" autoCorrect={false} style={{ paddingRight: 44 }} />
               {state.contacts.length > 0 && (
-                <TouchableOpacity style={styles.inputIconBtn} onPress={() => { lightTap(); setShowContacts(true); }}>
-                  <Feather name="users" size={18} color={colors.muted} />
+                <TouchableOpacity style={styles.inlineIconBtn} onPress={() => { lightTap(); setShowContacts(true); }}>
+                  <Feather name="users" size={16} color={colors.muted} />
                 </TouchableOpacity>
               )}
             </View>
@@ -162,11 +160,9 @@ export function SendScreen({ navigation }: { navigation: any }) {
 
           <View>
             <Text style={styles.fieldLabel}>Amount</Text>
-            <View style={styles.inputRow}>
-              <View style={{ flex: 1 }}>
-                <Input value={amount} onChangeText={setAmount} placeholder="0.00" keyboardType="decimal-pad" />
-              </View>
-              <TouchableOpacity style={styles.inputIconBtn} onPress={handleMax}>
+            <View style={styles.inputWithIcon}>
+              <Input value={amount} onChangeText={setAmount} placeholder="0.00" keyboardType="decimal-pad" style={{ paddingRight: 50 }} />
+              <TouchableOpacity style={styles.inlineIconBtn} onPress={handleMax}>
                 <Text style={styles.maxText}>MAX</Text>
               </TouchableOpacity>
             </View>
@@ -178,8 +174,8 @@ export function SendScreen({ navigation }: { navigation: any }) {
       </ScrollView>
 
       <View style={styles.stickyBottom}>
-        <Button title={estimating ? "Estimating..." : "Review"} onPress={handleReview} loading={estimating} disabled={estimating} />
         <Button title="Advanced Transaction" variant="ghost" onPress={() => { lightTap(); navigation.navigate("AdvancedTx"); }} />
+        <Button title={estimating ? "Estimating..." : "Review"} onPress={handleReview} loading={estimating} disabled={estimating} />
       </View>
     </KeyboardAvoidingView>
   );
@@ -201,8 +197,8 @@ const styles = StyleSheet.create({
   sendingText: { color: colors.muted, marginTop: 16, fontSize: 14 },
   stickyBottom: { position: "absolute", bottom: 0, left: 0, right: 0, padding: 16, paddingBottom: 24, backgroundColor: colors.bg0, borderTopWidth: 1, borderTopColor: colors.line, gap: 8 },
   fieldLabel: { fontSize: 13, fontWeight: "500", color: colors.muted, marginBottom: 6 },
-  inputRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  inputIconBtn: { width: 44, height: 44, borderRadius: 12, backgroundColor: colors.bg2, alignItems: "center", justifyContent: "center" },
+  inputWithIcon: { position: "relative" },
+  inlineIconBtn: { position: "absolute", right: 10, top: 0, bottom: 0, justifyContent: "center", alignItems: "center", paddingHorizontal: 4 },
   maxText: { fontSize: 10, fontWeight: "700", color: colors.accent, letterSpacing: 0.5 },
   available: { fontSize: 12, color: colors.muted, marginTop: 4 },
   detailRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 6 },

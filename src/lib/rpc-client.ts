@@ -67,6 +67,36 @@ export class XianRpcClient {
     }
   }
 
+  async getTransactionHistory(
+    address: string,
+    limit: number = 50,
+    offset: number = 0
+  ): Promise<Array<{
+    tx_hash: string;
+    block_height: number;
+    sender: string;
+    nonce: number;
+    contract: string;
+    function: string;
+    success: boolean;
+    stamps_used: number;
+    created: string;
+    kwargs?: Record<string, unknown>;
+  }>> {
+    try {
+      const result = await this.abciQuery(
+        `/txs_by_sender/${address}/limit=${limit}/offset=${offset}`
+      );
+      if (Array.isArray(result)) return result;
+      if (result && typeof result === "object" && "items" in (result as Record<string, unknown>)) {
+        return (result as { items: unknown[] }).items as any[];
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
   async getChainId(): Promise<string> {
     const resp = await fetch(`${this.rpcUrl}/status`);
     if (!resp.ok) throw new Error(`RPC error: ${resp.status}`);

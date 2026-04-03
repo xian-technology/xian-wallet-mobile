@@ -6,7 +6,8 @@ import { StatusBar } from "expo-status-bar";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { Text, View, Image, ActivityIndicator, StyleSheet } from "react-native";
+import { View, Image, ActivityIndicator, StyleSheet } from "react-native";
+import { Feather } from "@expo/vector-icons";
 
 import { WalletProvider, useWallet } from "./src/lib/wallet-context";
 import { Toast } from "./src/components/Toast";
@@ -21,6 +22,8 @@ import { TokenDetailScreen } from "./src/screens/TokenDetailScreen";
 import { NetworksScreen } from "./src/screens/NetworksScreen";
 import { AdvancedTxScreen } from "./src/screens/AdvancedTxScreen";
 import { AppsScreen } from "./src/screens/AppsScreen";
+import { ActivityScreen } from "./src/screens/ActivityScreen";
+import { lightTap } from "./src/lib/haptics";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -39,6 +42,7 @@ function HomeTabs() {
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.muted,
       }}
+      screenListeners={{ tabPress: () => lightTap() }}
     >
       <Tab.Screen
         name="Home"
@@ -46,7 +50,15 @@ function HomeTabs() {
         options={{
           title: "Xian Wallet",
           tabBarLabel: "Home",
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>⌂</Text>,
+          tabBarIcon: ({ color }) => <Feather name="home" size={20} color={color} />,
+        }}
+      />
+      <Tab.Screen
+        name="Activity"
+        component={ActivityScreen}
+        options={{
+          title: "Activity",
+          tabBarIcon: ({ color }) => <Feather name="clock" size={20} color={color} />,
         }}
       />
       <Tab.Screen
@@ -54,7 +66,7 @@ function HomeTabs() {
         component={AppsScreen}
         options={{
           title: "Apps",
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>⊞</Text>,
+          tabBarIcon: ({ color }) => <Feather name="grid" size={20} color={color} />,
         }}
       />
       <Tab.Screen
@@ -62,7 +74,7 @@ function HomeTabs() {
         component={SettingsScreen}
         options={{
           title: "Settings",
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>⚙</Text>,
+          tabBarIcon: ({ color }) => <Feather name="settings" size={20} color={color} />,
         }}
       />
     </Tab.Navigator>
