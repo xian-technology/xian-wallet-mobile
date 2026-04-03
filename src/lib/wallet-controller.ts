@@ -13,9 +13,19 @@ import {
   type StoredUnlockedSession,
   createMobileStore,
 } from "./storage";
+import {
+  sha256Digest,
+  pbkdf2DeriveKey,
+  aesGcmEncrypt,
+  aesGcmDecrypt,
+} from "./crypto-polyfill";
 
 const ENCODER = new TextEncoder();
-const ITERATIONS = 250_000;
+// Lower than browser (250k) because each HMAC iteration crosses the
+// JS↔native bridge. 10k iterations with AES-256-GCM is still strong
+// for local device encryption. Wallets exported from mobile use this
+// count and are NOT interchangeable with browser exports.
+const ITERATIONS = 10_000;
 const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
 
 const store = createMobileStore();
@@ -34,10 +44,6 @@ function hexToBytes(hex: string): Uint8Array {
     bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
   }
   return bytes;
-}
-
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
 function normalizeMnemonic(mnemonic: string): string | null {
@@ -60,8 +66,7 @@ async function derivePrivateKeyFromMnemonic(
     const buffer = new Uint8Array(seed.length + context.length);
     buffer.set(seed, 0);
     buffer.set(context, seed.length);
-    const digest = await crypto.subtle.digest("SHA-256", toArrayBuffer(buffer));
-    return bytesToHex(new Uint8Array(digest));
+    return bytesToHex(sha256Digest(buffer));
   }
 
   const indexBytes = new Uint8Array(4);
@@ -70,8 +75,7 @@ async function derivePrivateKeyFromMnemonic(
   buffer.set(seed, 0);
   buffer.set(context, seed.length);
   buffer.set(indexBytes, seed.length + context.length);
-  const digest = await crypto.subtle.digest("SHA-256", toArrayBuffer(buffer));
-  return bytesToHex(new Uint8Array(digest));
+  return bytesToHex(sha256Digest(buffer));
 }
 
 function getPublicKey(privateKeyHex: string): string {
@@ -80,33 +84,14 @@ function getPublicKey(privateKeyHex: string): string {
   return bytesToHex(keyPair.publicKey);
 }
 
-// AES-GCM encryption (matches wallet-core)
-async function deriveAesKey(
-  password: string,
-  salt: Uint8Array
-): Promise<CryptoKey> {
-  const raw = ENCODER.encode(password);
-  const baseKey = await crypto.subtle.importKey("raw", raw, "PBKDF2", false, [
-    "deriveKey",
-  ]);
-  return crypto.subtle.deriveKey(
-    { name: "PBKDF2", hash: "SHA-256", salt: toArrayBuffer(salt), iterations: ITERATIONS },
-    baseKey,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["encrypt", "decrypt"]
-  );
-}
-
+// AES-GCM encryption (matches wallet-core format: salt(16) + iv(12) + ciphertext+tag)
 async function encrypt(plaintext: string, password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await deriveAesKey(password, salt);
+  const key = await pbkdf2DeriveKey(ENCODER.encode(password), salt, ITERATIONS);
   const data = ENCODER.encode(plaintext);
-  const ct = new Uint8Array(
-    await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, data)
-  );
-  // Pack: salt(16) + iv(12) + ciphertext
+  const ct = aesGcmEncrypt(key, iv, data);
+  // Pack: salt(16) + iv(12) + ciphertext+tag
   const packed = new Uint8Array(16 + 12 + ct.length);
   packed.set(salt, 0);
   packed.set(iv, 16);
@@ -119,13 +104,9 @@ async function decrypt(encoded: string, password: string): Promise<string> {
   const salt = packed.slice(0, 16);
   const iv = packed.slice(16, 28);
   const ct = packed.slice(28);
-  const key = await deriveAesKey(password, salt);
-  const plainBuf = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: toArrayBuffer(iv) },
-    key,
-    toArrayBuffer(ct)
-  );
-  return new TextDecoder().decode(plainBuf);
+  const key = await pbkdf2DeriveKey(ENCODER.encode(password), salt, ITERATIONS);
+  const plainBytes = aesGcmDecrypt(key, iv, ct);
+  return new TextDecoder().decode(plainBytes);
 }
 
 // ─── Controller ──────────────────────────────────────────────
