@@ -70,15 +70,9 @@ export function SwipeableRow({
             onSwipeRight();
           });
         } else if (gesture.dx < -SWIPE_THRESHOLD && onSwipeLeft) {
-          // Swipe left → snap back then navigate (send)
-          Animated.spring(translateX, {
-            toValue: 0,
-            useNativeDriver: true,
-            tension: 100,
-            friction: 10,
-          }).start(() => {
-            onSwipeLeft();
-          });
+          // Swipe left → quick snap back then navigate (send)
+          translateX.setValue(0);
+          onSwipeLeft();
         } else {
           // Snap back
           Animated.spring(translateX, {
