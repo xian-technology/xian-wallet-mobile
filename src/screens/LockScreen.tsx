@@ -11,6 +11,7 @@ import { colors } from "../theme/colors";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { useWallet } from "../lib/wallet-context";
+import { errorTap, successTap } from "../lib/haptics";
 
 export function LockScreen() {
   const { refresh, controller } = useWallet();
@@ -24,8 +25,10 @@ export function LockScreen() {
     setError(null);
     try {
       await controller.unlock(password);
+      successTap();
       await refresh();
     } catch {
+      errorTap();
       setError("Invalid password.");
     } finally {
       setLoading(false);
@@ -42,14 +45,16 @@ export function LockScreen() {
         <Text style={styles.heading}>Xian Wallet</Text>
         <Text style={styles.sub}>Enter your password to unlock.</Text>
 
-        <Input
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-          placeholder="Password"
-          onSubmitEditing={handleUnlock}
-          returnKeyType="go"
-        />
+        <View style={styles.inputWrap}>
+          <Input
+            secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Password"
+            onSubmitEditing={handleUnlock}
+            returnKeyType="go"
+          />
+        </View>
 
         {error && (
           <View style={styles.errorBanner}>
@@ -57,7 +62,9 @@ export function LockScreen() {
           </View>
         )}
 
-        <Button title="Unlock" onPress={handleUnlock} loading={loading} />
+        <View style={styles.inputWrap}>
+          <Button title="Unlock" onPress={handleUnlock} loading={loading} />
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
@@ -72,12 +79,12 @@ const styles = StyleSheet.create({
   inner: {
     padding: 24,
     gap: 20,
-    alignItems: "center" as const,
+    alignItems: "center",
   },
   logo: {
     width: 64,
     height: 64,
-    resizeMode: "contain" as const,
+    resizeMode: "contain",
   },
   heading: {
     fontSize: 28,
@@ -90,12 +97,16 @@ const styles = StyleSheet.create({
     color: colors.muted,
     textAlign: "center",
   },
+  inputWrap: {
+    width: "100%",
+  },
   errorBanner: {
     backgroundColor: colors.dangerSoft,
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.danger,
+    width: "100%",
   },
   errorText: {
     fontSize: 13,

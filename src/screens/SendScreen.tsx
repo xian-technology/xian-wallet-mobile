@@ -9,13 +9,17 @@ import {
   Platform,
   ActivityIndicator,
   Linking,
+  Modal,
+  FlatList,
 } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Card } from "../components/Card";
 import { useWallet } from "../lib/wallet-context";
 import { loadUnlockedSession } from "../lib/storage";
+import { lightTap, successTap, errorTap } from "../lib/haptics";
 
 type Step = "draft" | "review" | "sending" | "result";
 
@@ -27,42 +31,25 @@ export function SendScreen({ navigation }: { navigation: any }) {
   const [error, setError] = useState<string | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [estimate, setEstimate] = useState<{ estimated: number; suggested: number } | null>(null);
+  const [showContacts, setShowContacts] = useState(false);
   const [result, setResult] = useState<{
-    submitted: boolean;
-    accepted: boolean;
-    finalized: boolean;
-    txHash?: string;
-    message?: string;
+    submitted: boolean; accepted: boolean; finalized: boolean; txHash?: string; message?: string;
   } | null>(null);
 
-  const xianBalance = state.assetBalances["currency"] ?? "0";
+  const xianBal = state.assetBalances["currency"] ?? "0";
 
-  const handleMax = () => {
-    const n = Number(xianBalance);
-    setAmount(Number.isNaN(n) ? "0" : String(n));
-  };
+  const handleMax = () => { lightTap(); setAmount(String(Number(xianBal) || 0)); };
 
   const handleReview = async () => {
     if (!to.trim()) { setError("Recipient address is required."); return; }
     const n = Number(amount);
     if (!amount || Number.isNaN(n) || n <= 0) { setError("Enter a valid amount."); return; }
-    setError(null);
-    setEstimating(true);
-
+    setError(null); setEstimating(true);
     try {
-      const est = await rpc.estimateStamps({
-        sender: state.publicKey!,
-        contract: "currency",
-        function: "transfer",
-        kwargs: { to: to.trim(), amount: n },
-      });
-      setEstimate(est);
-      setStep("review");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Estimation failed");
-    } finally {
-      setEstimating(false);
-    }
+      const est = await rpc.estimateStamps({ sender: state.publicKey!, contract: "currency", function: "transfer", kwargs: { to: to.trim(), amount: n } });
+      setEstimate(est); lightTap(); setStep("review");
+    } catch (e) { setError(e instanceof Error ? e.message : "Estimation failed"); }
+    finally { setEstimating(false); }
   };
 
   const handleSend = async () => {
@@ -70,254 +57,168 @@ export function SendScreen({ navigation }: { navigation: any }) {
     try {
       const session = await loadUnlockedSession();
       if (!session) throw new Error("Wallet is locked");
-
-      const txResult = await rpc.sendTransaction({
-        privateKey: session.privateKey,
-        contract: "currency",
-        function: "transfer",
-        kwargs: { to: to.trim(), amount: Number(amount) },
-        stamps: estimate?.suggested ?? 50000,
-      });
-
-      setResult(txResult);
-      setStep("result");
-
-      const ok = txResult.finalized || txResult.accepted;
-      showToast(
-        ok
-          ? txResult.finalized ? "Transaction finalized." : "Transaction accepted."
-          : "Transaction failed.",
-        ok ? "success" : "danger"
-      );
-
-      if (ok) void refreshBalances();
-    } catch (e) {
-      setResult({
-        submitted: false,
-        accepted: false,
-        finalized: false,
-        message: e instanceof Error ? e.message : "Failed",
-      });
-      setStep("result");
-      showToast("Transaction failed.", "danger");
-    }
+      const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: "currency", function: "transfer", kwargs: { to: to.trim(), amount: Number(amount) }, stamps: estimate?.suggested ?? 50000 });
+      setResult(r); setStep("result");
+      const ok = r.finalized || r.accepted;
+      if (ok) { successTap(); showToast(r.finalized ? "Transaction finalized." : "Transaction accepted.", "success"); void refreshBalances(); }
+      else { errorTap(); showToast("Transaction failed.", "danger"); }
+    } catch (e) { errorTap(); setResult({ submitted: false, accepted: false, finalized: false, message: e instanceof Error ? e.message : "Failed" }); setStep("result"); }
   };
 
-  const handleNewTx = () => {
-    setStep("draft");
-    setTo("");
-    setAmount("");
-    setEstimate(null);
-    setResult(null);
-    setError(null);
-  };
+  const truncHash = (h: string) => h.length > 20 ? `${h.slice(0, 10)}...${h.slice(-8)}` : h;
 
-  const truncateHash = (hash: string) =>
-    hash.length > 20 ? `${hash.slice(0, 10)}...${hash.slice(-8)}` : hash;
+  // ── Contact picker modal ────────────────────────────────────
+  const contactModal = (
+    <Modal visible={showContacts} transparent animationType="slide">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Contacts</Text>
+            <TouchableOpacity onPress={() => setShowContacts(false)}><Feather name="x" size={22} color={colors.fg} /></TouchableOpacity>
+          </View>
+          {state.contacts.length === 0 ? (
+            <Text style={styles.emptyText}>No contacts saved yet.</Text>
+          ) : (
+            <FlatList
+              data={state.contacts}
+              keyExtractor={(c) => c.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.contactItem} onPress={() => { lightTap(); setTo(item.address); setShowContacts(false); }}>
+                  <Text style={styles.contactName}>{item.name}</Text>
+                  <Text style={styles.contactAddr}>{item.address.slice(0, 8)}...{item.address.slice(-6)}</Text>
+                </TouchableOpacity>
+              )}
+            />
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
 
-  // ── Review ────────────────────────────────────────────────
+  // ── Review ──────────────────────────────────────────────────
   if (step === "review") {
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scroll}>
           <Card title="Transaction Summary">
-            <Row label="To" value={truncateHash(to.trim())} mono />
+            <Row label="To" value={truncHash(to.trim())} mono />
             <Row label="Amount" value={`${Number(amount).toLocaleString()} XIAN`} />
             <Row label="Stamps" value={estimate ? `${estimate.suggested.toLocaleString()} (est. ${estimate.estimated.toLocaleString()})` : "-"} />
-            <Row label="Contract" value="currency" mono />
-            <Row label="Function" value="transfer" />
           </Card>
-
+        </ScrollView>
+        <View style={styles.stickyBottom}>
           <Button title="Send Transaction" onPress={handleSend} />
           <Button title="Edit" variant="ghost" onPress={() => setStep("draft")} />
-        </ScrollView>
+        </View>
       </View>
     );
   }
 
-  // ── Sending ───────────────────────────────────────────────
   if (step === "sending") {
-    return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={colors.accent} />
-        <Text style={styles.sendingText}>Sending transaction...</Text>
-      </View>
-    );
+    return (<View style={[styles.container, styles.centered]}><ActivityIndicator size="large" color={colors.accent} /><Text style={styles.sendingText}>Sending...</Text></View>);
   }
 
-  // ── Result ────────────────────────────────────────────────
   if (step === "result" && result) {
     const ok = result.finalized || result.accepted;
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scroll}>
-          {!ok && result.message && (
-            <View style={styles.errorBanner}>
-              <Text style={styles.errorText}>{result.message}</Text>
-            </View>
-          )}
-
+          {!ok && result.message && <View style={styles.errorBanner}><Text style={styles.errorText}>{result.message}</Text></View>}
           {result.txHash && (
             <Card>
-              <Row label="TX Hash" value={truncateHash(result.txHash)} mono />
+              <Row label="TX Hash" value={truncHash(result.txHash)} mono />
               {state.dashboardUrl && (
-                <TouchableOpacity
-                  onPress={() =>
-                    Linking.openURL(
-                      `${state.dashboardUrl!.replace(/\/+$/, "")}/explorer/tx/${result.txHash}`
-                    )
-                  }
-                >
+                <TouchableOpacity onPress={() => Linking.openURL(`${state.dashboardUrl!.replace(/\/+$/, "")}/explorer/tx/${result.txHash}`)}>
                   <Text style={styles.linkText}>View in explorer</Text>
                 </TouchableOpacity>
               )}
             </Card>
           )}
-
-          <Button title="New Transaction" onPress={handleNewTx} />
+          <Button title="New Transaction" onPress={() => { setStep("draft"); setTo(""); setAmount(""); setResult(null); setEstimate(null); }} />
         </ScrollView>
       </View>
     );
   }
 
-  // ── Draft ─────────────────────────────────────────────────
+  // ── Draft ───────────────────────────────────────────────────
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      {contactModal}
       <ScrollView contentContainerStyle={styles.scroll}>
         <Card title="Send" subtitle="Transfer tokens to another address.">
-          <Input
-            label="Recipient"
-            value={to}
-            onChangeText={setTo}
-            placeholder="Wallet address"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-
-          {state.contacts.length > 0 && (
-            <View style={styles.contactList}>
-              {state.contacts.slice(0, 5).map((c) => (
-                <TouchableOpacity
-                  key={c.id}
-                  style={styles.contactItem}
-                  onPress={() => setTo(c.address)}
-                >
-                  <Text style={styles.contactName}>{c.name}</Text>
-                  <Text style={styles.contactAddr}>
-                    {c.address.slice(0, 6)}...{c.address.slice(-4)}
-                  </Text>
+          <View>
+            <Text style={styles.fieldLabel}>Recipient</Text>
+            <View style={styles.inputRow}>
+              <View style={{ flex: 1 }}>
+                <Input value={to} onChangeText={setTo} placeholder="Wallet address" autoCapitalize="none" autoCorrect={false} />
+              </View>
+              {state.contacts.length > 0 && (
+                <TouchableOpacity style={styles.inputIconBtn} onPress={() => { lightTap(); setShowContacts(true); }}>
+                  <Feather name="users" size={18} color={colors.muted} />
                 </TouchableOpacity>
-              ))}
+              )}
             </View>
-          )}
+          </View>
 
           <View>
-            <Input
-              label="Amount"
-              value={amount}
-              onChangeText={setAmount}
-              placeholder="0.00"
-              keyboardType="decimal-pad"
-            />
-            <Text style={styles.maxLink} onPress={handleMax}>
-              MAX
-            </Text>
-            <Text style={styles.available}>
-              Available: {Number(xianBalance).toLocaleString()} XIAN
-            </Text>
+            <Text style={styles.fieldLabel}>Amount</Text>
+            <View style={styles.inputRow}>
+              <View style={{ flex: 1 }}>
+                <Input value={amount} onChangeText={setAmount} placeholder="0.00" keyboardType="decimal-pad" />
+              </View>
+              <TouchableOpacity style={styles.inputIconBtn} onPress={handleMax}>
+                <Text style={styles.maxText}>MAX</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.available}>Available: {Number(xianBal).toLocaleString()} XIAN</Text>
           </View>
         </Card>
 
-        {error && (
-          <View style={styles.errorBanner}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
-
-        <Button
-          title={estimating ? "Estimating..." : "Review"}
-          onPress={handleReview}
-          loading={estimating}
-          disabled={estimating}
-        />
-        <Button
-          title="Advanced Transaction"
-          variant="ghost"
-          onPress={() => navigation.navigate("AdvancedTx")}
-        />
+        {error && <View style={styles.errorBanner}><Text style={styles.errorText}>{error}</Text></View>}
       </ScrollView>
+
+      <View style={styles.stickyBottom}>
+        <Button title={estimating ? "Estimating..." : "Review"} onPress={handleReview} loading={estimating} disabled={estimating} />
+        <Button title="Advanced Transaction" variant="ghost" onPress={() => { lightTap(); navigation.navigate("AdvancedTx"); }} />
+      </View>
     </KeyboardAvoidingView>
   );
 }
 
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={[styles.rowValue, mono && styles.monoText]} numberOfLines={1}>
-        {value}
-      </Text>
+    <View style={styles.detailRow}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={[styles.detailValue, mono && styles.mono]} numberOfLines={1}>{value}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg0 },
-  scroll: { padding: 16, gap: 16 },
+  scroll: { padding: 16, gap: 16, paddingBottom: 120 },
   centered: { alignItems: "center", justifyContent: "center" },
   sendingText: { color: colors.muted, marginTop: 16, fontSize: 14 },
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 6,
-  },
-  rowLabel: { fontSize: 13, color: colors.muted },
-  rowValue: { fontSize: 13, color: colors.fg, fontWeight: "500", maxWidth: "60%" },
-  monoText: { fontFamily: "monospace" },
-  maxLink: {
-    position: "absolute",
-    right: 14,
-    top: 34,
-    fontSize: 10,
-    fontWeight: "700",
-    color: colors.accent,
-    letterSpacing: 0.5,
-  },
+  stickyBottom: { position: "absolute", bottom: 0, left: 0, right: 0, padding: 16, paddingBottom: 24, backgroundColor: colors.bg0, borderTopWidth: 1, borderTopColor: colors.line, gap: 8 },
+  fieldLabel: { fontSize: 13, fontWeight: "500", color: colors.muted, marginBottom: 6 },
+  inputRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  inputIconBtn: { width: 44, height: 44, borderRadius: 12, backgroundColor: colors.bg2, alignItems: "center", justifyContent: "center" },
+  maxText: { fontSize: 10, fontWeight: "700", color: colors.accent, letterSpacing: 0.5 },
   available: { fontSize: 12, color: colors.muted, marginTop: 4 },
-  errorBanner: {
-    backgroundColor: colors.dangerSoft,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.danger,
-  },
+  detailRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 6 },
+  detailLabel: { fontSize: 13, color: colors.muted },
+  detailValue: { fontSize: 13, color: colors.fg, fontWeight: "500", maxWidth: "60%" },
+  mono: { fontFamily: "monospace" },
+  errorBanner: { backgroundColor: colors.dangerSoft, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.danger },
   errorText: { fontSize: 13, color: colors.danger },
-  linkText: {
-    fontSize: 13,
-    color: colors.accent,
-    fontWeight: "600",
-    textAlign: "center",
-    paddingTop: 8,
-  },
-  contactList: {
-    borderRadius: 10,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  contactItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 10,
-    backgroundColor: colors.bg2,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.line,
-  },
-  contactName: { fontSize: 13, fontWeight: "500", color: colors.fg },
+  linkText: { fontSize: 13, color: colors.accent, fontWeight: "600", textAlign: "center", paddingTop: 8 },
+  // Contact modal
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+  modalContent: { backgroundColor: colors.bg1, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "50%", padding: 16 },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  modalTitle: { fontSize: 16, fontWeight: "700", color: colors.fg },
+  emptyText: { color: colors.muted, textAlign: "center", paddingVertical: 24 },
+  contactItem: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
+  contactName: { fontSize: 14, fontWeight: "500", color: colors.fg },
   contactAddr: { fontSize: 11, fontFamily: "monospace", color: colors.muted },
 });

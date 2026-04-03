@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,40 +8,40 @@ import {
   Platform,
   ActivityIndicator,
   Linking,
+  TouchableOpacity,
 } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Card } from "../components/Card";
 import { useWallet } from "../lib/wallet-context";
 import { loadUnlockedSession } from "../lib/storage";
+import { lightTap, successTap, errorTap } from "../lib/haptics";
 
 type Step = "draft" | "review" | "sending" | "result";
 
-interface Arg {
-  id: string;
+interface ContractMethod {
   name: string;
-  value: string;
-  type: string;
+  arguments: Array<{ name: string; type: string }>;
 }
 
+interface Arg { id: string; name: string; value: string; type: string; fixed?: boolean; }
+
 function parseKwargs(args: Arg[]): Record<string, unknown> {
-  const kwargs: Record<string, unknown> = {};
-  for (const arg of args) {
-    if (!arg.name.trim()) continue;
-    const v = arg.value.trim();
-    switch (arg.type) {
-      case "int": kwargs[arg.name] = parseInt(v, 10); break;
-      case "float": kwargs[arg.name] = parseFloat(v); break;
-      case "bool": kwargs[arg.name] = v === "true"; break;
-      case "dict":
-      case "list":
-        try { kwargs[arg.name] = JSON.parse(v); } catch { kwargs[arg.name] = v; }
-        break;
-      default: kwargs[arg.name] = v;
+  const kw: Record<string, unknown> = {};
+  for (const a of args) {
+    if (!a.name.trim()) continue;
+    const v = a.value.trim();
+    switch (a.type) {
+      case "int": kw[a.name] = parseInt(v, 10); break;
+      case "float": kw[a.name] = parseFloat(v); break;
+      case "bool": kw[a.name] = v === "true"; break;
+      case "dict": case "list": try { kw[a.name] = JSON.parse(v); } catch { kw[a.name] = v; } break;
+      default: kw[a.name] = v;
     }
   }
-  return kwargs;
+  return kw;
 }
 
 export function AdvancedTxScreen({ navigation }: { navigation: any }) {
@@ -54,48 +54,52 @@ export function AdvancedTxScreen({ navigation }: { navigation: any }) {
   const [estimating, setEstimating] = useState(false);
   const [estimate, setEstimate] = useState<{ estimated: number; suggested: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{
-    submitted: boolean;
-    accepted: boolean;
-    finalized: boolean;
-    txHash?: string;
-    message?: string;
-  } | null>(null);
+  const [methods, setMethods] = useState<ContractMethod[]>([]);
+  const [methodsLoading, setMethodsLoading] = useState(false);
+  const [result, setResult] = useState<{ submitted: boolean; accepted: boolean; finalized: boolean; txHash?: string; message?: string; } | null>(null);
 
-  const addArg = () => {
-    setArgs([...args, { id: String(Date.now()), name: "", value: "", type: "str" }]);
-  };
+  // Load methods when contract changes
+  useEffect(() => {
+    const c = contract.trim();
+    if (!c) { setMethods([]); return; }
+    const timer = setTimeout(async () => {
+      setMethodsLoading(true);
+      try {
+        // Query contract methods via ABCI
+        const resp = await fetch(`${state.rpcUrl}/abci_query?path=%22/contract_methods/${c}%22`);
+        if (!resp.ok) { setMethods([]); return; }
+        const data = await resp.json();
+        const val = data?.result?.response?.value;
+        if (!val) { setMethods([]); return; }
+        const decoded = JSON.parse(atob(val));
+        if (Array.isArray(decoded)) {
+          setMethods(decoded);
+        }
+      } catch { setMethods([]); }
+      finally { setMethodsLoading(false); }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [contract, state.rpcUrl]);
 
-  const updateArg = (id: string, field: keyof Arg, val: string) => {
-    setArgs(args.map((a) => (a.id === id ? { ...a, [field]: val } : a)));
-  };
+  // Update args when function changes
+  useEffect(() => {
+    const m = methods.find((method) => method.name === func);
+    if (m) {
+      setArgs(m.arguments.map((a) => ({ id: a.name, name: a.name, value: "", type: a.type || "str", fixed: true })));
+    }
+  }, [func, methods]);
 
-  const removeArg = (id: string) => {
-    setArgs(args.filter((a) => a.id !== id));
-  };
+  const updateArg = (id: string, val: string) => setArgs(args.map((a) => a.id === id ? { ...a, value: val } : a));
 
   const handleReview = async () => {
-    if (!contract.trim() || !func.trim()) {
-      setError("Contract and function are required.");
-      return;
-    }
-    setError(null);
-    setEstimating(true);
+    if (!contract.trim() || !func.trim()) { setError("Contract and function are required."); return; }
+    setError(null); setEstimating(true);
     try {
-      const kwargs = parseKwargs(args);
-      const est = await rpc.estimateStamps({
-        sender: state.publicKey!,
-        contract: contract.trim(),
-        function: func.trim(),
-        kwargs,
-      });
-      setEstimate(est);
-      setStep("review");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Estimation failed");
-    } finally {
-      setEstimating(false);
-    }
+      const kw = parseKwargs(args);
+      const est = await rpc.estimateStamps({ sender: state.publicKey!, contract: contract.trim(), function: func.trim(), kwargs: kw });
+      setEstimate(est); lightTap(); setStep("review");
+    } catch (e) { setError(e instanceof Error ? e.message : "Estimation failed"); }
+    finally { setEstimating(false); }
   };
 
   const handleSend = async () => {
@@ -103,57 +107,40 @@ export function AdvancedTxScreen({ navigation }: { navigation: any }) {
     try {
       const session = await loadUnlockedSession();
       if (!session) throw new Error("Wallet is locked");
-      const kwargs = parseKwargs(args);
-      const stampCount = stamps ? Number(stamps) : estimate?.suggested ?? 50000;
-
-      const txResult = await rpc.sendTransaction({
-        privateKey: session.privateKey,
-        contract: contract.trim(),
-        function: func.trim(),
-        kwargs,
-        stamps: stampCount,
-      });
-
-      setResult(txResult);
-      setStep("result");
-      const ok = txResult.finalized || txResult.accepted;
-      showToast(ok ? "Transaction finalized." : "Transaction failed.", ok ? "success" : "danger");
-      if (ok) void refreshBalances();
-    } catch (e) {
-      setResult({ submitted: false, accepted: false, finalized: false, message: e instanceof Error ? e.message : "Failed" });
-      setStep("result");
-    }
+      const kw = parseKwargs(args);
+      const s = stamps ? Number(stamps) : estimate?.suggested ?? 50000;
+      const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: contract.trim(), function: func.trim(), kwargs: kw, stamps: s });
+      setResult(r); setStep("result");
+      const ok = r.finalized || r.accepted;
+      if (ok) { successTap(); showToast("Transaction finalized.", "success"); void refreshBalances(); }
+      else { errorTap(); showToast("Transaction failed.", "danger"); }
+    } catch (e) { errorTap(); setResult({ submitted: false, accepted: false, finalized: false, message: e instanceof Error ? e.message : "Failed" }); setStep("result"); }
   };
 
   const truncHash = (h: string) => h.length > 20 ? `${h.slice(0, 10)}...${h.slice(-8)}` : h;
 
   if (step === "review") {
-    const kwargs = parseKwargs(args);
+    const kw = parseKwargs(args);
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scroll}>
           <Card title="Transaction Summary">
             <Row label="Contract" value={contract} mono />
             <Row label="Function" value={func} />
-            <Row label="Stamps" value={estimate ? `${estimate.suggested.toLocaleString()} (est. ${estimate.estimated.toLocaleString()})` : stamps || "auto"} />
-            {Object.entries(kwargs).map(([k, v]) => (
-              <Row key={k} label={k} value={String(v)} mono />
-            ))}
+            <Row label="Stamps" value={estimate ? `${estimate.suggested.toLocaleString()}` : stamps || "auto"} />
+            {Object.entries(kw).map(([k, v]) => <Row key={k} label={k} value={String(v)} mono />)}
           </Card>
+        </ScrollView>
+        <View style={styles.stickyBottom}>
           <Button title="Send Transaction" onPress={handleSend} />
           <Button title="Edit" variant="ghost" onPress={() => setStep("draft")} />
-        </ScrollView>
+        </View>
       </View>
     );
   }
 
   if (step === "sending") {
-    return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={colors.accent} />
-        <Text style={styles.sendingText}>Sending transaction...</Text>
-      </View>
-    );
+    return (<View style={[styles.container, styles.centered]}><ActivityIndicator size="large" color={colors.accent} /><Text style={styles.sendingText}>Sending...</Text></View>);
   }
 
   if (step === "result" && result) {
@@ -161,26 +148,13 @@ export function AdvancedTxScreen({ navigation }: { navigation: any }) {
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scroll}>
-          {!ok && result.message && (
-            <View style={styles.errorBanner}>
-              <Text style={styles.errorText}>{result.message}</Text>
-            </View>
-          )}
+          {!ok && result.message && <View style={styles.errorBanner}><Text style={styles.errorText}>{result.message}</Text></View>}
           {result.txHash && (
-            <Card>
-              <Row label="TX Hash" value={truncHash(result.txHash)} mono />
-              {state.dashboardUrl && (
-                <Button
-                  title="View in explorer"
-                  variant="ghost"
-                  onPress={() =>
-                    Linking.openURL(`${state.dashboardUrl!.replace(/\/+$/, "")}/explorer/tx/${result.txHash}`)
-                  }
-                />
-              )}
+            <Card><Row label="TX Hash" value={truncHash(result.txHash)} mono />
+              {state.dashboardUrl && <TouchableOpacity onPress={() => Linking.openURL(`${state.dashboardUrl!.replace(/\/+$/, "")}/explorer/tx/${result.txHash}`)}><Text style={styles.linkText}>View in explorer</Text></TouchableOpacity>}
             </Card>
           )}
-          <Button title="New Transaction" onPress={() => { setStep("draft"); setResult(null); setEstimate(null); }} />
+          <Button title="New Transaction" onPress={() => { setStep("draft"); setResult(null); setEstimate(null); setContract(""); setFunc(""); setArgs([]); }} />
         </ScrollView>
       </View>
     );
@@ -189,85 +163,74 @@ export function AdvancedTxScreen({ navigation }: { navigation: any }) {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Card title="Contract Call" subtitle="Specify contract, function, and arguments.">
+        <Card title="Contract Call">
           <Input label="Contract" value={contract} onChangeText={setContract} placeholder="e.g. currency" autoCapitalize="none" />
-          <Input label="Function" value={func} onChangeText={setFunc} placeholder="e.g. transfer" autoCapitalize="none" />
-        </Card>
 
-        <Card title="Arguments">
-          {args.map((arg) => (
-            <View key={arg.id} style={styles.argRow}>
-              <Input
-                value={arg.name}
-                onChangeText={(v) => updateArg(arg.id, "name", v)}
-                placeholder="name"
-                style={styles.argInput}
-                autoCapitalize="none"
-              />
-              <Input
-                value={arg.value}
-                onChangeText={(v) => updateArg(arg.id, "value", v)}
-                placeholder="value"
-                style={styles.argInput}
-                autoCapitalize="none"
-              />
-              <Button title="×" variant="ghost" onPress={() => removeArg(arg.id)} style={{ paddingHorizontal: 8, paddingVertical: 4, minHeight: 0 }} />
-            </View>
-          ))}
-          <Button title="Add Argument" variant="secondary" onPress={addArg} />
-        </Card>
-
-        <Card title="Stamps" subtitle="Leave empty to estimate automatically.">
-          <Input
-            value={stamps}
-            onChangeText={setStamps}
-            placeholder="Auto-estimate"
-            keyboardType="number-pad"
-          />
-        </Card>
-
-        {error && (
-          <View style={styles.errorBanner}>
-            <Text style={styles.errorText}>{error}</Text>
+          {/* Function selector */}
+          <View>
+            <Text style={styles.fieldLabel}>Function</Text>
+            {methodsLoading ? (
+              <View style={styles.methodsLoading}><ActivityIndicator size="small" color={colors.accent} /><Text style={styles.loadingText}>Loading functions...</Text></View>
+            ) : methods.length > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.methodScroll}>
+                {methods.map((m) => (
+                  <TouchableOpacity key={m.name} style={[styles.methodChip, func === m.name && styles.methodChipActive]} onPress={() => { lightTap(); setFunc(m.name); }}>
+                    <Text style={[styles.methodChipText, func === m.name && styles.methodChipTextActive]}>{m.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            ) : (
+              <Input value={func} onChangeText={setFunc} placeholder="e.g. transfer" autoCapitalize="none" />
+            )}
           </View>
+        </Card>
+
+        {/* Arguments */}
+        {args.length > 0 && (
+          <Card title="Arguments">
+            {args.map((arg) => (
+              <Input key={arg.id} label={`${arg.name} (${arg.type})`} value={arg.value} onChangeText={(v) => updateArg(arg.id, v)} placeholder={`${arg.type} value`} autoCapitalize="none" />
+            ))}
+          </Card>
         )}
 
-        <Button
-          title={estimating ? "Estimating..." : "Review Transaction"}
-          onPress={handleReview}
-          loading={estimating}
-        />
+        <Card title="Stamps" subtitle="Leave empty to estimate automatically.">
+          <Input value={stamps} onChangeText={setStamps} placeholder="Auto-estimate" keyboardType="number-pad" />
+        </Card>
+
+        {error && <View style={styles.errorBanner}><Text style={styles.errorText}>{error}</Text></View>}
       </ScrollView>
+
+      <View style={styles.stickyBottom}>
+        <Button title={estimating ? "Estimating..." : "Review Transaction"} onPress={handleReview} loading={estimating} />
+      </View>
     </KeyboardAvoidingView>
   );
 }
 
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={[styles.rowValue, mono && styles.mono]} numberOfLines={1}>{value}</Text>
-    </View>
-  );
+  return (<View style={styles.detailRow}><Text style={styles.detailLabel}>{label}</Text><Text style={[styles.detailValue, mono && styles.mono]} numberOfLines={1}>{value}</Text></View>);
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg0 },
   centered: { alignItems: "center", justifyContent: "center" },
-  scroll: { padding: 16, gap: 16 },
+  scroll: { padding: 16, gap: 16, paddingBottom: 120 },
+  stickyBottom: { position: "absolute", bottom: 0, left: 0, right: 0, padding: 16, paddingBottom: 24, backgroundColor: colors.bg0, borderTopWidth: 1, borderTopColor: colors.line, gap: 8 },
   sendingText: { color: colors.muted, marginTop: 16, fontSize: 14 },
-  argRow: { flexDirection: "row", gap: 6, alignItems: "center" },
-  argInput: { flex: 1 },
-  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 6 },
-  rowLabel: { fontSize: 13, color: colors.muted },
-  rowValue: { fontSize: 13, color: colors.fg, fontWeight: "500", maxWidth: "60%" },
+  fieldLabel: { fontSize: 13, fontWeight: "500", color: colors.muted, marginBottom: 6 },
+  methodsLoading: { flexDirection: "row", alignItems: "center", gap: 8, padding: 8 },
+  loadingText: { fontSize: 13, color: colors.muted },
+  methodScroll: { marginBottom: 4 },
+  methodChip: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20, backgroundColor: colors.bg2, marginRight: 6 },
+  methodChipActive: { backgroundColor: colors.accentSoft },
+  methodChipText: { fontSize: 13, color: colors.muted, fontWeight: "500" },
+  methodChipTextActive: { color: colors.accent },
+  detailRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 6 },
+  detailLabel: { fontSize: 13, color: colors.muted },
+  detailValue: { fontSize: 13, color: colors.fg, fontWeight: "500", maxWidth: "60%" },
   mono: { fontFamily: "monospace" },
-  errorBanner: {
-    backgroundColor: colors.dangerSoft,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.danger,
-  },
+  errorBanner: { backgroundColor: colors.dangerSoft, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.danger },
   errorText: { fontSize: 13, color: colors.danger },
+  linkText: { fontSize: 13, color: colors.accent, fontWeight: "600", textAlign: "center", paddingTop: 8 },
 });

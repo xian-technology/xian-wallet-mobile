@@ -1,12 +1,13 @@
-import React, { useState } from "react";
+import React from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { colors } from "../theme/colors";
 import { Card } from "../components/Card";
 import { Button } from "../components/Button";
-import { Input } from "../components/Input";
 import { useWallet } from "../lib/wallet-context";
 import { loadWalletState, saveWalletState } from "../lib/storage";
+import { lightTap } from "../lib/haptics";
 
 function formatBalance(raw: string | null): string {
   if (raw == null) return "-";
@@ -29,8 +30,6 @@ export function TokenDetailScreen({ route, navigation }: { route: any; navigatio
     );
   }
 
-  const [editingDecimals, setEditingDecimals] = useState(false);
-  const [decimalsValue, setDecimalsValue] = useState(String(asset.decimals ?? ""));
   const symbol = asset.symbol ?? asset.contract.slice(0, 6);
   const balance = state.assetBalances[contract];
 
@@ -89,33 +88,37 @@ export function TokenDetailScreen({ route, navigation }: { route: any; navigatio
           {asset.symbol && <Row label="Symbol" value={asset.symbol} />}
           <View style={styles.decimalsRow}>
             <Text style={styles.rowLabel}>Decimals</Text>
-            {editingDecimals ? (
-              <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
-                <Input
-                  value={decimalsValue}
-                  onChangeText={setDecimalsValue}
-                  keyboardType="number-pad"
-                  style={{ width: 60, paddingVertical: 6, textAlign: "center" }}
-                  autoFocus
-                  onSubmitEditing={async () => {
-                    const ws = await loadWalletState();
-                    if (!ws) return;
-                    const a = ws.watchedAssets.find((x) => x.contract === contract);
-                    if (a) a.decimals = parseInt(decimalsValue, 10) || undefined;
-                    await saveWalletState(ws);
-                    setEditingDecimals(false);
-                    showToast("Decimals updated.", "success");
-                    await refresh();
-                  }}
-                />
-              </View>
-            ) : (
-              <TouchableOpacity onPress={() => { setEditingDecimals(true); setDecimalsValue(String(asset.decimals ?? "")); }}>
-                <Text style={[styles.rowValue, { color: colors.accent }]}>
-                  {asset.decimals != null ? String(asset.decimals) : "Set"}
-                </Text>
+            <View style={styles.decimalsControls}>
+              <TouchableOpacity
+                style={styles.decBtn}
+                onPress={async () => {
+                  lightTap();
+                  const ws = await loadWalletState();
+                  if (!ws) return;
+                  const a = ws.watchedAssets.find((x) => x.contract === contract);
+                  if (a) a.decimals = Math.max(0, (a.decimals ?? 0) - 1);
+                  await saveWalletState(ws);
+                  await refresh();
+                }}
+              >
+                <Feather name="minus" size={14} color={colors.fg} />
               </TouchableOpacity>
-            )}
+              <Text style={styles.decimalsValue}>{asset.decimals ?? 0}</Text>
+              <TouchableOpacity
+                style={styles.decBtn}
+                onPress={async () => {
+                  lightTap();
+                  const ws = await loadWalletState();
+                  if (!ws) return;
+                  const a = ws.watchedAssets.find((x) => x.contract === contract);
+                  if (a) a.decimals = (a.decimals ?? 0) + 1;
+                  await saveWalletState(ws);
+                  await refresh();
+                }}
+              >
+                <Feather name="plus" size={14} color={colors.fg} />
+              </TouchableOpacity>
+            </View>
           </View>
         </Card>
 
@@ -177,4 +180,7 @@ const styles = StyleSheet.create({
   rowValue: { fontSize: 13, color: colors.fg, fontWeight: "500", maxWidth: "60%" },
   mono: { fontFamily: "monospace" },
   decimalsRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 6 },
+  decimalsControls: { flexDirection: "row", alignItems: "center", gap: 8 },
+  decBtn: { width: 32, height: 32, borderRadius: 8, backgroundColor: colors.bg2, alignItems: "center", justifyContent: "center" },
+  decimalsValue: { fontSize: 15, fontWeight: "600", color: colors.fg, minWidth: 24, textAlign: "center" },
 });

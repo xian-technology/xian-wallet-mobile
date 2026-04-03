@@ -11,12 +11,15 @@ import {
   Linking,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
+import { Feather } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Card } from "../components/Card";
 import { useWallet } from "../lib/wallet-context";
 import { saveWalletState, loadWalletState } from "../lib/storage";
+import { loadPreferences, savePreferences, type Preferences } from "../lib/preferences";
+import { lightTap } from "../lib/haptics";
 
 export function SettingsScreen({ navigation }: { navigation: any }) {
   const { state, refresh, controller, showToast, setContacts } = useWallet();
@@ -30,6 +33,9 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
   const [newContactAddr, setNewContactAddr] = useState("");
   const [showContacts, setShowContacts] = useState(false);
   const [backupPassword, setBackupPassword] = useState("");
+  const [prefs, setPrefsState] = useState<Preferences>({ quickActionsPosition: "top", hideQuickActionLabels: false });
+
+  React.useEffect(() => { loadPreferences().then(setPrefsState); }, []);
 
   const [accountLoading, setAccountLoading] = useState(false);
   const isMnemonic = state.seedSource === "mnemonic";
@@ -238,11 +244,11 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
                         </TouchableOpacity>
                       )}
                       <TouchableOpacity style={styles.actionPill} onPress={() => { setRenamingIndex(a.index); setRenameValue(a.name); }}>
-                        <Text style={styles.actionPillTextMuted}>✏️</Text>
+                        <Feather name="edit-2" size={14} color={colors.muted} />
                       </TouchableOpacity>
                       {a.index !== 0 && (
                         <TouchableOpacity style={styles.actionPill} onPress={() => handleRemoveAccount(a.index)}>
-                          <Text style={styles.actionPillTextMuted}>🗑</Text>
+                          <Feather name="trash-2" size={14} color={colors.danger} />
                         </TouchableOpacity>
                       )}
                     </View>
@@ -340,6 +346,30 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
           )}
         </Card>
 
+        {/* Appearance */}
+        <Card title="Appearance" subtitle="Customize the home screen.">
+          <View style={styles.prefRow}>
+            <Text style={styles.prefLabel}>Quick actions position</Text>
+            <View style={styles.prefToggle}>
+              <TouchableOpacity
+                style={[styles.prefOption, prefs.quickActionsPosition === "top" && styles.prefOptionActive]}
+                onPress={async () => { lightTap(); const p = { ...prefs, quickActionsPosition: "top" as const }; setPrefsState(p); await savePreferences(p); }}
+              ><Text style={[styles.prefOptionText, prefs.quickActionsPosition === "top" && styles.prefOptionTextActive]}>Top</Text></TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.prefOption, prefs.quickActionsPosition === "bottom" && styles.prefOptionActive]}
+                onPress={async () => { lightTap(); const p = { ...prefs, quickActionsPosition: "bottom" as const }; setPrefsState(p); await savePreferences(p); }}
+              ><Text style={[styles.prefOptionText, prefs.quickActionsPosition === "bottom" && styles.prefOptionTextActive]}>Bottom</Text></TouchableOpacity>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={styles.prefRow}
+            onPress={async () => { lightTap(); const p = { ...prefs, hideQuickActionLabels: !prefs.hideQuickActionLabels }; setPrefsState(p); await savePreferences(p); }}
+          >
+            <Text style={styles.prefLabel}>Hide action labels</Text>
+            <Feather name={prefs.hideQuickActionLabels ? "check-square" : "square"} size={18} color={prefs.hideQuickActionLabels ? colors.accent : colors.muted} />
+          </TouchableOpacity>
+        </Card>
+
         {/* Backup */}
         <Card title="Backup" subtitle="Export or import wallet data.">
           <Input label="Password" secureTextEntry value={backupPassword} onChangeText={setBackupPassword} placeholder="Wallet password" />
@@ -414,4 +444,11 @@ const styles = StyleSheet.create({
   },
   contactName: { fontSize: 14, fontWeight: "500", color: colors.fg },
   contactAddr: { fontFamily: "monospace", fontSize: 11, color: colors.muted },
+  prefRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8 },
+  prefLabel: { fontSize: 14, color: colors.fg },
+  prefToggle: { flexDirection: "row", backgroundColor: colors.bg2, borderRadius: 10, padding: 2 },
+  prefOption: { paddingVertical: 6, paddingHorizontal: 14, borderRadius: 8 },
+  prefOptionActive: { backgroundColor: colors.bg1 },
+  prefOptionText: { fontSize: 13, fontWeight: "600", color: colors.muted },
+  prefOptionTextActive: { color: colors.fg },
 });
