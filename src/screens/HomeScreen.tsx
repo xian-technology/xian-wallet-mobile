@@ -14,6 +14,7 @@ import { colors } from "../theme/colors";
 import { useWallet } from "../lib/wallet-context";
 import { loadWalletState, saveWalletState } from "../lib/storage";
 import { SwipeableRow } from "../components/SwipeableRow";
+import { DraggableList } from "../components/DraggableList";
 import { lightTap, mediumTap, selectionTap } from "../lib/haptics";
 
 function truncAddr(addr: string): string {
@@ -51,16 +52,13 @@ export function HomeScreen({ navigation }: { navigation: any }) {
     setRefreshing(false);
   }, [refresh, refreshBalances]);
 
-  const moveAsset = async (contract: string, dir: -1 | 1) => {
-    selectionTap();
+  const reorderAsset = async (fromIndex: number, toIndex: number) => {
     const ws = await loadWalletState();
     if (!ws) return;
     const s = [...ws.watchedAssets].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    const i = s.findIndex((a) => a.contract === contract);
-    const t = i + dir;
-    if (t < 0 || t >= s.length) return;
-    [s[i], s[t]] = [s[t]!, s[i]!];
-    s.forEach((a, idx) => { a.order = idx; });
+    const [moved] = s.splice(fromIndex, 1);
+    if (moved) s.splice(toIndex, 0, moved);
+    s.forEach((a, i) => { a.order = i; });
     ws.watchedAssets = s;
     await saveWalletState(ws);
     await refresh();
@@ -101,7 +99,8 @@ export function HomeScreen({ navigation }: { navigation: any }) {
     <View style={styles.container}>
       <ScrollView
         contentContainerStyle={[styles.scroll, prefs.quickActionsPosition === "bottom" && { paddingBottom: 80 }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={doRefresh} tintColor={colors.accent} colors={[colors.accent]} progressBackgroundColor={colors.bg2} />}
+        scrollEnabled={!managing}
+        refreshControl={managing ? undefined : <RefreshControl refreshing={refreshing} onRefresh={doRefresh} tintColor={colors.accent} colors={[colors.accent]} progressBackgroundColor={colors.bg2} />}
       >
         {activeAcct && <Text style={styles.acctLabel}>{activeAcct.name}</Text>}
         <TouchableOpacity style={styles.addrPill} onPress={async () => { lightTap(); await Clipboard.setStringAsync(address); showToast("Address copied.", "success"); }}>
@@ -115,56 +114,54 @@ export function HomeScreen({ navigation }: { navigation: any }) {
           <Text style={styles.badge}>{managing ? state.watchedAssets.length : visible.length}{hiddenN > 0 && !managing ? ` · ${hiddenN} hidden` : ""}</Text>
         </View>
 
-        {visible.map((asset) => {
-          const sym = asset.symbol ?? asset.contract.slice(0, 6);
-          const letter = sym.charAt(0).toUpperCase();
-          const bg = asset.contract === "currency" ? colors.accentDim : assetHue(asset.contract);
-          const hidden = asset.hidden === true;
+        {managing ? (
+          <DraggableList
+            items={sorted.map((asset) => ({
+              key: asset.contract,
+              label: asset.symbol ?? asset.contract.slice(0, 6),
+              sublabel: asset.name ?? asset.contract,
+              iconLetter: (asset.symbol ?? asset.contract.slice(0, 6)).charAt(0).toUpperCase(),
+              iconColor: asset.contract === "currency" ? colors.accentDim : assetHue(asset.contract),
+              hidden: asset.hidden,
+            }))}
+            onReorder={reorderAsset}
+            onToggleHide={toggleHide}
+          />
+        ) : (
+          visible.map((asset) => {
+            const sym = asset.symbol ?? asset.contract.slice(0, 6);
+            const letter = sym.charAt(0).toUpperCase();
+            const bg = asset.contract === "currency" ? colors.accentDim : assetHue(asset.contract);
 
-          const row = (
-            <TouchableOpacity
-              style={[styles.row, hidden && styles.rowHidden, !managing && styles.rowBg]}
-              onPress={() => { if (!managing) { lightTap(); navigation.navigate("TokenDetail", { contract: asset.contract }); } }}
-              onLongPress={() => { mediumTap(); setManaging(true); }}
-              activeOpacity={0.6}
-            >
-              <View style={[styles.icon, { backgroundColor: bg }]}><Text style={styles.iconLetter}>{letter}</Text></View>
-              <View style={styles.body}>
-                <Text style={styles.sym}>{sym}</Text>
-                <Text style={styles.name} numberOfLines={1}>{asset.name ?? asset.contract}</Text>
-              </View>
-              {managing ? (
-                <View style={styles.manageRow}>
-                  <TouchableOpacity style={styles.mBtn} onPress={() => moveAsset(asset.contract, -1)}><Feather name="chevron-up" size={16} color={colors.fg} /></TouchableOpacity>
-                  <TouchableOpacity style={styles.mBtn} onPress={() => moveAsset(asset.contract, 1)}><Feather name="chevron-down" size={16} color={colors.fg} /></TouchableOpacity>
-                  <TouchableOpacity style={styles.mBtn} onPress={() => toggleHide(asset.contract)}><Feather name={hidden ? "eye-off" : "eye"} size={16} color={colors.fg} /></TouchableOpacity>
-                </View>
-              ) : (
-                <Text style={styles.bal}>{state.balancesLoading ? "..." : fmtBal(state.assetBalances[asset.contract] ?? null)}</Text>
-              )}
-            </TouchableOpacity>
-          );
-
-          if (managing) {
-            return <View key={asset.contract}>{row}</View>;
-          }
-
-          return (
-            <SwipeableRow
-              key={asset.contract}
-              onSwipeLeft={() => {
-                lightTap();
-                navigation.navigate("Send", { token: asset.contract });
-              }}
-              onSwipeRight={() => {
-                mediumTap();
-                toggleHide(asset.contract);
-              }}
-            >
-              {row}
-            </SwipeableRow>
-          );
-        })}
+            return (
+              <SwipeableRow
+                key={asset.contract}
+                onSwipeLeft={() => {
+                  lightTap();
+                  navigation.navigate("Send", { token: asset.contract });
+                }}
+                onSwipeRight={() => {
+                  mediumTap();
+                  toggleHide(asset.contract);
+                }}
+              >
+                <TouchableOpacity
+                  style={[styles.row, styles.rowBg]}
+                  onPress={() => { lightTap(); navigation.navigate("TokenDetail", { contract: asset.contract }); }}
+                  onLongPress={() => { mediumTap(); setManaging(true); }}
+                  activeOpacity={0.6}
+                >
+                  <View style={[styles.icon, { backgroundColor: bg }]}><Text style={styles.iconLetter}>{letter}</Text></View>
+                  <View style={styles.body}>
+                    <Text style={styles.sym}>{sym}</Text>
+                    <Text style={styles.name} numberOfLines={1}>{asset.name ?? asset.contract}</Text>
+                  </View>
+                  <Text style={styles.bal}>{state.balancesLoading ? "..." : fmtBal(state.assetBalances[asset.contract] ?? null)}</Text>
+                </TouchableOpacity>
+              </SwipeableRow>
+            );
+          })
+        )}
 
         <View style={styles.footer}>
           <TouchableOpacity style={styles.fLink} onPress={() => { lightTap(); setManaging(!managing); }}>
@@ -207,8 +204,6 @@ const styles = StyleSheet.create({
   sym: { fontSize: 14, fontWeight: "600", color: colors.fg },
   name: { fontSize: 12, color: colors.muted },
   bal: { fontSize: 14, fontWeight: "600", color: colors.fg },
-  manageRow: { flexDirection: "row", gap: 4 },
-  mBtn: { width: 32, height: 32, borderRadius: 8, backgroundColor: colors.bg2, alignItems: "center", justifyContent: "center" },
   stickyActions: { borderTopWidth: 1, borderTopColor: colors.line, paddingVertical: 10, backgroundColor: colors.bg0 },
   footer: { flexDirection: "row", justifyContent: "center", gap: 16, paddingVertical: 12 },
   fLink: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 },
