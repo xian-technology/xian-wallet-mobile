@@ -207,11 +207,9 @@ export function SendScreen({ navigation }: { navigation: any }) {
             <Text style={styles.fieldLabel}>Recipient</Text>
             <View style={styles.inputWithIcon}>
               <Input value={to} onChangeText={setTo} placeholder="Wallet address" autoCapitalize="none" autoCorrect={false} style={{ paddingRight: 44 }} />
-              {state.contacts.length > 0 && (
-                <TouchableOpacity style={styles.inlineIconBtn} onPress={() => { lightTap(); setShowContacts(true); }}>
-                  <Feather name="users" size={16} color={colors.muted} />
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity style={styles.inlineIconBtn} onPress={() => { lightTap(); setShowContacts(true); }}>
+                <Feather name="users" size={16} color={colors.muted} />
+              </TouchableOpacity>
             </View>
           </View>
 
