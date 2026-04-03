@@ -60,24 +60,24 @@ export function SwipeableRow({
       },
       onPanResponderRelease: (_, gesture) => {
         if (gesture.dx > SWIPE_THRESHOLD && onSwipeRight) {
-          // Swipe right → animate out then trigger
+          // Swipe right → animate out then trigger (hide)
           Animated.timing(translateX, {
             toValue: rowWidth.current,
             duration: 200,
             useNativeDriver: true,
           }).start(() => {
-            onSwipeRight();
             translateX.setValue(0);
+            onSwipeRight();
           });
         } else if (gesture.dx < -SWIPE_THRESHOLD && onSwipeLeft) {
-          // Swipe left → animate out then trigger
-          Animated.timing(translateX, {
-            toValue: -rowWidth.current,
-            duration: 200,
+          // Swipe left → snap back then navigate (send)
+          Animated.spring(translateX, {
+            toValue: 0,
             useNativeDriver: true,
+            tension: 100,
+            friction: 10,
           }).start(() => {
             onSwipeLeft();
-            translateX.setValue(0);
           });
         } else {
           // Snap back
