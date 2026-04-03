@@ -99,7 +99,7 @@ export function HomeScreen({ navigation }: { navigation: any }) {
   return (
     <View style={styles.container}>
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[styles.scroll, prefs.quickActionsPosition === "bottom" && { paddingBottom: 80 }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={doRefresh} tintColor={colors.accent} colors={[colors.accent]} progressBackgroundColor={colors.bg2} />}
       >
         {activeAcct && <Text style={styles.acctLabel}>{activeAcct.name}</Text>}
@@ -146,10 +146,6 @@ export function HomeScreen({ navigation }: { navigation: any }) {
           );
         })}
 
-        {prefs.quickActionsPosition === "bottom" && (
-          <View style={styles.bottomActions}>{quickActions}</View>
-        )}
-
         <View style={styles.footer}>
           <TouchableOpacity style={styles.fLink} onPress={() => { lightTap(); setManaging(!managing); }}>
             <Text style={styles.fText}>{managing ? "Done" : "Manage assets"}</Text>
@@ -159,13 +155,16 @@ export function HomeScreen({ navigation }: { navigation: any }) {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      {prefs.quickActionsPosition === "bottom" && (
+        <View style={styles.stickyActions}>{quickActions}</View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg0 },
-  scroll: { padding: 16, paddingTop: 8, gap: 4 },
+  scroll: { padding: 16, paddingTop: 8, gap: 4, paddingBottom: 16 },
   acctLabel: { fontSize: 13, fontWeight: "600", color: colors.muted, textAlign: "center", marginBottom: 2 },
   addrPill: { alignSelf: "center", backgroundColor: colors.bg2, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, marginBottom: 16 },
   addrText: { fontFamily: "monospace", fontSize: 13, color: colors.muted },
@@ -189,7 +188,7 @@ const styles = StyleSheet.create({
   bal: { fontSize: 14, fontWeight: "600", color: colors.fg },
   manageRow: { flexDirection: "row", gap: 4 },
   mBtn: { width: 32, height: 32, borderRadius: 8, backgroundColor: colors.bg2, alignItems: "center", justifyContent: "center" },
-  bottomActions: { marginTop: 8, borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 12 },
+  stickyActions: { borderTopWidth: 1, borderTopColor: colors.line, paddingVertical: 10, backgroundColor: colors.bg0 },
   footer: { flexDirection: "row", justifyContent: "center", gap: 16, paddingVertical: 12 },
   fLink: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 },
   fText: { fontSize: 12, color: colors.muted },
