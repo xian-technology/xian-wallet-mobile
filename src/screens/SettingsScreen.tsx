@@ -330,8 +330,8 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
                     <Text style={styles.contactName}>{c.name}</Text>
                     <Text style={styles.contactAddr} numberOfLines={1}>{c.address}</Text>
                   </View>
-                  <TouchableOpacity onPress={() => handleDeleteContact(c.id)}>
-                    <Text style={[styles.mutedLink, { color: colors.danger }]}>×</Text>
+                  <TouchableOpacity style={styles.actionPill} onPress={() => handleDeleteContact(c.id)}>
+                    <Feather name="trash-2" size={14} color={colors.danger} />
                   </TouchableOpacity>
                 </View>
               ))}
