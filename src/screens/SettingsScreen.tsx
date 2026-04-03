@@ -9,6 +9,7 @@ import {
   Share,
   ActivityIndicator,
   Linking,
+  TextInput,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { Feather } from "@expo/vector-icons";
@@ -213,16 +214,22 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
               <View key={a.index} style={styles.accountRow}>
                 {renamingIndex === a.index ? (
                   <View style={styles.renameRow}>
-                    <Input
+                    <TextInput
+                      style={styles.renameInput}
                       value={renameValue}
                       onChangeText={setRenameValue}
                       placeholder="Account name"
-                      style={{ flex: 1 }}
+                      placeholderTextColor={colors.muted}
                       onSubmitEditing={() => handleRename(a.index)}
                       autoFocus
+                      selectTextOnFocus
                     />
-                    <Button title="Save" variant="secondary" onPress={() => handleRename(a.index)} style={{ paddingVertical: 10 }} />
-                    <Button title="Cancel" variant="ghost" onPress={() => setRenamingIndex(null)} style={{ paddingVertical: 10 }} />
+                    <TouchableOpacity style={styles.renameIconBtn} onPress={() => handleRename(a.index)}>
+                      <Feather name="check" size={18} color={colors.accent} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.renameIconBtn} onPress={() => setRenamingIndex(null)}>
+                      <Feather name="x" size={18} color={colors.muted} />
+                    </TouchableOpacity>
                   </View>
                 ) : (
                   <>
@@ -403,7 +410,26 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.line,
   },
-  renameRow: { flexDirection: "row", alignItems: "center", gap: 6, flex: 1 },
+  renameRow: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
+  renameInput: {
+    flex: 1,
+    fontSize: 15,
+    color: colors.fg,
+    backgroundColor: colors.bg2,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.line,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  renameIconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: colors.bg2,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
   accountName: { fontSize: 14, fontWeight: "600", color: colors.fg },
   activePill: { fontSize: 11, fontWeight: "600", color: colors.accent },
   accountAddr: { fontFamily: "monospace", fontSize: 11, color: colors.muted, marginTop: 2 },
