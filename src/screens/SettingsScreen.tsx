@@ -16,7 +16,7 @@ import { Card } from "../components/Card";
 import { useWallet } from "../lib/wallet-context";
 import { saveWalletState, loadWalletState } from "../lib/storage";
 
-export function SettingsScreen() {
+export function SettingsScreen({ navigation }: { navigation: any }) {
   const { state, refresh, controller, showToast, setContacts } = useWallet();
   const [secretPassword, setSecretPassword] = useState("");
   const [revealedSeed, setRevealedSeed] = useState<string | null>(null);
@@ -130,19 +130,6 @@ export function SettingsScreen() {
     ]);
   };
 
-  const handleSwitchNetwork = async (presetId: string) => {
-    const ws = await loadWalletState();
-    if (!ws) return;
-    const preset = ws.networkPresets.find((p) => p.id === presetId);
-    if (!preset) return;
-    ws.activeNetworkId = presetId;
-    ws.rpcUrl = preset.rpcUrl;
-    ws.dashboardUrl = preset.dashboardUrl;
-    await saveWalletState(ws);
-    showToast(`Switched to ${preset.name}.`, "success");
-    await refresh();
-  };
-
   const handleExport = async () => {
     if (!controller || !backupPassword) return;
     try {
@@ -227,17 +214,12 @@ export function SettingsScreen() {
         )}
 
         {/* Networks */}
-        <Card title="Networks" subtitle="Switch between RPC endpoints.">
-          {state.networkPresets.map((p) => (
-            <TouchableOpacity
-              key={p.id}
-              style={[styles.networkRow, p.id === state.activeNetworkId && styles.networkActive]}
-              onPress={() => handleSwitchNetwork(p.id)}
-            >
-              <Text style={styles.networkName}>{p.name}</Text>
-              {p.id === state.activeNetworkId && <Text style={styles.activePill}>Active</Text>}
-            </TouchableOpacity>
-          ))}
+        <Card title="Networks" subtitle={state.activeNetworkName ?? "Local node"}>
+          <Button
+            title="Manage Networks"
+            variant="secondary"
+            onPress={() => navigation.navigate("Networks")}
+          />
         </Card>
 
         {/* Security */}
@@ -345,15 +327,6 @@ const styles = StyleSheet.create({
   accountActions: { flexDirection: "row", gap: 12 },
   linkText: { fontSize: 12, color: colors.accent, fontWeight: "600" },
   mutedLink: { fontSize: 12, color: colors.muted, fontWeight: "600" },
-  networkRow: {
-    padding: 12,
-    borderRadius: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  networkActive: { backgroundColor: colors.accentSoft },
-  networkName: { fontSize: 14, fontWeight: "500", color: colors.fg },
   secretBox: {
     backgroundColor: colors.bg0,
     padding: 12,

@@ -17,6 +17,9 @@ import { HomeScreen } from "./src/screens/HomeScreen";
 import { SendScreen } from "./src/screens/SendScreen";
 import { ReceiveScreen } from "./src/screens/ReceiveScreen";
 import { SettingsScreen } from "./src/screens/SettingsScreen";
+import { TokenDetailScreen } from "./src/screens/TokenDetailScreen";
+import { NetworksScreen } from "./src/screens/NetworksScreen";
+import { AdvancedTxScreen } from "./src/screens/AdvancedTxScreen";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -99,6 +102,9 @@ function AppNavigator() {
       />
       <Stack.Screen name="Send" component={SendScreen} />
       <Stack.Screen name="Receive" component={ReceiveScreen} />
+      <Stack.Screen name="TokenDetail" component={TokenDetailScreen} options={{ title: "Token" }} />
+      <Stack.Screen name="Networks" component={NetworksScreen} />
+      <Stack.Screen name="AdvancedTx" component={AdvancedTxScreen} options={{ title: "Advanced Transaction" }} />
     </Stack.Navigator>
   );
 }

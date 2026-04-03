@@ -243,6 +243,11 @@ export function SendScreen({ navigation }: { navigation: any }) {
           loading={estimating}
           disabled={estimating}
         />
+        <Button
+          title="Advanced Transaction"
+          variant="ghost"
+          onPress={() => navigation.navigate("AdvancedTx")}
+        />
       </ScrollView>
     </KeyboardAvoidingView>
   );
