@@ -309,6 +309,8 @@ export function createWalletController() {
       if (!state?.accounts) throw new Error("no accounts");
       const target = state.accounts.find((a) => a.index === index);
       if (!target) throw new Error("account not found");
+      const duplicate = state.accounts.find((a) => a.index !== index && a.name.toLowerCase() === name.toLowerCase());
+      if (duplicate) throw new Error(`An account named "${name}" already exists`);
       target.name = name;
       await store.saveState(state);
     },
