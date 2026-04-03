@@ -1,0 +1,18 @@
+export const colors = {
+  bg0: "#0a0a0f",
+  bg1: "#12121a",
+  bg2: "#1c1c28",
+  fg: "#e8e8ef",
+  muted: "#6e6e82",
+  line: "rgba(255, 255, 255, 0.06)",
+  accent: "#22c55e",
+  accentSoft: "rgba(34, 197, 94, 0.12)",
+  accentDim: "rgba(34, 197, 94, 0.25)",
+  accentText: "#000",
+  danger: "#ff4d4f",
+  dangerSoft: "rgba(255, 77, 79, 0.12)",
+  warning: "#faad14",
+  warningSoft: "rgba(250, 173, 20, 0.12)",
+  success: "#22c55e",
+  successSoft: "rgba(34, 197, 94, 0.12)",
+} as const;
