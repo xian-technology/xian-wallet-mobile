@@ -12,10 +12,10 @@ interface ToastProps {
 }
 
 const toneColors: Record<Tone, string> = {
-  success: colors.successSoft,
-  danger: colors.dangerSoft,
-  warning: colors.warningSoft,
-  info: colors.bg2,
+  success: "rgba(34, 197, 94, 0.85)",
+  danger: "rgba(255, 77, 79, 0.85)",
+  warning: "rgba(250, 173, 20, 0.85)",
+  info: "rgba(28, 28, 40, 0.92)",
 };
 
 const toneBorders: Record<Tone, string> = {
@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
   },
   text: {
     fontSize: 13,
-    fontWeight: "500",
-    color: colors.fg,
+    fontWeight: "600",
+    color: "#fff",
   },
 });

@@ -26,6 +26,8 @@ type Step = "draft" | "review" | "sending" | "result";
 export function SendScreen({ navigation }: { navigation: any }) {
   const { state, rpc, refreshBalances, showToast } = useWallet();
   const [step, setStep] = useState<Step>("draft");
+  const [selectedToken, setSelectedToken] = useState("currency");
+  const [showTokenPicker, setShowTokenPicker] = useState(false);
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -36,9 +38,11 @@ export function SendScreen({ navigation }: { navigation: any }) {
     submitted: boolean; accepted: boolean; finalized: boolean; txHash?: string; message?: string;
   } | null>(null);
 
-  const xianBal = state.assetBalances["currency"] ?? "0";
+  const tokenAsset = state.watchedAssets.find((a) => a.contract === selectedToken);
+  const tokenSymbol = tokenAsset?.symbol ?? selectedToken.slice(0, 6).toUpperCase();
+  const tokenBal = state.assetBalances[selectedToken] ?? "0";
 
-  const handleMax = () => { lightTap(); setAmount(String(Number(xianBal) || 0)); };
+  const handleMax = () => { lightTap(); setAmount(String(Number(tokenBal) || 0)); };
 
   const handleReview = async () => {
     if (!to.trim()) { setError("Recipient address is required."); return; }
@@ -46,7 +50,7 @@ export function SendScreen({ navigation }: { navigation: any }) {
     if (!amount || Number.isNaN(n) || n <= 0) { setError("Enter a valid amount."); return; }
     setError(null); setEstimating(true);
     try {
-      const est = await rpc.estimateStamps({ sender: state.publicKey!, contract: "currency", function: "transfer", kwargs: { to: to.trim(), amount: n } });
+      const est = await rpc.estimateStamps({ sender: state.publicKey!, contract: selectedToken, function: "transfer", kwargs: { to: to.trim(), amount: n } });
       setEstimate(est); lightTap(); setStep("review");
     } catch (e) { setError(e instanceof Error ? e.message : "Estimation failed"); }
     finally { setEstimating(false); }
@@ -57,7 +61,7 @@ export function SendScreen({ navigation }: { navigation: any }) {
     try {
       const session = await loadUnlockedSession();
       if (!session) throw new Error("Wallet is locked");
-      const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: "currency", function: "transfer", kwargs: { to: to.trim(), amount: Number(amount) }, stamps: estimate?.suggested ?? 50000 });
+      const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: selectedToken, function: "transfer", kwargs: { to: to.trim(), amount: Number(amount) }, stamps: estimate?.suggested ?? 50000 });
       setResult(r); setStep("result");
       const ok = r.finalized || r.accepted;
       if (ok) { successTap(); showToast(r.finalized ? "Transaction finalized." : "Transaction accepted.", "success"); void refreshBalances(); }
@@ -95,14 +99,54 @@ export function SendScreen({ navigation }: { navigation: any }) {
     </Modal>
   );
 
+  const visibleTokens = state.watchedAssets.filter((a) => !a.hidden);
+
+  const tokenPickerModal = (
+    <Modal visible={showTokenPicker} transparent animationType="slide">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Select Token</Text>
+            <TouchableOpacity onPress={() => setShowTokenPicker(false)}><Feather name="x" size={22} color={colors.fg} /></TouchableOpacity>
+          </View>
+          <FlatList
+            data={visibleTokens}
+            keyExtractor={(a) => a.contract}
+            renderItem={({ item }) => {
+              const sym = item.symbol ?? item.contract.slice(0, 6);
+              const letter = sym.charAt(0).toUpperCase();
+              const isActive = item.contract === selectedToken;
+              return (
+                <TouchableOpacity
+                  style={[styles.tokenPickerItem, isActive && styles.tokenPickerActive]}
+                  onPress={() => { lightTap(); setSelectedToken(item.contract); setShowTokenPicker(false); }}
+                >
+                  <View style={[styles.tokenPickerIcon, { backgroundColor: item.contract === "currency" ? colors.accentDim : colors.bg2 }]}>
+                    <Text style={styles.tokenPickerLetter}>{letter}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.tokenPickerSym}>{sym}</Text>
+                    <Text style={styles.tokenPickerName}>{item.name ?? item.contract}</Text>
+                  </View>
+                  {isActive && <Feather name="check" size={18} color={colors.accent} />}
+                </TouchableOpacity>
+              );
+            }}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+
   // ── Review ──────────────────────────────────────────────────
   if (step === "review") {
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scroll}>
           <Card title="Transaction Summary">
+            <Row label="Token" value={tokenSymbol} />
             <Row label="To" value={truncHash(to.trim())} mono />
-            <Row label="Amount" value={`${Number(amount).toLocaleString()} XIAN`} />
+            <Row label="Amount" value={`${Number(amount).toLocaleString()} ${tokenSymbol}`} />
             <Row label="Stamps" value={estimate ? `${estimate.suggested.toLocaleString()} (est. ${estimate.estimated.toLocaleString()})` : "-"} />
           </Card>
         </ScrollView>
@@ -144,8 +188,21 @@ export function SendScreen({ navigation }: { navigation: any }) {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       {contactModal}
+      {tokenPickerModal}
       <ScrollView contentContainerStyle={styles.scroll}>
         <Card title="Send" subtitle="Transfer tokens to another address.">
+          {/* Token selector */}
+          <TouchableOpacity style={styles.tokenSelector} onPress={() => { lightTap(); setShowTokenPicker(true); }}>
+            <View style={[styles.tokenSelIcon, { backgroundColor: selectedToken === "currency" ? colors.accentDim : colors.bg2 }]}>
+              <Text style={styles.tokenSelLetter}>{tokenSymbol.charAt(0)}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.tokenSelSym}>{tokenSymbol}</Text>
+              <Text style={styles.tokenSelName}>{tokenAsset?.name ?? selectedToken}</Text>
+            </View>
+            <Feather name="chevron-down" size={18} color={colors.muted} />
+          </TouchableOpacity>
+
           <View>
             <Text style={styles.fieldLabel}>Recipient</Text>
             <View style={styles.inputWithIcon}>
@@ -166,7 +223,7 @@ export function SendScreen({ navigation }: { navigation: any }) {
                 <Text style={styles.maxText}>MAX</Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.available}>Available: {Number(xianBal).toLocaleString()} XIAN</Text>
+            <Text style={styles.available}>Available: {Number(tokenBal).toLocaleString()} {tokenSymbol}</Text>
           </View>
         </Card>
 
@@ -217,4 +274,17 @@ const styles = StyleSheet.create({
   contactItem: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
   contactName: { fontSize: 14, fontWeight: "500", color: colors.fg },
   contactAddr: { fontSize: 11, fontFamily: "monospace", color: colors.muted },
+  // Token selector
+  tokenSelector: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 12, backgroundColor: colors.bg2 },
+  tokenSelIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  tokenSelLetter: { fontSize: 15, fontWeight: "700", color: colors.fg },
+  tokenSelSym: { fontSize: 14, fontWeight: "600", color: colors.fg },
+  tokenSelName: { fontSize: 11, color: colors.muted },
+  // Token picker modal items
+  tokenPickerItem: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
+  tokenPickerActive: { backgroundColor: colors.accentSoft },
+  tokenPickerIcon: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  tokenPickerLetter: { fontSize: 14, fontWeight: "700", color: colors.fg },
+  tokenPickerSym: { fontSize: 14, fontWeight: "600", color: colors.fg },
+  tokenPickerName: { fontSize: 11, color: colors.muted },
 });
