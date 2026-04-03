@@ -23,6 +23,7 @@ import { NetworksScreen } from "./src/screens/NetworksScreen";
 import { AdvancedTxScreen } from "./src/screens/AdvancedTxScreen";
 import { AppsScreen } from "./src/screens/AppsScreen";
 import { ActivityScreen } from "./src/screens/ActivityScreen";
+import { NetworkBadge } from "./src/components/NetworkBadge";
 import { lightTap } from "./src/lib/haptics";
 
 const Stack = createNativeStackNavigator();
@@ -51,6 +52,7 @@ function HomeTabs() {
           title: "Xian Wallet",
           tabBarLabel: "Home",
           tabBarIcon: ({ color }) => <Feather name="home" size={20} color={color} />,
+          headerRight: () => <NetworkBadge />,
         }}
       />
       <Tab.Screen

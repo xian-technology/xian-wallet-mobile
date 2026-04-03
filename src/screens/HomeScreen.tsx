@@ -146,7 +146,9 @@ export function HomeScreen({ navigation }: { navigation: any }) {
           );
         })}
 
-        {prefs.quickActionsPosition === "bottom" && quickActions}
+        {prefs.quickActionsPosition === "bottom" && (
+          <View style={styles.bottomActions}>{quickActions}</View>
+        )}
 
         <View style={styles.footer}>
           <TouchableOpacity style={styles.fLink} onPress={() => { lightTap(); setManaging(!managing); }}>
@@ -187,6 +189,7 @@ const styles = StyleSheet.create({
   bal: { fontSize: 14, fontWeight: "600", color: colors.fg },
   manageRow: { flexDirection: "row", gap: 4 },
   mBtn: { width: 32, height: 32, borderRadius: 8, backgroundColor: colors.bg2, alignItems: "center", justifyContent: "center" },
+  bottomActions: { marginTop: 8, borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 12 },
   footer: { flexDirection: "row", justifyContent: "center", gap: 16, paddingVertical: 12 },
   fLink: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 },
   fText: { fontSize: 12, color: colors.muted },
