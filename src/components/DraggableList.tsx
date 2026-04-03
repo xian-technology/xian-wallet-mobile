@@ -39,7 +39,14 @@ export function DraggableList({ items, onReorder, onToggleHide }: DraggableListP
         dragY.setValue(0);
       },
       onPanResponderMove: (_, g) => {
-        dragY.setValue(g.dy);
+        // Clamp drag to list bounds
+        const avgH = rowHeights.current.length > 0
+          ? rowHeights.current.reduce((a, b) => a + b, 0) / rowHeights.current.length
+          : 60;
+        const maxUp = -startIndex.current * avgH;
+        const maxDown = (items.length - 1 - startIndex.current) * avgH;
+        const clamped = Math.max(maxUp, Math.min(maxDown, g.dy));
+        dragY.setValue(clamped);
       },
       onPanResponderRelease: (_, g) => {
         if (draggingIndex == null) return;
@@ -52,12 +59,25 @@ export function DraggableList({ items, onReorder, onToggleHide }: DraggableListP
           selectionTap();
           onReorder(startIndex.current, target);
         }
-        setDraggingIndex(null);
-        dragY.setValue(0);
+        // Snap back
+        Animated.spring(dragY, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 200,
+          friction: 15,
+        }).start(() => {
+          setDraggingIndex(null);
+        });
       },
       onPanResponderTerminate: () => {
-        setDraggingIndex(null);
-        dragY.setValue(0);
+        Animated.spring(dragY, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 200,
+          friction: 15,
+        }).start(() => {
+          setDraggingIndex(null);
+        });
       },
     })
   ).current;
