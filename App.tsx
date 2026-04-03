@@ -6,7 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { Text } from "react-native";
+import { Text, View, Image, ActivityIndicator, StyleSheet } from "react-native";
 
 import { WalletProvider, useWallet } from "./src/lib/wallet-context";
 import { Toast } from "./src/components/Toast";
@@ -20,6 +20,7 @@ import { SettingsScreen } from "./src/screens/SettingsScreen";
 import { TokenDetailScreen } from "./src/screens/TokenDetailScreen";
 import { NetworksScreen } from "./src/screens/NetworksScreen";
 import { AdvancedTxScreen } from "./src/screens/AdvancedTxScreen";
+import { AppsScreen } from "./src/screens/AppsScreen";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -43,8 +44,17 @@ function HomeTabs() {
         name="Home"
         component={HomeScreen}
         options={{
-          title: "Home",
+          title: "Xian Wallet",
+          tabBarLabel: "Home",
           tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>⌂</Text>,
+        }}
+      />
+      <Tab.Screen
+        name="Apps"
+        component={AppsScreen}
+        options={{
+          title: "Apps",
+          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>⊞</Text>,
         }}
       />
       <Tab.Screen
@@ -65,11 +75,25 @@ function ToastOverlay() {
   return <Toast message={toast.message} tone={toast.tone} onDismiss={clearToast} />;
 }
 
+function LoadingScreen() {
+  return (
+    <View style={loadStyles.container}>
+      <Image source={require("./assets/xian-logo.png")} style={loadStyles.logo} />
+      <ActivityIndicator size="small" color={colors.accent} style={{ marginTop: 16 }} />
+    </View>
+  );
+}
+
+const loadStyles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.bg0, alignItems: "center", justifyContent: "center" },
+  logo: { width: 64, height: 64, resizeMode: "contain" as const },
+});
+
 function AppNavigator() {
   const { state } = useWallet();
 
   if (state.loading) {
-    return null;
+    return <LoadingScreen />;
   }
 
   if (!state.hasWallet) {

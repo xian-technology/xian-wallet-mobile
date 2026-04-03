@@ -1,9 +1,10 @@
-import React from "react";
+import React, { useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { colors } from "../theme/colors";
 import { Card } from "../components/Card";
 import { Button } from "../components/Button";
+import { Input } from "../components/Input";
 import { useWallet } from "../lib/wallet-context";
 import { loadWalletState, saveWalletState } from "../lib/storage";
 
@@ -28,6 +29,8 @@ export function TokenDetailScreen({ route, navigation }: { route: any; navigatio
     );
   }
 
+  const [editingDecimals, setEditingDecimals] = useState(false);
+  const [decimalsValue, setDecimalsValue] = useState(String(asset.decimals ?? ""));
   const symbol = asset.symbol ?? asset.contract.slice(0, 6);
   const balance = state.assetBalances[contract];
 
@@ -84,7 +87,36 @@ export function TokenDetailScreen({ route, navigation }: { route: any; navigatio
           <Row label="Contract" value={contract} mono onPress={handleCopyContract} />
           {asset.name && <Row label="Name" value={asset.name} />}
           {asset.symbol && <Row label="Symbol" value={asset.symbol} />}
-          {asset.decimals != null && <Row label="Decimals" value={String(asset.decimals)} />}
+          <View style={styles.decimalsRow}>
+            <Text style={styles.rowLabel}>Decimals</Text>
+            {editingDecimals ? (
+              <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
+                <Input
+                  value={decimalsValue}
+                  onChangeText={setDecimalsValue}
+                  keyboardType="number-pad"
+                  style={{ width: 60, paddingVertical: 6, textAlign: "center" }}
+                  autoFocus
+                  onSubmitEditing={async () => {
+                    const ws = await loadWalletState();
+                    if (!ws) return;
+                    const a = ws.watchedAssets.find((x) => x.contract === contract);
+                    if (a) a.decimals = parseInt(decimalsValue, 10) || undefined;
+                    await saveWalletState(ws);
+                    setEditingDecimals(false);
+                    showToast("Decimals updated.", "success");
+                    await refresh();
+                  }}
+                />
+              </View>
+            ) : (
+              <TouchableOpacity onPress={() => { setEditingDecimals(true); setDecimalsValue(String(asset.decimals ?? "")); }}>
+                <Text style={[styles.rowValue, { color: colors.accent }]}>
+                  {asset.decimals != null ? String(asset.decimals) : "Set"}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </Card>
 
         {/* Actions */}
@@ -144,4 +176,5 @@ const styles = StyleSheet.create({
   rowLabel: { fontSize: 13, color: colors.muted },
   rowValue: { fontSize: 13, color: colors.fg, fontWeight: "500", maxWidth: "60%" },
   mono: { fontFamily: "monospace" },
+  decimalsRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 6 },
 });

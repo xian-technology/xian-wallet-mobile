@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from "react-native";
 import { colors } from "../theme/colors";
 import { Button } from "../components/Button";
@@ -93,6 +94,7 @@ export function SetupScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView contentContainerStyle={styles.scroll}>
+        <Image source={require("../../assets/xian-logo.png")} style={styles.logo} />
         <Text style={styles.heading}>Xian Wallet</Text>
         <Text style={styles.sub}>Self-custody for Xian. Keys encrypted locally.</Text>
 
@@ -179,8 +181,14 @@ const styles = StyleSheet.create({
   },
   scroll: {
     padding: 24,
-    paddingTop: 80,
+    paddingTop: 60,
     gap: 20,
+    alignItems: "center" as const,
+  },
+  logo: {
+    width: 64,
+    height: 64,
+    resizeMode: "contain" as const,
   },
   heading: {
     fontSize: 28,

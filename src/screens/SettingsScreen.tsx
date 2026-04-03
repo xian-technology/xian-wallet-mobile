@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   Alert,
   Share,
+  ActivityIndicator,
+  Linking,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { colors } from "../theme/colors";
@@ -29,6 +31,7 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
   const [showContacts, setShowContacts] = useState(false);
   const [backupPassword, setBackupPassword] = useState("");
 
+  const [accountLoading, setAccountLoading] = useState(false);
   const isMnemonic = state.seedSource === "mnemonic";
   const activeAccount = state.accounts.find((a) => a.index === state.activeAccountIndex);
 
@@ -82,17 +85,21 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
 
   const handleAddAccount = async () => {
     if (!controller) return;
+    setAccountLoading(true);
     try {
       await controller.addAccount();
       showToast("Account added.", "success");
       await refresh();
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Failed", "danger");
+    } finally {
+      setAccountLoading(false);
     }
   };
 
   const handleRename = async (index: number) => {
     if (!controller || !renameValue.trim()) return;
+    setAccountLoading(true);
     try {
       await controller.renameAccount(index, renameValue.trim());
       setRenamingIndex(null);
@@ -100,17 +107,22 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
       await refresh();
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Failed", "danger");
+    } finally {
+      setAccountLoading(false);
     }
   };
 
   const handleSwitchAccount = async (index: number) => {
     if (!controller) return;
+    setAccountLoading(true);
     try {
       await controller.switchAccount(index);
       showToast("Account switched.", "success");
       await refresh();
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Failed", "danger");
+    } finally {
+      setAccountLoading(false);
     }
   };
 
@@ -142,6 +154,30 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
     }
   };
 
+  const handleImport = async () => {
+    if (!backupPassword) {
+      showToast("Enter a password first.", "warning");
+      return;
+    }
+    Alert.prompt
+      ? Alert.prompt("Import Backup", "Paste the exported JSON:", async (json) => {
+          if (!json || !controller) return;
+          try {
+            const backup = JSON.parse(json);
+            if (!backup?.version || !backup?.type) { showToast("Invalid backup.", "danger"); return; }
+            await controller.removeWallet();
+            // Re-create from backup
+            const opts: Parameters<typeof controller.createWallet>[0] = { password: backupPassword };
+            if (backup.type === "mnemonic" && backup.mnemonic) opts.mnemonic = backup.mnemonic;
+            else if (backup.privateKey) opts.privateKey = backup.privateKey;
+            await controller.createWallet(opts);
+            showToast("Wallet imported.", "success");
+            await refresh();
+          } catch (e) { showToast(e instanceof Error ? e.message : "Import failed", "danger"); }
+        })
+      : showToast("Import: paste your backup JSON in the export field on the source device.", "info");
+  };
+
   const handleAddContact = async () => {
     if (!newContactName.trim() || !newContactAddr.trim()) return;
     const contact = {
@@ -166,6 +202,11 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
         {/* Accounts */}
         {isMnemonic && (
           <Card title="Accounts" subtitle={`${state.accounts.length} derived from recovery seed.`}>
+            {accountLoading && (
+              <View style={styles.loadingOverlay}>
+                <ActivityIndicator size="small" color={colors.accent} />
+              </View>
+            )}
             {state.accounts.map((a) => (
               <View key={a.index} style={styles.accountRow}>
                 {renamingIndex === a.index ? (
@@ -192,16 +233,16 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
                     </View>
                     <View style={styles.accountActions}>
                       {a.index !== state.activeAccountIndex && (
-                        <TouchableOpacity onPress={() => handleSwitchAccount(a.index)}>
-                          <Text style={styles.linkText}>Use</Text>
+                        <TouchableOpacity style={styles.actionPill} onPress={() => handleSwitchAccount(a.index)}>
+                          <Text style={styles.actionPillText}>Use</Text>
                         </TouchableOpacity>
                       )}
-                      <TouchableOpacity onPress={() => { setRenamingIndex(a.index); setRenameValue(a.name); }}>
-                        <Text style={styles.mutedLink}>Rename</Text>
+                      <TouchableOpacity style={styles.actionPill} onPress={() => { setRenamingIndex(a.index); setRenameValue(a.name); }}>
+                        <Text style={styles.actionPillTextMuted}>✏️</Text>
                       </TouchableOpacity>
                       {a.index !== 0 && (
-                        <TouchableOpacity onPress={() => handleRemoveAccount(a.index)}>
-                          <Text style={[styles.mutedLink, { color: colors.danger }]}>×</Text>
+                        <TouchableOpacity style={styles.actionPill} onPress={() => handleRemoveAccount(a.index)}>
+                          <Text style={styles.actionPillTextMuted}>🗑</Text>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -209,7 +250,13 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
                 )}
               </View>
             ))}
-            <Button title="Add Account" variant="secondary" onPress={handleAddAccount} />
+            <Button
+              title="Add Account"
+              variant="secondary"
+              onPress={handleAddAccount}
+              loading={accountLoading}
+              disabled={accountLoading}
+            />
           </Card>
         )}
 
@@ -294,13 +341,23 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
         </Card>
 
         {/* Backup */}
-        <Card title="Backup" subtitle="Export wallet data.">
+        <Card title="Backup" subtitle="Export or import wallet data.">
           <Input label="Password" secureTextEntry value={backupPassword} onChangeText={setBackupPassword} placeholder="Wallet password" />
-          <Button title="Export" variant="secondary" onPress={handleExport} />
+          <View style={styles.btnRow}>
+            <Button title="Export" variant="secondary" onPress={handleExport} style={{ flex: 1 }} />
+            <Button title="Import" variant="secondary" onPress={handleImport} style={{ flex: 1 }} />
+          </View>
         </Card>
 
         {/* Actions */}
         <Card>
+          {state.dashboardUrl && (
+            <Button
+              title="Open Explorer"
+              variant="secondary"
+              onPress={() => Linking.openURL(state.dashboardUrl!.replace(/\/+$/, ""))}
+            />
+          )}
           <Button title="Lock Wallet" variant="secondary" onPress={handleLock} />
           <Button title="Remove Wallet" variant="danger" onPress={handleRemoveWallet} />
         </Card>
@@ -325,6 +382,15 @@ const styles = StyleSheet.create({
   activePill: { fontSize: 11, fontWeight: "600", color: colors.accent },
   accountAddr: { fontFamily: "monospace", fontSize: 11, color: colors.muted, marginTop: 2 },
   accountActions: { flexDirection: "row", gap: 12 },
+  loadingOverlay: { alignItems: "center" as const, paddingVertical: 8 },
+  actionPill: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: colors.bg2,
+  },
+  actionPillText: { fontSize: 12, fontWeight: "600" as const, color: colors.accent },
+  actionPillTextMuted: { fontSize: 14 },
   linkText: { fontSize: 12, color: colors.accent, fontWeight: "600" },
   mutedLink: { fontSize: 12, color: colors.muted, fontWeight: "600" },
   secretBox: {

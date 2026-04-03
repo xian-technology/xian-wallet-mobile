@@ -5,6 +5,7 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from "react-native";
 import { colors } from "../theme/colors";
 import { Button } from "../components/Button";
@@ -37,6 +38,7 @@ export function LockScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={styles.inner}>
+        <Image source={require("../../assets/xian-logo.png")} style={styles.logo} />
         <Text style={styles.heading}>Xian Wallet</Text>
         <Text style={styles.sub}>Enter your password to unlock.</Text>
 
@@ -70,6 +72,12 @@ const styles = StyleSheet.create({
   inner: {
     padding: 24,
     gap: 20,
+    alignItems: "center" as const,
+  },
+  logo: {
+    width: 64,
+    height: 64,
+    resizeMode: "contain" as const,
   },
   heading: {
     fontSize: 28,

@@ -6,10 +6,13 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Linking,
+  Image,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { colors } from "../theme/colors";
 import { useWallet } from "../lib/wallet-context";
+import { loadWalletState, saveWalletState } from "../lib/storage";
 
 function truncateAddress(addr: string): string {
   if (addr.length <= 16) return addr;
@@ -36,6 +39,7 @@ export function HomeScreen({ navigation }: { navigation: any }) {
   const { state, refreshBalances, showToast, refresh } = useWallet();
   const [refreshing, setRefreshing] = useState(false);
   const [managingAssets, setManagingAssets] = useState(false);
+  const [draggingContract, setDraggingContract] = useState<string | null>(null);
 
   const address = state.publicKey ?? "";
   const activeAccount = state.accounts.find(
@@ -60,6 +64,37 @@ export function HomeScreen({ navigation }: { navigation: any }) {
   const handleCopy = async () => {
     await Clipboard.setStringAsync(address);
     showToast("Address copied.", "success");
+  };
+
+  const handleOpenExplorer = () => {
+    if (state.dashboardUrl) {
+      Linking.openURL(state.dashboardUrl.replace(/\/+$/, ""));
+    } else {
+      showToast("No explorer URL configured.", "warning");
+    }
+  };
+
+  const moveAsset = async (contract: string, direction: -1 | 1) => {
+    const ws = await loadWalletState();
+    if (!ws) return;
+    const sorted = [...ws.watchedAssets].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const idx = sorted.findIndex((a) => a.contract === contract);
+    const targetIdx = idx + direction;
+    if (targetIdx < 0 || targetIdx >= sorted.length) return;
+    [sorted[idx], sorted[targetIdx]] = [sorted[targetIdx]!, sorted[idx]!];
+    sorted.forEach((a, i) => { a.order = i; });
+    ws.watchedAssets = sorted;
+    await saveWalletState(ws);
+    await refresh();
+  };
+
+  const toggleHide = async (contract: string) => {
+    const ws = await loadWalletState();
+    if (!ws) return;
+    const a = ws.watchedAssets.find((x) => x.contract === contract);
+    if (a) a.hidden = !a.hidden;
+    await saveWalletState(ws);
+    await refresh();
   };
 
   return (
@@ -88,39 +123,34 @@ export function HomeScreen({ navigation }: { navigation: any }) {
 
         {/* Quick actions */}
         <View style={styles.actions}>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => navigation.navigate("Send")}
-          >
-            <View style={styles.actionCircle}>
-              <Text style={styles.actionIcon}>↑</Text>
-            </View>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate("Send")}>
+            <View style={styles.actionCircle}><Text style={styles.actionIcon}>↑</Text></View>
             <Text style={styles.actionLabel}>Send</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => navigation.navigate("Receive")}
-          >
-            <View style={styles.actionCircle}>
-              <Text style={styles.actionIcon}>↓</Text>
-            </View>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate("Receive")}>
+            <View style={styles.actionCircle}><Text style={styles.actionIcon}>↓</Text></View>
             <Text style={styles.actionLabel}>Receive</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.actionBtn, styles.actionDisabled]} disabled>
+            <View style={[styles.actionCircle, styles.actionCircleDisabled]}><Text style={styles.actionIconDisabled}>📈</Text></View>
+            <Text style={styles.actionLabelDisabled}>Trade</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.actionBtn, styles.actionDisabled]} disabled>
+            <View style={[styles.actionCircle, styles.actionCircleDisabled]}><Text style={styles.actionIconDisabled}>🔄</Text></View>
+            <Text style={styles.actionLabelDisabled}>Swap</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Assets */}
+        {/* Assets header */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionLabel}>Assets</Text>
           <Text style={styles.sectionBadge}>
-            {managingAssets
-              ? state.watchedAssets.length
-              : visibleAssets.length}
-            {hiddenCount > 0 && !managingAssets
-              ? ` · ${hiddenCount} hidden`
-              : ""}
+            {managingAssets ? state.watchedAssets.length : visibleAssets.length}
+            {hiddenCount > 0 && !managingAssets ? ` · ${hiddenCount} hidden` : ""}
           </Text>
         </View>
 
+        {/* Asset list */}
         {visibleAssets.map((asset) => {
           const symbol = asset.symbol ?? asset.contract.slice(0, 6);
           const letter = symbol.charAt(0).toUpperCase();
@@ -132,37 +162,34 @@ export function HomeScreen({ navigation }: { navigation: any }) {
               key={asset.contract}
               style={[styles.assetRow, isHidden && styles.assetHidden]}
               onPress={() => {
-                if (!managingAssets) {
-                  navigation.navigate("TokenDetail", { contract: asset.contract });
-                }
+                if (managingAssets) return;
+                navigation.navigate("TokenDetail", { contract: asset.contract });
               }}
-              activeOpacity={managingAssets ? 1 : 0.6}
+              onLongPress={() => {
+                setManagingAssets(true);
+                setDraggingContract(asset.contract);
+              }}
+              activeOpacity={0.6}
             >
               <View style={[styles.assetIcon, { backgroundColor: bg }]}>
                 <Text style={styles.assetLetter}>{letter}</Text>
               </View>
               <View style={styles.assetBody}>
                 <Text style={styles.assetSymbol}>{symbol}</Text>
-                <Text style={styles.assetName} numberOfLines={1}>
-                  {asset.name ?? asset.contract}
-                </Text>
+                <Text style={styles.assetName} numberOfLines={1}>{asset.name ?? asset.contract}</Text>
               </View>
               {managingAssets ? (
-                <TouchableOpacity
-                  style={styles.eyeBtn}
-                  onPress={async () => {
-                    // Toggle hidden
-                    const { saveWalletState, loadWalletState } = await import("../lib/storage");
-                    const ws = await loadWalletState();
-                    if (!ws) return;
-                    const a = ws.watchedAssets.find((x) => x.contract === asset.contract);
-                    if (a) a.hidden = !a.hidden;
-                    await saveWalletState(ws);
-                    await refresh();
-                  }}
-                >
-                  <Text style={styles.eyeText}>{isHidden ? "👁‍🗨" : "👁"}</Text>
-                </TouchableOpacity>
+                <View style={styles.manageActions}>
+                  <TouchableOpacity style={styles.manageBtn} onPress={() => moveAsset(asset.contract, -1)}>
+                    <Text style={styles.manageBtnText}>▲</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.manageBtn} onPress={() => moveAsset(asset.contract, 1)}>
+                    <Text style={styles.manageBtnText}>▼</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.manageBtn} onPress={() => toggleHide(asset.contract)}>
+                    <Text style={styles.manageBtnText}>{isHidden ? "👁‍🗨" : "👁"}</Text>
+                  </TouchableOpacity>
+                </View>
               ) : (
                 <View style={styles.assetEnd}>
                   <Text style={styles.assetBalance}>
@@ -174,15 +201,15 @@ export function HomeScreen({ navigation }: { navigation: any }) {
           );
         })}
 
-        {/* Manage assets link */}
-        <TouchableOpacity
-          style={styles.manageLink}
-          onPress={() => setManagingAssets(!managingAssets)}
-        >
-          <Text style={styles.manageLinkText}>
-            {managingAssets ? "Done" : "Manage assets"}
-          </Text>
-        </TouchableOpacity>
+        {/* Manage / Explorer links */}
+        <View style={styles.footerLinks}>
+          <TouchableOpacity style={styles.footerLink} onPress={() => setManagingAssets(!managingAssets)}>
+            <Text style={styles.footerLinkText}>{managingAssets ? "Done" : "Manage assets"}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.footerLink} onPress={handleOpenExplorer}>
+            <Text style={styles.footerLinkText}>Explorer</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </View>
   );
@@ -191,71 +218,34 @@ export function HomeScreen({ navigation }: { navigation: any }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg0 },
   scroll: { padding: 16, paddingTop: 8, gap: 4 },
-  accountLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.muted,
-    textAlign: "center",
-    marginBottom: 2,
-  },
-  addressPill: {
-    alignSelf: "center",
-    backgroundColor: colors.bg2,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    marginBottom: 16,
-  },
+  accountLabel: { fontSize: 13, fontWeight: "600", color: colors.muted, textAlign: "center", marginBottom: 2 },
+  addressPill: { alignSelf: "center", backgroundColor: colors.bg2, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, marginBottom: 16 },
   addressText: { fontFamily: "monospace", fontSize: 13, color: colors.muted },
-  actions: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 32,
-    marginBottom: 20,
-  },
-  actionBtn: { alignItems: "center", gap: 6 },
-  actionCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.accentSoft,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  actions: { flexDirection: "row", justifyContent: "center", gap: 20, marginBottom: 20 },
+  actionBtn: { alignItems: "center", gap: 6, width: 56 },
+  actionDisabled: { opacity: 0.4 },
+  actionCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.accentSoft, alignItems: "center", justifyContent: "center" },
+  actionCircleDisabled: { backgroundColor: colors.bg2 },
   actionIcon: { fontSize: 20, fontWeight: "700", color: colors.accent },
-  actionLabel: { fontSize: 12, fontWeight: "600", color: colors.fg },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 8,
-    paddingVertical: 12,
-  },
+  actionIconDisabled: { fontSize: 16 },
+  actionLabel: { fontSize: 11, fontWeight: "600", color: colors.fg },
+  actionLabelDisabled: { fontSize: 11, fontWeight: "600", color: colors.muted },
+  sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 8, paddingVertical: 12 },
   sectionLabel: { fontSize: 14, fontWeight: "700", color: colors.fg },
   sectionBadge: { fontSize: 12, color: colors.muted },
-  assetRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 12,
-    borderRadius: 12,
-  },
+  assetRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 12 },
   assetHidden: { opacity: 0.4 },
-  assetIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  assetIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   assetLetter: { fontSize: 16, fontWeight: "700", color: colors.fg },
   assetBody: { flex: 1 },
   assetSymbol: { fontSize: 14, fontWeight: "600", color: colors.fg },
   assetName: { fontSize: 12, color: colors.muted },
   assetEnd: { alignItems: "flex-end" },
   assetBalance: { fontSize: 14, fontWeight: "600", color: colors.fg },
-  eyeBtn: { padding: 8 },
-  eyeText: { fontSize: 18 },
-  manageLink: { alignItems: "center", paddingVertical: 12 },
-  manageLinkText: { fontSize: 12, color: colors.muted },
+  manageActions: { flexDirection: "row", gap: 4 },
+  manageBtn: { width: 32, height: 32, borderRadius: 8, backgroundColor: colors.bg2, alignItems: "center", justifyContent: "center" },
+  manageBtnText: { fontSize: 14 },
+  footerLinks: { flexDirection: "row", justifyContent: "center", gap: 16, paddingVertical: 12 },
+  footerLink: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 },
+  footerLinkText: { fontSize: 12, color: colors.muted },
 });
