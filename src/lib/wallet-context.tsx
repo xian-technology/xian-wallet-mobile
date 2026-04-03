@@ -16,6 +16,7 @@ import {
   loadUnlockedSession,
 } from "./storage";
 import { XianRpcClient } from "./rpc-client";
+import { loadPreferences, savePreferences, type Preferences } from "./preferences";
 
 export type { StoredWalletState, Contact };
 
@@ -56,6 +57,8 @@ interface WalletContextValue {
   toast: ToastMessage;
   showToast: (message: string, tone?: "success" | "danger" | "warning" | "info") => void;
   clearToast: () => void;
+  prefs: Preferences;
+  updatePrefs: (update: Partial<Preferences>) => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextValue | null>(null);
@@ -77,6 +80,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const [controller, setController] = useState<WalletContextValue["controller"]>(null);
   const [toast, setToast] = useState<ToastMessage>(null);
+  const [prefs, setPrefs] = useState<Preferences>({ quickActionsPosition: "top", hideQuickActionLabels: false });
   const rpcRef = useRef(new XianRpcClient("http://127.0.0.1:26657"));
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -93,6 +97,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setToast(null);
     if (toastTimer.current) clearTimeout(toastTimer.current);
   }, []);
+
+  const updatePrefs = useCallback(async (update: Partial<Preferences>) => {
+    const next = { ...prefs, ...update };
+    setPrefs(next);
+    await savePreferences(next);
+  }, [prefs]);
 
   const refresh = useCallback(async () => {
     const walletState = await loadWalletState();
@@ -164,6 +174,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     import("./wallet-controller").then((mod) => {
       setController(mod.createWalletController());
     });
+    loadPreferences().then(setPrefs);
     refresh();
   }, [refresh]);
 
@@ -186,6 +197,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         toast,
         showToast,
         clearToast,
+        prefs,
+        updatePrefs,
       }}
     >
       {children}

@@ -18,11 +18,10 @@ import { Input } from "../components/Input";
 import { Card } from "../components/Card";
 import { useWallet } from "../lib/wallet-context";
 import { saveWalletState, loadWalletState } from "../lib/storage";
-import { loadPreferences, savePreferences, type Preferences } from "../lib/preferences";
 import { lightTap } from "../lib/haptics";
 
 export function SettingsScreen({ navigation }: { navigation: any }) {
-  const { state, refresh, controller, showToast, setContacts } = useWallet();
+  const { state, refresh, controller, showToast, setContacts, prefs, updatePrefs } = useWallet();
   const [secretPassword, setSecretPassword] = useState("");
   const [revealedSeed, setRevealedSeed] = useState<string | null>(null);
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
@@ -33,9 +32,6 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
   const [newContactAddr, setNewContactAddr] = useState("");
   const [showContacts, setShowContacts] = useState(false);
   const [backupPassword, setBackupPassword] = useState("");
-  const [prefs, setPrefsState] = useState<Preferences>({ quickActionsPosition: "top", hideQuickActionLabels: false });
-
-  React.useEffect(() => { loadPreferences().then(setPrefsState); }, []);
 
   const [accountLoading, setAccountLoading] = useState(false);
   const isMnemonic = state.seedSource === "mnemonic";
@@ -353,17 +349,17 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
             <View style={styles.prefToggle}>
               <TouchableOpacity
                 style={[styles.prefOption, prefs.quickActionsPosition === "top" && styles.prefOptionActive]}
-                onPress={async () => { lightTap(); const p = { ...prefs, quickActionsPosition: "top" as const }; setPrefsState(p); await savePreferences(p); }}
+                onPress={async () => { lightTap(); await updatePrefs({ quickActionsPosition: "top" }); }}
               ><Text style={[styles.prefOptionText, prefs.quickActionsPosition === "top" && styles.prefOptionTextActive]}>Top</Text></TouchableOpacity>
               <TouchableOpacity
                 style={[styles.prefOption, prefs.quickActionsPosition === "bottom" && styles.prefOptionActive]}
-                onPress={async () => { lightTap(); const p = { ...prefs, quickActionsPosition: "bottom" as const }; setPrefsState(p); await savePreferences(p); }}
+                onPress={async () => { lightTap(); await updatePrefs({ quickActionsPosition: "bottom" }); }}
               ><Text style={[styles.prefOptionText, prefs.quickActionsPosition === "bottom" && styles.prefOptionTextActive]}>Bottom</Text></TouchableOpacity>
             </View>
           </View>
           <TouchableOpacity
             style={styles.prefRow}
-            onPress={async () => { lightTap(); const p = { ...prefs, hideQuickActionLabels: !prefs.hideQuickActionLabels }; setPrefsState(p); await savePreferences(p); }}
+            onPress={async () => { lightTap(); await updatePrefs({ hideQuickActionLabels: !prefs.hideQuickActionLabels }); }}
           >
             <Text style={styles.prefLabel}>Hide action labels</Text>
             <Feather name={prefs.hideQuickActionLabels ? "check-square" : "square"} size={18} color={prefs.hideQuickActionLabels ? colors.accent : colors.muted} />

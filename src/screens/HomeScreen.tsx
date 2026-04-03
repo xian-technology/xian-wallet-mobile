@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -14,7 +14,6 @@ import { colors } from "../theme/colors";
 import { useWallet } from "../lib/wallet-context";
 import { loadWalletState, saveWalletState } from "../lib/storage";
 import { lightTap, mediumTap, selectionTap } from "../lib/haptics";
-import { loadPreferences, type Preferences } from "../lib/preferences";
 
 function truncAddr(addr: string): string {
   return addr.length <= 16 ? addr : `${addr.slice(0, 8)}...${addr.slice(-6)}`;
@@ -34,12 +33,9 @@ function fmtBal(raw: string | null): string {
 }
 
 export function HomeScreen({ navigation }: { navigation: any }) {
-  const { state, refreshBalances, showToast, refresh } = useWallet();
+  const { state, refreshBalances, showToast, refresh, prefs } = useWallet();
   const [refreshing, setRefreshing] = useState(false);
   const [managing, setManaging] = useState(false);
-  const [prefs, setPrefs] = useState<Preferences>({ quickActionsPosition: "top", hideQuickActionLabels: false });
-
-  useEffect(() => { loadPreferences().then(setPrefs); }, []);
 
   const address = state.publicKey ?? "";
   const activeAcct = state.accounts.find((a) => a.index === state.activeAccountIndex);
