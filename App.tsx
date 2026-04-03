@@ -9,6 +9,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Text } from "react-native";
 
 import { WalletProvider, useWallet } from "./src/lib/wallet-context";
+import { Toast } from "./src/components/Toast";
 import { colors } from "./src/theme/colors";
 import { SetupScreen } from "./src/screens/SetupScreen";
 import { LockScreen } from "./src/screens/LockScreen";
@@ -53,6 +54,12 @@ function HomeTabs() {
       />
     </Tab.Navigator>
   );
+}
+
+function ToastOverlay() {
+  const { toast, clearToast } = useWallet();
+  if (!toast) return null;
+  return <Toast message={toast.message} tone={toast.tone} onDismiss={clearToast} />;
 }
 
 function AppNavigator() {
@@ -120,6 +127,7 @@ export default function App() {
       >
         <StatusBar style="light" />
         <AppNavigator />
+        <ToastOverlay />
       </NavigationContainer>
     </WalletProvider>
   );
