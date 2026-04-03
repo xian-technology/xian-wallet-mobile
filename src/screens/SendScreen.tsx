@@ -23,10 +23,10 @@ import { lightTap, successTap, errorTap } from "../lib/haptics";
 
 type Step = "draft" | "review" | "sending" | "result";
 
-export function SendScreen({ navigation }: { navigation: any }) {
+export function SendScreen({ navigation, route }: { navigation: any; route: any }) {
   const { state, rpc, refreshBalances, showToast } = useWallet();
   const [step, setStep] = useState<Step>("draft");
-  const [selectedToken, setSelectedToken] = useState("currency");
+  const [selectedToken, setSelectedToken] = useState(route.params?.token ?? "currency");
   const [showTokenPicker, setShowTokenPicker] = useState(false);
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");

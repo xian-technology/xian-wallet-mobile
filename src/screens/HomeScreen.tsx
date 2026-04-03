@@ -13,6 +13,7 @@ import * as Clipboard from "expo-clipboard";
 import { colors } from "../theme/colors";
 import { useWallet } from "../lib/wallet-context";
 import { loadWalletState, saveWalletState } from "../lib/storage";
+import { SwipeableRow } from "../components/SwipeableRow";
 import { lightTap, mediumTap, selectionTap } from "../lib/haptics";
 
 function truncAddr(addr: string): string {
@@ -120,10 +121,9 @@ export function HomeScreen({ navigation }: { navigation: any }) {
           const bg = asset.contract === "currency" ? colors.accentDim : assetHue(asset.contract);
           const hidden = asset.hidden === true;
 
-          return (
+          const row = (
             <TouchableOpacity
-              key={asset.contract}
-              style={[styles.row, hidden && styles.rowHidden]}
+              style={[styles.row, hidden && styles.rowHidden, !managing && styles.rowBg]}
               onPress={() => { if (!managing) { lightTap(); navigation.navigate("TokenDetail", { contract: asset.contract }); } }}
               onLongPress={() => { mediumTap(); setManaging(true); }}
               activeOpacity={0.6}
@@ -143,6 +143,26 @@ export function HomeScreen({ navigation }: { navigation: any }) {
                 <Text style={styles.bal}>{state.balancesLoading ? "..." : fmtBal(state.assetBalances[asset.contract] ?? null)}</Text>
               )}
             </TouchableOpacity>
+          );
+
+          if (managing) {
+            return <View key={asset.contract}>{row}</View>;
+          }
+
+          return (
+            <SwipeableRow
+              key={asset.contract}
+              onSwipeLeft={() => {
+                lightTap();
+                navigation.navigate("Send", { token: asset.contract });
+              }}
+              onSwipeRight={() => {
+                mediumTap();
+                toggleHide(asset.contract);
+              }}
+            >
+              {row}
+            </SwipeableRow>
           );
         })}
 
@@ -179,6 +199,7 @@ const styles = StyleSheet.create({
   sectionLabel: { fontSize: 14, fontWeight: "700", color: colors.fg },
   badge: { fontSize: 12, color: colors.muted },
   row: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 12 },
+  rowBg: { backgroundColor: colors.bg0 },
   rowHidden: { opacity: 0.4 },
   icon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   iconLetter: { fontSize: 16, fontWeight: "700", color: colors.fg },
