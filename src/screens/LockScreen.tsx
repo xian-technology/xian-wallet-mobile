@@ -6,6 +6,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  Alert,
+  TouchableOpacity,
 } from "react-native";
 import { colors } from "../theme/colors";
 import { Button } from "../components/Button";
@@ -65,6 +67,30 @@ export function LockScreen() {
         <View style={styles.inputWrap}>
           <Button title="Unlock" onPress={handleUnlock} loading={loading} />
         </View>
+
+        <TouchableOpacity
+          style={styles.forgotLink}
+          onPress={() => {
+            Alert.alert(
+              "Remove Wallet",
+              "This will permanently remove the wallet and all data. Are you sure?",
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Remove",
+                  style: "destructive",
+                  onPress: async () => {
+                    if (!controller) return;
+                    await controller.removeWallet();
+                    await refresh();
+                  },
+                },
+              ]
+            );
+          }}
+        >
+          <Text style={styles.forgotText}>Forgot password? Remove wallet</Text>
+        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
@@ -111,5 +137,13 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 13,
     color: colors.danger,
+  },
+  forgotLink: {
+    marginTop: 8,
+    alignItems: "center" as const,
+  },
+  forgotText: {
+    fontSize: 12,
+    color: colors.muted,
   },
 });
