@@ -104,6 +104,26 @@ export class XianRpcClient {
     return data?.result?.node_info?.network ?? "unknown";
   }
 
+  async getTokenMetadata(contract: string): Promise<{
+    name: string | null;
+    symbol: string | null;
+    logoUrl: string | null;
+  }> {
+    if (contract === "currency") {
+      return { name: "Xian", symbol: "XIAN", logoUrl: null };
+    }
+    const [name, symbol, logoUrl] = await Promise.all([
+      this.abciQuery(`/get/${contract}.metadata:token_name`),
+      this.abciQuery(`/get/${contract}.metadata:token_symbol`),
+      this.abciQuery(`/get/${contract}.metadata:token_logo_url`),
+    ]);
+    return {
+      name: typeof name === "string" ? name : null,
+      symbol: typeof symbol === "string" ? symbol : null,
+      logoUrl: typeof logoUrl === "string" ? logoUrl : null,
+    };
+  }
+
   async getBalance(
     address: string,
     contract: string = "currency"

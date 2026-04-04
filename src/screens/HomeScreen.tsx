@@ -36,7 +36,7 @@ function fmtBal(raw: string | null): string {
 }
 
 export function HomeScreen({ navigation }: { navigation: any }) {
-  const { state, refreshBalances, showToast, refresh, prefs } = useWallet();
+  const { state, refreshBalances, showToast, refresh, prefs, rpc } = useWallet();
   const [refreshing, setRefreshing] = useState(false);
   const [managing, setManaging] = useState(false);
   const [addTokenValue, setAddTokenValue] = useState("");
@@ -146,10 +146,12 @@ export function HomeScreen({ navigation }: { navigation: any }) {
                   showToast("Already tracked.", "warning");
                   return;
                 }
-                ws.watchedAssets.push({ contract: addTokenValue.trim() });
+                const contractName = addTokenValue.trim();
+                const meta = await rpc.getTokenMetadata(contractName);
+                ws.watchedAssets.push({ contract: contractName, name: meta.name ?? undefined, symbol: meta.symbol ?? undefined, icon: meta.logoUrl ?? undefined });
                 await saveWalletState(ws);
                 setAddTokenValue("");
-                showToast(`Added ${addTokenValue.trim()}.`, "success");
+                showToast(`Added ${meta.symbol ?? contractName}.`, "success");
                 await refresh();
               }}
             />
@@ -164,10 +166,12 @@ export function HomeScreen({ navigation }: { navigation: any }) {
                   showToast("Already tracked.", "warning");
                   return;
                 }
-                ws.watchedAssets.push({ contract: addTokenValue.trim() });
+                const contractName = addTokenValue.trim();
+                const meta = await rpc.getTokenMetadata(contractName);
+                ws.watchedAssets.push({ contract: contractName, name: meta.name ?? undefined, symbol: meta.symbol ?? undefined, icon: meta.logoUrl ?? undefined });
                 await saveWalletState(ws);
                 setAddTokenValue("");
-                showToast(`Added ${addTokenValue.trim()}.`, "success");
+                showToast(`Added ${meta.symbol ?? contractName}.`, "success");
                 await refresh();
               }}
             >
