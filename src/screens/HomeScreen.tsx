@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   Linking,
+  TextInput,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
@@ -38,6 +39,7 @@ export function HomeScreen({ navigation }: { navigation: any }) {
   const { state, refreshBalances, showToast, refresh, prefs } = useWallet();
   const [refreshing, setRefreshing] = useState(false);
   const [managing, setManaging] = useState(false);
+  const [addTokenValue, setAddTokenValue] = useState("");
 
   const address = state.publicKey ?? "";
   const activeAcct = state.accounts.find((a) => a.index === state.activeAccountIndex);
@@ -115,6 +117,7 @@ export function HomeScreen({ navigation }: { navigation: any }) {
         </View>
 
         {managing ? (
+          <View>
           <DraggableList
             items={sorted.map((asset) => ({
               key: asset.contract,
@@ -127,6 +130,51 @@ export function HomeScreen({ navigation }: { navigation: any }) {
             onReorder={reorderAsset}
             onToggleHide={toggleHide}
           />
+          <View style={styles.addTokenRow}>
+            <TextInput
+              style={styles.addTokenInput}
+              value={addTokenValue}
+              onChangeText={setAddTokenValue}
+              placeholder="Contract name"
+              placeholderTextColor={colors.muted}
+              autoCapitalize="none"
+              onSubmitEditing={async () => {
+                if (!addTokenValue.trim()) return;
+                const ws = await loadWalletState();
+                if (!ws) return;
+                if (ws.watchedAssets.some((a) => a.contract === addTokenValue.trim())) {
+                  showToast("Already tracked.", "warning");
+                  return;
+                }
+                ws.watchedAssets.push({ contract: addTokenValue.trim() });
+                await saveWalletState(ws);
+                setAddTokenValue("");
+                showToast(`Added ${addTokenValue.trim()}.`, "success");
+                await refresh();
+              }}
+            />
+            <TouchableOpacity
+              style={styles.addTokenBtn}
+              onPress={async () => {
+                if (!addTokenValue.trim()) return;
+                lightTap();
+                const ws = await loadWalletState();
+                if (!ws) return;
+                if (ws.watchedAssets.some((a) => a.contract === addTokenValue.trim())) {
+                  showToast("Already tracked.", "warning");
+                  return;
+                }
+                ws.watchedAssets.push({ contract: addTokenValue.trim() });
+                await saveWalletState(ws);
+                setAddTokenValue("");
+                showToast(`Added ${addTokenValue.trim()}.`, "success");
+                await refresh();
+              }}
+            >
+              <Feather name="plus" size={16} color={colors.accent} />
+            </TouchableOpacity>
+          </View>
+          </View>
         ) : (
           visible.map((asset) => {
             const sym = asset.symbol ?? asset.contract.slice(0, 6);
@@ -205,6 +253,9 @@ const styles = StyleSheet.create({
   name: { fontSize: 12, color: colors.muted },
   bal: { fontSize: 14, fontWeight: "600", color: colors.fg },
   stickyActions: { borderTopWidth: 1, borderTopColor: colors.line, paddingVertical: 10, backgroundColor: colors.bg0 },
+  addTokenRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8, paddingTop: 8 },
+  addTokenInput: { flex: 1, fontSize: 13, fontFamily: "monospace", color: colors.fg, backgroundColor: colors.bg2, borderRadius: 8, borderWidth: 1, borderColor: colors.line, paddingVertical: 8, paddingHorizontal: 12 },
+  addTokenBtn: { width: 36, height: 36, borderRadius: 8, backgroundColor: colors.bg2, alignItems: "center", justifyContent: "center" },
   footer: { flexDirection: "row", justifyContent: "center", gap: 16, paddingVertical: 12 },
   fLink: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 },
   fText: { fontSize: 12, color: colors.muted },
