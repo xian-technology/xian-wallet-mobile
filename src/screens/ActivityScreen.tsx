@@ -15,7 +15,7 @@ import { useWallet } from "../lib/wallet-context";
 import { lightTap } from "../lib/haptics";
 
 interface TxRecord {
-  tx_hash: string;
+  hash: string;
   block_height: number;
   sender: string;
   nonce: number;
@@ -23,7 +23,7 @@ interface TxRecord {
   function: string;
   success: boolean;
   stamps_used: number;
-  created: string;
+  created_at: string;
   kwargs?: Record<string, unknown>;
 }
 
@@ -94,12 +94,12 @@ export function ActivityScreen({ navigation }: { navigation: any }) {
             <Text style={styles.directionText}>{isOutgoing ? "Sent" : "Received"}</Text>
           </View>
 
-          <Row label="Hash" value={truncHash(selectedTx.tx_hash)} mono />
+          <Row label="Hash" value={truncHash(selectedTx.hash)} mono />
           <Row label="Block" value={String(selectedTx.block_height)} />
           <Row label="Contract" value={selectedTx.contract} mono />
           <Row label="Function" value={selectedTx.function} />
           <Row label="Stamps" value={selectedTx.stamps_used.toLocaleString()} />
-          <Row label="Time" value={selectedTx.created} />
+          <Row label="Time" value={selectedTx.created_at} />
           {selectedTx.kwargs && Object.entries(selectedTx.kwargs).map(([k, v]) => (
             <Row key={k} label={k} value={String(v)} mono />
           ))}
@@ -109,7 +109,7 @@ export function ActivityScreen({ navigation }: { navigation: any }) {
               style={styles.explorerBtn}
               onPress={() => {
                 lightTap();
-                Linking.openURL(`${state.dashboardUrl!.replace(/\/+$/, "")}/explorer/tx/${selectedTx.tx_hash}`);
+                Linking.openURL(`${state.dashboardUrl!.replace(/\/+$/, "")}/explorer/tx/${selectedTx.hash}`);
               }}
             >
               <Feather name="external-link" size={14} color={colors.accent} />
@@ -134,7 +134,7 @@ export function ActivityScreen({ navigation }: { navigation: any }) {
     <View style={styles.container}>
       <FlatList
         data={txs}
-        keyExtractor={(item) => item.tx_hash}
+        keyExtractor={(item) => item.hash}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} colors={[colors.accent]} progressBackgroundColor={colors.bg2} />
         }
@@ -158,7 +158,7 @@ export function ActivityScreen({ navigation }: { navigation: any }) {
               </View>
               <View style={styles.txBody}>
                 <Text style={styles.txFunc}>{item.contract}.{item.function}</Text>
-                <Text style={styles.txTime}>{timeAgo(item.created)}</Text>
+                <Text style={styles.txTime}>{timeAgo(item.created_at)}</Text>
               </View>
               <View style={styles.txEnd}>
                 <Feather

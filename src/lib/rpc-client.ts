@@ -72,7 +72,7 @@ export class XianRpcClient {
     limit: number = 50,
     offset: number = 0
   ): Promise<Array<{
-    tx_hash: string;
+    hash: string;
     block_height: number;
     sender: string;
     nonce: number;
@@ -80,7 +80,7 @@ export class XianRpcClient {
     function: string;
     success: boolean;
     stamps_used: number;
-    created: string;
+    created_at: string;
     kwargs?: Record<string, unknown>;
   }>> {
     try {
