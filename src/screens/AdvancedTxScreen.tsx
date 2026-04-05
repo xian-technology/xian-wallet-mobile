@@ -18,6 +18,7 @@ import { Card } from "../components/Card";
 import { useWallet } from "../lib/wallet-context";
 import { loadUnlockedSession } from "../lib/storage";
 import { lightTap, successTap, errorTap } from "../lib/haptics";
+import { parsePositiveIntegerInput, parseTypedInput } from "../lib/runtime-input";
 
 type Step = "draft" | "review" | "sending" | "result";
 
@@ -32,14 +33,7 @@ function parseKwargs(args: Arg[]): Record<string, unknown> {
   const kw: Record<string, unknown> = {};
   for (const a of args) {
     if (!a.name.trim()) continue;
-    const v = a.value.trim();
-    switch (a.type) {
-      case "int": kw[a.name] = parseInt(v, 10); break;
-      case "float": kw[a.name] = parseFloat(v); break;
-      case "bool": kw[a.name] = v === "true"; break;
-      case "dict": case "list": try { kw[a.name] = JSON.parse(v); } catch { kw[a.name] = v; } break;
-      default: kw[a.name] = v;
-    }
+    kw[a.name] = parseTypedInput(a.value, a.type);
   }
   return kw;
 }
@@ -65,16 +59,7 @@ export function AdvancedTxScreen({ navigation }: { navigation: any }) {
     const timer = setTimeout(async () => {
       setMethodsLoading(true);
       try {
-        // Query contract methods via ABCI
-        const resp = await fetch(`${state.rpcUrl}/abci_query?path=%22/contract_methods/${c}%22`);
-        if (!resp.ok) { setMethods([]); return; }
-        const data = await resp.json();
-        const val = data?.result?.response?.value;
-        if (!val) { setMethods([]); return; }
-        const decoded = JSON.parse(atob(val));
-        if (Array.isArray(decoded)) {
-          setMethods(decoded);
-        }
+        setMethods(await rpc.getContractMethods(c));
       } catch { setMethods([]); }
       finally { setMethodsLoading(false); }
     }, 500);
@@ -108,7 +93,8 @@ export function AdvancedTxScreen({ navigation }: { navigation: any }) {
       const session = await loadUnlockedSession();
       if (!session) throw new Error("Wallet is locked");
       const kw = parseKwargs(args);
-      const s = stamps ? Number(stamps) : estimate?.suggested ?? 50000;
+      const s = stamps ? parsePositiveIntegerInput(stamps) : estimate?.suggested ?? 50000;
+      if (s == null) throw new Error("Stamps must be a positive integer");
       const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: contract.trim(), function: func.trim(), kwargs: kw, stamps: s });
       setResult(r); setStep("result");
       const ok = r.finalized || r.accepted;

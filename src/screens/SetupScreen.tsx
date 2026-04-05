@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import * as Clipboard from "expo-clipboard";
 import {
   View,
   Text,
@@ -14,6 +15,7 @@ import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Card } from "../components/Card";
 import { useWallet } from "../lib/wallet-context";
+import { lightTap } from "../lib/haptics";
 
 type Mode = "create" | "seed" | "key";
 
@@ -72,7 +74,12 @@ export function SetupScreen() {
             your wallet.
           </Text>
           <Card>
-            <TouchableOpacity onPress={() => {/* TODO: copy */}}>
+            <TouchableOpacity
+              onPress={async () => {
+                lightTap();
+                await Clipboard.setStringAsync(generatedMnemonic);
+              }}
+            >
               <Text style={styles.seedText}>{generatedMnemonic}</Text>
             </TouchableOpacity>
           </Card>

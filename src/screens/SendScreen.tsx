@@ -20,6 +20,7 @@ import { Card } from "../components/Card";
 import { useWallet } from "../lib/wallet-context";
 import { loadUnlockedSession } from "../lib/storage";
 import { lightTap, successTap, errorTap } from "../lib/haptics";
+import { parseAmountInput } from "../lib/runtime-input";
 
 type Step = "draft" | "review" | "sending" | "result";
 
@@ -42,15 +43,15 @@ export function SendScreen({ navigation, route }: { navigation: any; route: any 
   const tokenSymbol = tokenAsset?.symbol ?? selectedToken.slice(0, 6).toUpperCase();
   const tokenBal = state.assetBalances[selectedToken] ?? "0";
 
-  const handleMax = () => { lightTap(); setAmount(String(Number(tokenBal) || 0)); };
+  const handleMax = () => { lightTap(); setAmount(tokenBal && tokenBal !== "null" ? tokenBal : "0"); };
 
   const handleReview = async () => {
     if (!to.trim()) { setError("Recipient address is required."); return; }
-    const n = Number(amount);
-    if (!amount || Number.isNaN(n) || n <= 0) { setError("Enter a valid amount."); return; }
+    const parsedAmount = parseAmountInput(amount);
+    if (parsedAmount == null) { setError("Enter a valid amount."); return; }
     setError(null); setEstimating(true);
     try {
-      const est = await rpc.estimateStamps({ sender: state.publicKey!, contract: selectedToken, function: "transfer", kwargs: { to: to.trim(), amount: n } });
+      const est = await rpc.estimateStamps({ sender: state.publicKey!, contract: selectedToken, function: "transfer", kwargs: { to: to.trim(), amount: parsedAmount } });
       setEstimate(est); lightTap(); setStep("review");
     } catch (e) { setError(e instanceof Error ? e.message : "Estimation failed"); }
     finally { setEstimating(false); }
@@ -61,7 +62,9 @@ export function SendScreen({ navigation, route }: { navigation: any; route: any 
     try {
       const session = await loadUnlockedSession();
       if (!session) throw new Error("Wallet is locked");
-      const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: selectedToken, function: "transfer", kwargs: { to: to.trim(), amount: Number(amount) }, stamps: estimate?.suggested ?? 50000 });
+      const parsedAmount = parseAmountInput(amount);
+      if (parsedAmount == null) throw new Error("Enter a valid amount");
+      const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: selectedToken, function: "transfer", kwargs: { to: to.trim(), amount: parsedAmount }, stamps: estimate?.suggested ?? 50000 });
       setResult(r); setStep("result");
       const ok = r.finalized || r.accepted;
       if (ok) { successTap(); showToast(r.finalized ? "Transaction finalized." : "Transaction accepted.", "success"); void refreshBalances(); }
@@ -146,7 +149,7 @@ export function SendScreen({ navigation, route }: { navigation: any; route: any 
           <Card title="Transaction Summary">
             <Row label="Token" value={tokenSymbol} />
             <Row label="To" value={truncHash(to.trim())} mono />
-            <Row label="Amount" value={`${Number(amount).toLocaleString()} ${tokenSymbol}`} />
+            <Row label="Amount" value={`${amount.trim()} ${tokenSymbol}`} />
             <Row label="Stamps" value={estimate ? `${estimate.suggested.toLocaleString()} (est. ${estimate.estimated.toLocaleString()})` : "-"} />
           </Card>
         </ScrollView>
@@ -221,7 +224,7 @@ export function SendScreen({ navigation, route }: { navigation: any; route: any 
                 <Text style={styles.maxText}>MAX</Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.available}>Available: {Number(tokenBal).toLocaleString()} {tokenSymbol}</Text>
+            <Text style={styles.available}>Available: {tokenBal} {tokenSymbol}</Text>
           </View>
         </Card>
 

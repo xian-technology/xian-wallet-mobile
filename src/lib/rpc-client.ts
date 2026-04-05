@@ -1,40 +1,24 @@
 /**
- * Lightweight Xian RPC client for React Native.
- * Handles balance queries, stamp estimation, and transaction submission.
+ * Mobile RPC wrapper built on top of the shared Xian JS client.
+ * Custom methods remain only for endpoints that are not yet modeled there.
  */
-import nacl from "tweetnacl";
+import {
+  Ed25519Signer,
+  type TransactionReceipt,
+  XianClient
+} from "@xian-tech/client";
 
-function hexToBytes(hex: string): Uint8Array {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
-  }
-  return bytes;
-}
-
-function bytesToHex(bytes: Uint8Array): string {
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-function getPublicKey(privateKeyHex: string): string {
-  const seed = hexToBytes(privateKeyHex);
-  const keyPair = nacl.sign.keyPair.fromSeed(seed);
-  return bytesToHex(keyPair.publicKey);
-}
-
-function sign(message: Uint8Array, privateKeyHex: string): string {
-  const seed = hexToBytes(privateKeyHex);
-  const keyPair = nacl.sign.keyPair.fromSeed(seed);
-  const sig = nacl.sign.detached(message, keyPair.secretKey);
-  return bytesToHex(sig);
-}
-
-function base64ToUtf8(b64: string): string {
-  const binary = atob(b64);
-  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+function base64ToUtf8(value: string): string {
+  const binary = atob(value);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
   return new TextDecoder().decode(bytes);
+}
+
+function normalizeMessage(value: unknown): string | undefined {
+  if (value == null) {
+    return undefined;
+  }
+  return typeof value === "string" ? value : String(value);
 }
 
 interface AbciResult {
@@ -47,19 +31,29 @@ interface AbciResult {
 }
 
 export class XianRpcClient {
-  constructor(private rpcUrl: string) {}
+  private client: XianClient;
+
+  constructor(private rpcUrl: string) {
+    this.client = new XianClient({ rpcUrl });
+  }
 
   setRpcUrl(url: string): void {
     this.rpcUrl = url;
+    this.client = new XianClient({ rpcUrl: url });
   }
 
   private async abciQuery(path: string): Promise<unknown> {
-    const url = `${this.rpcUrl}/abci_query?path=%22${encodeURIComponent(path)}%22`;
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`RPC error: ${resp.status}`);
-    const data: AbciResult = await resp.json();
+    const url = new URL(`${this.rpcUrl.replace(/\/+$/, "")}/abci_query`);
+    url.searchParams.set("path", `"${path}"`);
+    const response = await fetch(url.toString(), { method: "POST" });
+    if (!response.ok) {
+      throw new Error(`RPC error: ${response.status}`);
+    }
+    const data: AbciResult = await response.json();
     const value = data?.result?.response?.value;
-    if (!value) return null;
+    if (!value) {
+      return null;
+    }
     try {
       return JSON.parse(base64ToUtf8(value));
     } catch {
@@ -71,25 +65,44 @@ export class XianRpcClient {
     address: string,
     limit: number = 50,
     offset: number = 0
-  ): Promise<Array<{
-    hash: string;
-    block_height: number;
-    sender: string;
-    nonce: number;
-    contract: string;
-    function: string;
-    success: boolean;
-    stamps_used: number;
-    created_at: string;
-    kwargs?: Record<string, unknown>;
-  }>> {
+  ): Promise<
+    Array<{
+      hash: string;
+      block_height: number;
+      sender: string;
+      nonce: number;
+      contract: string;
+      function: string;
+      success: boolean;
+      stamps_used: number;
+      created_at: string;
+      kwargs?: Record<string, unknown>;
+    }>
+  > {
     try {
       const result = await this.abciQuery(
         `/txs_by_sender/${address}/limit=${limit}/offset=${offset}`
       );
-      if (Array.isArray(result)) return result;
-      if (result && typeof result === "object" && "items" in (result as Record<string, unknown>)) {
-        return (result as { items: unknown[] }).items as any[];
+      if (Array.isArray(result)) {
+        return result;
+      }
+      if (
+        result &&
+        typeof result === "object" &&
+        "items" in (result as Record<string, unknown>)
+      ) {
+        return (result as { items: unknown[] }).items as Array<{
+          hash: string;
+          block_height: number;
+          sender: string;
+          nonce: number;
+          contract: string;
+          function: string;
+          success: boolean;
+          stamps_used: number;
+          created_at: string;
+          kwargs?: Record<string, unknown>;
+        }>;
       }
       return [];
     } catch {
@@ -98,10 +111,7 @@ export class XianRpcClient {
   }
 
   async getChainId(): Promise<string> {
-    const resp = await fetch(`${this.rpcUrl}/status`);
-    if (!resp.ok) throw new Error(`RPC error: ${resp.status}`);
-    const data = await resp.json();
-    return data?.result?.node_info?.network ?? "unknown";
+    return this.client.getChainId();
   }
 
   async getTokenMetadata(contract: string): Promise<{
@@ -109,18 +119,11 @@ export class XianRpcClient {
     symbol: string | null;
     logoUrl: string | null;
   }> {
-    if (contract === "currency") {
-      return { name: "Xian", symbol: "XIAN", logoUrl: null };
-    }
-    const [name, symbol, logoUrl] = await Promise.all([
-      this.abciQuery(`/get/${contract}.metadata:token_name`),
-      this.abciQuery(`/get/${contract}.metadata:token_symbol`),
-      this.abciQuery(`/get/${contract}.metadata:token_logo_url`),
-    ]);
+    const metadata = await this.client.getTokenMetadata(contract);
     return {
-      name: typeof name === "string" ? name : null,
-      symbol: typeof symbol === "string" ? symbol : null,
-      logoUrl: typeof logoUrl === "string" ? logoUrl : null,
+      name: metadata.name,
+      symbol: metadata.symbol,
+      logoUrl: metadata.logoUrl
     };
   }
 
@@ -129,10 +132,10 @@ export class XianRpcClient {
     contract: string = "currency"
   ): Promise<string | null> {
     try {
-      const result = await this.abciQuery(
-        `/get/${contract}.balances:${address}`
-      );
-      if (result == null) return "0";
+      const result = await this.client.getBalance(address, { contract });
+      if (result == null) {
+        return "0";
+      }
       return String(result);
     } catch {
       return null;
@@ -152,40 +155,27 @@ export class XianRpcClient {
     return results;
   }
 
+  async getContractMethods(
+    contract: string
+  ): Promise<{ name: string; arguments: { name: string; type: string }[] }[]> {
+    return this.client.getContractMethods(contract);
+  }
+
   async estimateStamps(opts: {
     sender: string;
     contract: string;
     function: string;
     kwargs: Record<string, unknown>;
   }): Promise<{ estimated: number; suggested: number }> {
-    const payload = {
+    const result = await this.client.estimateStamps({
       sender: opts.sender,
       contract: opts.contract,
       function: opts.function,
-      kwargs: opts.kwargs,
-    };
-    const resp = await fetch(
-      `${this.rpcUrl}/abci_query?path=%22/simulate%22`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          method: "abci_query",
-          params: { path: "/simulate", data: bytesToHex(new TextEncoder().encode(JSON.stringify(payload))) },
-          id: 1,
-        }),
-      }
-    );
-    if (!resp.ok) throw new Error(`simulation failed: ${resp.status}`);
-    const data = await resp.json();
-    const value = data?.result?.response?.value;
-    if (!value) throw new Error("simulation returned no result");
-    const parsed = JSON.parse(base64ToUtf8(value));
-    const estimated = Number(parsed?.stamps_used ?? 0);
+      kwargs: opts.kwargs
+    });
     return {
-      estimated,
-      suggested: Math.ceil(estimated * 1.3),
+      estimated: result.estimated,
+      suggested: result.suggested
     };
   }
 
@@ -194,7 +184,7 @@ export class XianRpcClient {
     contract: string;
     function: string;
     kwargs: Record<string, unknown>;
-    stamps: number;
+    stamps: number | bigint;
   }): Promise<{
     submitted: boolean;
     accepted: boolean;
@@ -202,118 +192,57 @@ export class XianRpcClient {
     txHash?: string;
     message?: string;
   }> {
-    const sender = getPublicKey(opts.privateKey);
-    const chainId = await this.getChainId();
-
-    // Get nonce
-    const nonceResult = await this.abciQuery(`/get_next_nonce/${sender}`);
-    const nonce = Number(nonceResult ?? 0);
-
-    // Build transaction payload
-    const payload = {
-      chain_id: chainId,
+    const signer = new Ed25519Signer(opts.privateKey);
+    const tx = await this.client.buildTx({
+      sender: signer.address,
       contract: opts.contract,
       function: opts.function,
       kwargs: opts.kwargs,
-      nonce,
-      sender,
-      stamps_supplied: opts.stamps,
-    };
-
-    const payloadBytes = new TextEncoder().encode(
-      JSON.stringify(payload, Object.keys(payload).sort())
-    );
-    const signature = sign(payloadBytes, opts.privateKey);
-
-    const tx = {
-      metadata: { signature },
-      payload,
-    };
-
-    // Broadcast
-    const txBytes = new TextEncoder().encode(JSON.stringify(tx));
-    const txB64 = btoa(String.fromCharCode(...txBytes));
-
-    const resp = await fetch(`${this.rpcUrl}/broadcast_tx_sync`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: "broadcast_tx_sync",
-        params: { tx: txB64 },
-        id: 1,
-      }),
+      stamps: opts.stamps
+    });
+    const signedTx = await this.client.signTx(tx, signer);
+    const submission = await this.client.broadcastTx(signedTx, {
+      mode: "checktx"
     });
 
-    if (!resp.ok) {
+    if (!submission.submitted) {
       return {
         submitted: false,
         accepted: false,
         finalized: false,
-        message: `HTTP ${resp.status}`,
+        txHash: submission.txHash,
+        message: normalizeMessage(submission.message)
       };
     }
 
-    const data = await resp.json();
-    const result = data?.result;
-    const code = result?.code ?? -1;
-    const hash = result?.hash;
-
-    if (code !== 0) {
+    if (!submission.accepted) {
       return {
         submitted: true,
         accepted: false,
         finalized: false,
-        txHash: hash,
-        message: result?.log ?? `code ${code}`,
+        txHash: submission.txHash,
+        message: normalizeMessage(submission.message)
       };
     }
 
-    // Wait for finalization
-    if (hash) {
+    let receipt: TransactionReceipt | null = null;
+    if (submission.txHash) {
       try {
-        const finalized = await this.waitForTx(hash);
-        return {
-          submitted: true,
-          accepted: true,
-          finalized,
-          txHash: hash,
-        };
+        receipt = await this.client.waitForTx(submission.txHash, {
+          timeoutMs: 10_000,
+          pollIntervalMs: 1_000
+        });
       } catch {
-        return {
-          submitted: true,
-          accepted: true,
-          finalized: false,
-          txHash: hash,
-        };
+        receipt = null;
       }
     }
 
     return {
       submitted: true,
       accepted: true,
-      finalized: false,
-      txHash: hash,
+      finalized: receipt?.success ?? false,
+      txHash: submission.txHash,
+      message: receipt && !receipt.success ? String(receipt.message ?? "Transaction failed") : undefined
     };
-  }
-
-  private async waitForTx(
-    hash: string,
-    timeoutMs: number = 10000
-  ): Promise<boolean> {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      try {
-        const resp = await fetch(`${this.rpcUrl}/tx?hash=0x${hash}`);
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data?.result?.tx_result) return true;
-        }
-      } catch {
-        // retry
-      }
-      await new Promise((r) => setTimeout(r, 1000));
-    }
-    return false;
   }
 }
