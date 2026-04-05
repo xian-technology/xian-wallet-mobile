@@ -1,0 +1,31 @@
+import { describe, expect, it } from "@jest/globals";
+
+import {
+  parseAmountInput,
+  parseIntegerInput,
+  parsePositiveIntegerInput,
+  parseTypedInput
+} from "../runtime-input";
+
+describe("runtime-input", () => {
+  it("parses large integers as bigint", () => {
+    expect(parseIntegerInput("9007199254740993")).toBe(9007199254740993n);
+    expect(parsePositiveIntegerInput("42")).toBe(42);
+    expect(parsePositiveIntegerInput("0")).toBeNull();
+  });
+
+  it("parses amounts without forcing oversized integers through Number", () => {
+    expect(parseAmountInput("12.5")).toBe(12.5);
+    expect(parseAmountInput("9007199254740993")).toBe(9007199254740993n);
+    expect(parseAmountInput("-1")).toBeNull();
+    expect(parseAmountInput("nope")).toBeNull();
+  });
+
+  it("parses typed contract inputs conservatively", () => {
+    expect(parseTypedInput("9007199254740993", "int")).toBe(9007199254740993n);
+    expect(parseTypedInput("true", "bool")).toBe(true);
+    expect(parseTypedInput("{\"mode\":\"fast\"}", "dict")).toEqual({ mode: "fast" });
+    expect(parseTypedInput("[1,2,3]", "list")).toEqual([1, 2, 3]);
+    expect(parseTypedInput("hello", "str")).toBe("hello");
+  });
+});

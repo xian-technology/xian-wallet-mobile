@@ -16,6 +16,7 @@ export interface StoredWalletState {
   publicKey: string;
   encryptedPrivateKey: string;
   encryptedMnemonic?: string;
+  walletEncryptionSalt: string;
   seedSource: "privateKey" | "mnemonic";
   mnemonicWordCount?: number;
   accounts?: Array<{
@@ -52,7 +53,7 @@ export interface StoredWalletState {
 export interface StoredUnlockedSession {
   privateKey: string;
   mnemonic?: string;
-  password?: string;
+  sessionKey: string;
   expiresAt: number;
 }
 

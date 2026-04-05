@@ -123,9 +123,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           publicKey: a.publicKey,
           name: a.name,
         }))
-      : walletState
-        ? [{ index: 0, publicKey: walletState.publicKey, name: "Account 1" }]
-        : [];
+      : [];
 
     setState((prev) => ({
       ...prev,
