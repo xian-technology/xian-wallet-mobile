@@ -68,28 +68,32 @@ export function SetupScreen() {
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scroll}>
-          <Text style={styles.heading}>Recovery Seed</Text>
-          <Text style={styles.sub}>
-            Write this down and store it safely. You will need it to recover
-            your wallet.
-          </Text>
-          <Card>
-            <TouchableOpacity
+          <View style={styles.hero}>
+            <Text style={styles.heading}>Recovery Seed</Text>
+            <Text style={styles.sub}>
+              Write this down and store it safely. You will need it to recover
+              your wallet.
+            </Text>
+          </View>
+          <View style={styles.form} testID="setup-form">
+            <Card>
+              <TouchableOpacity
+                onPress={async () => {
+                  lightTap();
+                  await Clipboard.setStringAsync(generatedMnemonic);
+                }}
+              >
+                <Text style={styles.seedText}>{generatedMnemonic}</Text>
+              </TouchableOpacity>
+            </Card>
+            <Button
+              title="I've saved my seed"
               onPress={async () => {
-                lightTap();
-                await Clipboard.setStringAsync(generatedMnemonic);
+                setGeneratedMnemonic(null);
+                await refresh();
               }}
-            >
-              <Text style={styles.seedText}>{generatedMnemonic}</Text>
-            </TouchableOpacity>
-          </Card>
-          <Button
-            title="I've saved my seed"
-            onPress={async () => {
-              setGeneratedMnemonic(null);
-              await refresh();
-            }}
-          />
+            />
+          </View>
         </ScrollView>
       </View>
     );
@@ -101,81 +105,85 @@ export function SetupScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Image source={require("../../assets/xian-logo.png")} style={styles.logo} />
-        <Text style={styles.heading}>Xian Wallet</Text>
-        <Text style={styles.sub}>Self-custody for Xian. Keys encrypted locally.</Text>
-
-        <View style={styles.tabs}>
-          {(["create", "seed", "key"] as const).map((m) => (
-            <TouchableOpacity
-              key={m}
-              style={[styles.tab, mode === m && styles.tabActive]}
-              onPress={() => { setMode(m); setError(null); }}
-            >
-              <Text style={[styles.tabText, mode === m && styles.tabTextActive]}>
-                {m === "create" ? "Create" : m === "seed" ? "Seed" : "Key"}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        <View style={styles.hero}>
+          <Image source={require("../../assets/xian-logo.png")} style={styles.logo} />
+          <Text style={styles.heading}>Xian Wallet</Text>
+          <Text style={styles.sub}>Self-custody for Xian. Keys encrypted locally.</Text>
         </View>
 
-        <Card>
-          <Input
-            label="Password"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Wallet password"
-          />
-          {mode === "create" && (
-            <Input
-              label="Confirm password"
-              secureTextEntry
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              placeholder="Confirm password"
-            />
-          )}
-          {mode === "seed" && (
-            <Input
-              label="Recovery seed"
-              value={mnemonic}
-              onChangeText={setMnemonic}
-              placeholder="Enter your 12 or 24 word seed phrase"
-              multiline
-              numberOfLines={3}
-              style={{ minHeight: 80, textAlignVertical: "top" }}
-            />
-          )}
-          {mode === "key" && (
-            <Input
-              label="Private key"
-              value={privateKey}
-              onChangeText={setPrivateKey}
-              placeholder="64-character hex key"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          )}
-        </Card>
-
-        {error && (
-          <View style={styles.errorBanner}>
-            <Text style={styles.errorText}>{error}</Text>
+        <View style={styles.form} testID="setup-form">
+          <View style={styles.tabs}>
+            {(["create", "seed", "key"] as const).map((m) => (
+              <TouchableOpacity
+                key={m}
+                style={[styles.tab, mode === m && styles.tabActive]}
+                onPress={() => { setMode(m); setError(null); }}
+              >
+                <Text style={[styles.tabText, mode === m && styles.tabTextActive]}>
+                  {m === "create" ? "Create" : m === "seed" ? "Seed" : "Key"}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
-        )}
 
-        <Button
-          title={
-            mode === "create"
-              ? "Create Wallet"
-              : mode === "seed"
-                ? "Import from Seed"
-                : "Import from Key"
-          }
-          onPress={handleCreate}
-          loading={loading}
-        />
+          <Card>
+            <Input
+              label="Password"
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Wallet password"
+            />
+            {mode === "create" && (
+              <Input
+                label="Confirm password"
+                secureTextEntry
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                placeholder="Confirm password"
+              />
+            )}
+            {mode === "seed" && (
+              <Input
+                label="Recovery seed"
+                value={mnemonic}
+                onChangeText={setMnemonic}
+                placeholder="Enter your 12 or 24 word seed phrase"
+                multiline
+                numberOfLines={3}
+                style={{ minHeight: 80, textAlignVertical: "top" }}
+              />
+            )}
+            {mode === "key" && (
+              <Input
+                label="Private key"
+                value={privateKey}
+                onChangeText={setPrivateKey}
+                placeholder="64-character hex key"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            )}
+          </Card>
+
+          {error && (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          )}
+
+          <Button
+            title={
+              mode === "create"
+                ? "Create Wallet"
+                : mode === "seed"
+                  ? "Import from Seed"
+                  : "Import from Key"
+            }
+            onPress={handleCreate}
+            loading={loading}
+          />
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -187,10 +195,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg0,
   },
   scroll: {
+    flexGrow: 1,
     padding: 24,
-    paddingTop: 60,
+    paddingVertical: 32,
     gap: 20,
+    justifyContent: "center" as const,
+  },
+  hero: {
     alignItems: "center" as const,
+    gap: 12,
+  },
+  form: {
+    width: "100%" as const,
+    maxWidth: 520,
+    alignSelf: "center" as const,
+    gap: 16,
   },
   logo: {
     width: 64,

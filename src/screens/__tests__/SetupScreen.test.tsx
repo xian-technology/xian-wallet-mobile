@@ -25,6 +25,16 @@ describe("SetupScreen", () => {
     });
   });
 
+  it("keeps the wallet form full width within the screen padding", () => {
+    const screen = render(<SetupScreen />);
+
+    expect(screen.getByTestId("setup-form")).toHaveStyle({
+      width: "100%",
+      maxWidth: 520,
+      alignSelf: "center",
+    });
+  });
+
   it("shows the generated seed and lets the user copy it", async () => {
     const mnemonic = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu";
     mockCreateWallet.mockImplementation(async () => ({ mnemonic }));
