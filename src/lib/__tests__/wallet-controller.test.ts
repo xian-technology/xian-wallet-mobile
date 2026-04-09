@@ -4,6 +4,14 @@ import type { StoredUnlockedSession, StoredWalletState } from "../storage";
 
 const VALID_PRIVATE_KEY = "11".repeat(32);
 const VALID_MNEMONIC = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const SHIELDED_STATE_SNAPSHOT = JSON.stringify({
+  asset_id: "con_private",
+  owner_secret: "0x" + "22".repeat(32),
+  viewing_private_key: "33".repeat(32),
+  notes: [],
+  commitments: [],
+  last_scanned_index: 0,
+});
 
 let mockStoredState: StoredWalletState | null = null;
 let mockStoredSession: StoredUnlockedSession | null = null;
@@ -199,5 +207,62 @@ describe("wallet-controller", () => {
     await controller.lock();
 
     await expect(controller.unlock("wrong-password")).rejects.toThrow();
+  });
+
+  it("stores shielded snapshots, includes them in wallet backups, and restores them on import", async () => {
+    const controller = createWalletController();
+
+    await controller.createWallet({
+      password: "secret123",
+      privateKey: VALID_PRIVATE_KEY
+    });
+
+    await controller.saveShieldedWalletSnapshot(
+      SHIELDED_STATE_SNAPSHOT,
+      "Treasury shielded"
+    );
+    expect(mockStoredState?.shieldedWalletSnapshots).toEqual([
+      expect.objectContaining({
+        label: "Treasury shielded",
+        assetId: "con_private",
+        noteCount: 0,
+        commitmentCount: 0
+      })
+    ]);
+
+    const backup = await controller.exportWallet("secret123");
+    expect(backup.shieldedStateSnapshots).toEqual([
+      {
+        label: "Treasury shielded",
+        stateSnapshot: JSON.stringify(JSON.parse(SHIELDED_STATE_SNAPSHOT))
+      }
+    ]);
+
+    mockStoredState = null;
+    mockStoredSession = null;
+
+    await controller.importWalletBackup(backup, "restored123");
+
+    expect(mockStoredState?.shieldedWalletSnapshots).toEqual([
+      expect.objectContaining({
+        label: "Treasury shielded",
+        assetId: "con_private"
+      })
+    ]);
+
+    const snapshotId = mockStoredState?.shieldedWalletSnapshots?.[0]?.id;
+    expect(snapshotId).toEqual(expect.any(String));
+
+    const exportedSnapshot = await controller.exportShieldedWalletSnapshot(
+      snapshotId as string,
+      "restored123"
+    );
+    expect(exportedSnapshot).toEqual({
+      label: "Treasury shielded",
+      stateSnapshot: JSON.stringify(JSON.parse(SHIELDED_STATE_SNAPSHOT))
+    });
+
+    await controller.removeShieldedWalletSnapshot(snapshotId as string);
+    expect(mockStoredState?.shieldedWalletSnapshots).toEqual([]);
   });
 });

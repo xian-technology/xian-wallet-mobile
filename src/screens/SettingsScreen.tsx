@@ -22,6 +22,14 @@ import { useWallet } from "../lib/wallet-context";
 import { saveWalletState, loadWalletState } from "../lib/storage";
 import { lightTap } from "../lib/haptics";
 
+function formatJsonText(value: string): string {
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
+}
+
 export function SettingsScreen({ navigation }: { navigation: any }) {
   const { state, refresh, controller, showToast, setContacts, prefs, updatePrefs } = useWallet();
   const [secretPassword, setSecretPassword] = useState("");
@@ -205,17 +213,85 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
           try {
             const backup = JSON.parse(json);
             if (!backup?.version || !backup?.type) { showToast("Invalid backup.", "danger"); return; }
-            await controller.removeWallet();
-            // Re-create from backup
-            const opts: Parameters<typeof controller.createWallet>[0] = { password: backupPassword };
-            if (backup.type === "mnemonic" && backup.mnemonic) opts.mnemonic = backup.mnemonic;
-            else if (backup.privateKey) opts.privateKey = backup.privateKey;
-            await controller.createWallet(opts);
+            await controller.importWalletBackup(backup, backupPassword);
             showToast("Wallet imported.", "success");
             await refresh();
           } catch (e) { showToast(e instanceof Error ? e.message : "Import failed", "danger"); }
         })
       : showToast("Import: paste your backup JSON in the export field on the source device.", "info");
+  };
+
+  const handleImportShieldedSnapshot = async () => {
+    if (!controller) return;
+    Alert.prompt
+      ? Alert.prompt(
+          "Import Shielded Snapshot",
+          "Paste ShieldedWallet.to_json() output:",
+          async (json) => {
+            if (!json) return;
+            try {
+              await controller.saveShieldedWalletSnapshot(json);
+              showToast("Shielded snapshot stored.", "success");
+              await refresh();
+            } catch (e) {
+              showToast(
+                e instanceof Error ? e.message : "Shielded snapshot import failed",
+                "danger"
+              );
+            }
+          }
+        )
+      : showToast("Shielded snapshot import requires text input support on this device.", "info");
+  };
+
+  const handleExportShieldedSnapshot = async (snapshotId: string) => {
+    if (!controller || !backupPassword) {
+      showToast("Enter your backup password first.", "warning");
+      return;
+    }
+    try {
+      const payload = await controller.exportShieldedWalletSnapshot(
+        snapshotId,
+        backupPassword
+      );
+      await Share.share({
+        message: formatJsonText(payload.stateSnapshot),
+        title: `${payload.label} Shielded Snapshot`,
+      });
+      showToast("Shielded snapshot exported.", "success");
+    } catch (e) {
+      showToast(
+        e instanceof Error ? e.message : "Shielded snapshot export failed",
+        "danger"
+      );
+    }
+  };
+
+  const handleRemoveShieldedSnapshot = (snapshotId: string) => {
+    Alert.alert(
+      "Remove Shielded Snapshot",
+      "This removes the locally stored encrypted state_snapshot record from the wallet.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            if (!controller) return;
+            try {
+              await controller.removeShieldedWalletSnapshot(snapshotId);
+              showToast("Shielded snapshot removed.", "info");
+              await refresh();
+            } catch (e) {
+              showToast(
+                e instanceof Error ? e.message : "Shielded snapshot removal failed",
+                "danger"
+              );
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleAddContact = async () => {
@@ -438,6 +514,51 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
             <Button title="Export" variant="secondary" onPress={handleExport} style={{ flex: 1 }} />
             <Button title="Import" variant="secondary" onPress={handleImport} style={{ flex: 1 }} />
           </View>
+          <Text style={styles.backupHint}>
+            Full wallet backups now include any stored shielded state_snapshot records.
+          </Text>
+        </Card>
+
+        <Card
+          title="Shielded Snapshots"
+          subtitle="Encrypted xian-zk state_snapshot backups stored with this wallet."
+        >
+          {state.shieldedWalletSnapshots.length === 0 ? (
+            <Text style={styles.emptyText}>No shielded snapshots stored yet.</Text>
+          ) : (
+            state.shieldedWalletSnapshots.map((snapshot) => (
+              <View key={snapshot.id} style={styles.snapshotRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.accountName}>{snapshot.label}</Text>
+                  <Text style={styles.accountAddr} numberOfLines={1}>
+                    {snapshot.assetId}
+                  </Text>
+                  <Text style={styles.snapshotMeta}>
+                    {snapshot.noteCount} notes · {snapshot.commitmentCount} commitments · scanned {snapshot.lastScannedIndex}
+                  </Text>
+                </View>
+                <View style={styles.snapshotActions}>
+                  <TouchableOpacity
+                    style={styles.actionPill}
+                    onPress={() => handleExportShieldedSnapshot(snapshot.id)}
+                  >
+                    <Text style={styles.actionPillText}>Share</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionPill}
+                    onPress={() => handleRemoveShieldedSnapshot(snapshot.id)}
+                  >
+                    <Feather name="trash-2" size={14} color={colors.danger} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          )}
+          <Button
+            title="Import Shielded Snapshot"
+            variant="secondary"
+            onPress={handleImportShieldedSnapshot}
+          />
         </Card>
 
         {/* Actions */}
@@ -503,6 +624,16 @@ const styles = StyleSheet.create({
   activePill: { fontSize: 11, fontWeight: "600", color: colors.accent },
   accountAddr: { fontFamily: "monospace", fontSize: 11, color: colors.muted, marginTop: 2 },
   accountActions: { flexDirection: "row", gap: 12 },
+  snapshotActions: { flexDirection: "row", gap: 12 },
+  snapshotRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  snapshotMeta: { fontSize: 11, color: colors.muted, marginTop: 4 },
   loadingOverlay: { alignItems: "center" as const, paddingVertical: 8 },
   actionPill: {
     paddingVertical: 4,
@@ -514,6 +645,8 @@ const styles = StyleSheet.create({
   actionPillTextMuted: { fontSize: 14 },
   linkText: { fontSize: 12, color: colors.accent, fontWeight: "600" },
   mutedLink: { fontSize: 12, color: colors.muted, fontWeight: "600" },
+  backupHint: { fontSize: 12, color: colors.muted, marginTop: 8 },
+  emptyText: { fontSize: 13, color: colors.muted },
   secretBox: {
     backgroundColor: colors.bg0,
     padding: 12,

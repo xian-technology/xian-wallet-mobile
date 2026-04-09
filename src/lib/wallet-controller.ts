@@ -10,6 +10,7 @@ import { Ed25519Signer, isValidEd25519Key } from "@xian-tech/client";
 
 import {
   type StoredWalletState,
+  type StoredShieldedWalletSnapshot,
   type StoredUnlockedSession,
   createMobileStore
 } from "./storage";
@@ -28,6 +29,43 @@ const ITERATIONS = 10_000;
 const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
 
 const store = createMobileStore();
+
+interface WalletBackup {
+  version: 1;
+  type: "privateKey" | "mnemonic";
+  mnemonic?: string;
+  privateKey?: string;
+  accounts?: Array<{ index: number; name: string }>;
+  activeAccountIndex?: number;
+  activeNetworkId?: string;
+  networkPresets?: Array<{
+    id: string;
+    name: string;
+    chainId?: string;
+    rpcUrl: string;
+    dashboardUrl?: string;
+    builtin?: boolean;
+  }>;
+  watchedAssets?: Array<{
+    contract: string;
+    name?: string;
+    symbol?: string;
+    icon?: string;
+    decimals?: number;
+  }>;
+  shieldedStateSnapshots?: Array<{
+    label: string;
+    stateSnapshot: string;
+  }>;
+}
+
+interface ParsedShieldedWalletSnapshot {
+  normalizedSnapshot: string;
+  assetId: string;
+  noteCount: number;
+  commitmentCount: number;
+  lastScannedIndex: number;
+}
 
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes)
@@ -64,6 +102,72 @@ function requirePrivateKey(value: string | undefined): string {
     throw new Error("missing private key after decryption");
   }
   return value;
+}
+
+function trimOptionalString(value?: string): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function parseShieldedWalletSnapshot(
+  stateSnapshot: string
+): ParsedShieldedWalletSnapshot {
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(stateSnapshot);
+  } catch {
+    throw new Error("shielded wallet snapshot must be valid JSON");
+  }
+
+  if (typeof decoded !== "object" || decoded == null || Array.isArray(decoded)) {
+    throw new Error("shielded wallet snapshot must be a JSON object");
+  }
+
+  const record = decoded as Record<string, unknown>;
+  const assetId =
+    typeof record.asset_id === "string" ? trimOptionalString(record.asset_id) : undefined;
+  if (!assetId) {
+    throw new Error("shielded wallet snapshot must contain asset_id");
+  }
+  if (typeof record.owner_secret !== "string" || record.owner_secret.length === 0) {
+    throw new Error("shielded wallet snapshot must contain owner_secret");
+  }
+  if (
+    typeof record.viewing_private_key !== "string" ||
+    record.viewing_private_key.length === 0
+  ) {
+    throw new Error(
+      "shielded wallet snapshot must contain viewing_private_key"
+    );
+  }
+
+  const notes = record.notes ?? [];
+  if (!Array.isArray(notes)) {
+    throw new Error("shielded wallet snapshot notes must be an array");
+  }
+
+  const commitments = record.commitments ?? [];
+  if (!Array.isArray(commitments) || commitments.some((value) => typeof value !== "string")) {
+    throw new Error(
+      "shielded wallet snapshot commitments must be an array of strings"
+    );
+  }
+
+  const lastScannedValue = record.last_scanned_index;
+  const lastScannedIndex =
+    typeof lastScannedValue === "number" &&
+    Number.isInteger(lastScannedValue) &&
+    lastScannedValue >= 0
+      ? lastScannedValue
+      : commitments.length;
+
+  return {
+    normalizedSnapshot: JSON.stringify(record),
+    assetId,
+    noteCount: notes.length,
+    commitmentCount: commitments.length,
+    lastScannedIndex,
+  };
 }
 
 function encryptWithKey(plaintext: string, key: Uint8Array): string {
@@ -276,6 +380,66 @@ export function createWalletController() {
     );
   }
 
+  function storedShieldedWalletSnapshots(
+    state: StoredWalletState
+  ): StoredShieldedWalletSnapshot[] {
+    return [...(state.shieldedWalletSnapshots ?? [])].sort((left, right) =>
+      right.updatedAt.localeCompare(left.updatedAt)
+    );
+  }
+
+  async function exportShieldedWalletSnapshots(
+    state: StoredWalletState,
+    sessionKey: string
+  ): Promise<NonNullable<WalletBackup["shieldedStateSnapshots"]>> {
+    const exported: NonNullable<WalletBackup["shieldedStateSnapshots"]> = [];
+    for (const record of storedShieldedWalletSnapshots(state)) {
+      exported.push({
+        label: record.label,
+        stateSnapshot: decryptWithKey(
+          record.encryptedStateSnapshot,
+          sessionKeyBytes(sessionKey)
+        ),
+      });
+    }
+    return exported;
+  }
+
+  async function importShieldedWalletSnapshots(
+    snapshots: WalletBackup["shieldedStateSnapshots"] | undefined,
+    sessionKey: string,
+    nowIso: string
+  ): Promise<StoredShieldedWalletSnapshot[]> {
+    const imported: StoredShieldedWalletSnapshot[] = [];
+    for (const item of snapshots ?? []) {
+      if (
+        typeof item !== "object" ||
+        item == null ||
+        typeof item.label !== "string" ||
+        typeof item.stateSnapshot !== "string"
+      ) {
+        throw new Error(
+          "backup shieldedStateSnapshots must contain label and stateSnapshot"
+        );
+      }
+      const parsed = parseShieldedWalletSnapshot(item.stateSnapshot);
+      imported.push({
+        id: globalThis.crypto.randomUUID(),
+        label: trimOptionalString(item.label) ?? parsed.assetId,
+        assetId: parsed.assetId,
+        encryptedStateSnapshot: encryptWithKey(
+          parsed.normalizedSnapshot,
+          sessionKeyBytes(sessionKey)
+        ),
+        noteCount: parsed.noteCount,
+        commitmentCount: parsed.commitmentCount,
+        lastScannedIndex: parsed.lastScannedIndex,
+        updatedAt: nowIso,
+      });
+    }
+    return imported;
+  }
+
   return {
     async createWallet(opts: {
       password: string;
@@ -368,6 +532,7 @@ export function createWalletController() {
         activeNetworkId: activePreset.id,
         networkPresets,
         watchedAssets: [{ contract: "currency", name: "Xian", symbol: "XIAN", decimals: 8 }],
+        shieldedWalletSnapshots: [],
         connectedOrigins: [],
         createdAt: new Date().toISOString()
       };
@@ -543,13 +708,14 @@ export function createWalletController() {
       return decryptPrivateKeyForState(state, password);
     },
 
-    async exportWallet(password: string): Promise<Record<string, unknown>> {
+    async exportWallet(password: string): Promise<WalletBackup> {
       const state = await store.loadState();
       if (!state) {
         throw new Error("no wallet");
       }
+      const sessionKey = await sessionKeyForState(state, password);
 
-      const backup: Record<string, unknown> = {
+      const backup: WalletBackup = {
         version: 1,
         type: state.seedSource,
         accounts: (state.accounts ?? []).map((account) => ({
@@ -563,12 +729,218 @@ export function createWalletController() {
       };
 
       if (state.encryptedMnemonic) {
-        backup.mnemonic = await decryptMnemonicForState(state, password);
+        backup.mnemonic = await decryptMnemonicWithSessionKey(
+          state.encryptedMnemonic,
+          sessionKey
+        );
       } else {
-        backup.privateKey = await decryptPrivateKeyForState(state, password);
+        backup.privateKey = await decryptPrivateKeyWithSessionKey(
+          state.encryptedPrivateKey,
+          sessionKey
+        );
+      }
+
+      const shieldedStateSnapshots = await exportShieldedWalletSnapshots(
+        state,
+        sessionKey
+      );
+      if (shieldedStateSnapshots.length > 0) {
+        backup.shieldedStateSnapshots = shieldedStateSnapshots;
       }
 
       return backup;
+    },
+
+    async importWalletBackup(backup: WalletBackup, password: string): Promise<void> {
+      let mnemonic: string | undefined;
+      let primaryKey: string;
+
+      if (backup.type === "mnemonic" && backup.mnemonic) {
+        mnemonic = normalizeMnemonic(backup.mnemonic) ?? undefined;
+        if (!mnemonic) {
+          throw new Error("invalid BIP39 mnemonic");
+        }
+        primaryKey = await derivePrivateKeyFromMnemonic(mnemonic, 0);
+      } else if (backup.privateKey) {
+        primaryKey = normalizePrivateKeyInput(backup.privateKey) as string;
+      } else {
+        throw new Error("backup must contain a mnemonic or private key");
+      }
+
+      const { walletEncryptionSalt, sessionKey } = await createWalletSessionKey(
+        password
+      );
+      const nowIso = new Date().toISOString();
+      const encryptedMnemonic = mnemonic
+        ? await encryptMnemonicWithSessionKey(mnemonic, sessionKey)
+        : undefined;
+
+      const accountEntries = backup.accounts;
+      if (!accountEntries || accountEntries.length === 0) {
+        throw new Error("backup must contain at least one account");
+      }
+
+      const accounts: StoredWalletState["accounts"] = [];
+      const privateKeysByIndex = new Map<number, string>();
+      for (const entry of accountEntries) {
+        const key = mnemonic
+          ? await derivePrivateKeyFromMnemonic(mnemonic, entry.index)
+          : primaryKey;
+        privateKeysByIndex.set(entry.index, key);
+        accounts.push({
+          index: entry.index,
+          publicKey: getPublicKey(key),
+          encryptedPrivateKey: await encryptPrivateKeyWithSessionKey(
+            key,
+            sessionKey
+          ),
+          name: entry.name,
+        });
+      }
+
+      const activeAccount =
+        accounts.find((account) => account.index === backup.activeAccountIndex) ??
+        accounts[0];
+      if (!activeAccount) {
+        throw new Error("backup must contain at least one account");
+      }
+
+      const activePrivateKey =
+        privateKeysByIndex.get(activeAccount.index) ?? primaryKey;
+
+      const localPreset = {
+        id: "xian-local",
+        name: "Local node",
+        rpcUrl: "http://127.0.0.1:26657",
+        dashboardUrl: "http://127.0.0.1:8080",
+        builtin: true,
+      };
+      const networkPresets: StoredWalletState["networkPresets"] = [localPreset];
+      for (const preset of backup.networkPresets ?? []) {
+        if (!networkPresets.some((existing) => existing.id === preset.id)) {
+          networkPresets.push(preset);
+        }
+      }
+      const activePreset =
+        networkPresets.find((preset) => preset.id === backup.activeNetworkId) ??
+        networkPresets[0];
+      if (!activePreset) {
+        throw new Error("backup must contain at least one network preset");
+      }
+
+      const watchedAssets =
+        backup.watchedAssets && backup.watchedAssets.length > 0
+          ? backup.watchedAssets
+          : [{ contract: "currency", name: "Xian", symbol: "XIAN", decimals: 8 }];
+      const shieldedWalletSnapshots = await importShieldedWalletSnapshots(
+        backup.shieldedStateSnapshots,
+        sessionKey,
+        nowIso
+      );
+
+      await clearSession();
+      await store.saveState({
+        publicKey: activeAccount.publicKey,
+        encryptedPrivateKey: activeAccount.encryptedPrivateKey,
+        encryptedMnemonic,
+        walletEncryptionSalt,
+        seedSource: backup.type,
+        mnemonicWordCount: mnemonic ? mnemonic.split(" ").length : undefined,
+        accounts,
+        activeAccountIndex: activeAccount.index,
+        rpcUrl: activePreset.rpcUrl,
+        dashboardUrl: activePreset.dashboardUrl,
+        activeNetworkId: activePreset.id,
+        networkPresets,
+        watchedAssets,
+        shieldedWalletSnapshots,
+        connectedOrigins: [],
+        createdAt: nowIso,
+      });
+
+      unlockedPrivateKey = activePrivateKey;
+      unlockedMnemonic = mnemonic ?? null;
+      unlockedSessionKey = sessionKey;
+      await persistSession(activePrivateKey);
+    },
+
+    async saveShieldedWalletSnapshot(
+      stateSnapshot: string,
+      label?: string
+    ): Promise<void> {
+      if (!(await restoreSession()) || !unlockedSessionKey) {
+        throw new Error("wallet must be unlocked");
+      }
+      const state = await store.loadState();
+      if (!state) {
+        throw new Error("no wallet");
+      }
+      const parsed = parseShieldedWalletSnapshot(stateSnapshot);
+      const resolvedLabel = trimOptionalString(label) ?? parsed.assetId;
+      const existing = storedShieldedWalletSnapshots(state).find(
+        (record) =>
+          record.assetId === parsed.assetId && record.label === resolvedLabel
+      );
+      const nextRecord: StoredShieldedWalletSnapshot = {
+        id: existing?.id ?? globalThis.crypto.randomUUID(),
+        label: resolvedLabel,
+        assetId: parsed.assetId,
+        encryptedStateSnapshot: encryptWithKey(
+          parsed.normalizedSnapshot,
+          sessionKeyBytes(unlockedSessionKey)
+        ),
+        noteCount: parsed.noteCount,
+        commitmentCount: parsed.commitmentCount,
+        lastScannedIndex: parsed.lastScannedIndex,
+        updatedAt: new Date().toISOString(),
+      };
+
+      state.shieldedWalletSnapshots = [
+        nextRecord,
+        ...storedShieldedWalletSnapshots(state).filter(
+          (record) => record.id !== nextRecord.id
+        ),
+      ];
+      await store.saveState(state);
+    },
+
+    async exportShieldedWalletSnapshot(
+      snapshotId: string,
+      password: string
+    ): Promise<{ label: string; stateSnapshot: string }> {
+      const state = await store.loadState();
+      if (!state) {
+        throw new Error("no wallet");
+      }
+      const record = storedShieldedWalletSnapshots(state).find(
+        (item) => item.id === snapshotId
+      );
+      if (!record) {
+        throw new Error("shielded wallet snapshot not found");
+      }
+      const sessionKey = await sessionKeyForState(state, password);
+      return {
+        label: record.label,
+        stateSnapshot: decryptWithKey(
+          record.encryptedStateSnapshot,
+          sessionKeyBytes(sessionKey)
+        ),
+      };
+    },
+
+    async removeShieldedWalletSnapshot(snapshotId: string): Promise<void> {
+      const state = await store.loadState();
+      if (!state) {
+        throw new Error("no wallet");
+      }
+      const nextSnapshots = storedShieldedWalletSnapshots(state).filter(
+        (record) => record.id !== snapshotId
+      );
+      if (nextSnapshots.length === storedShieldedWalletSnapshots(state).length) {
+        throw new Error("shielded wallet snapshot not found");
+      }
+      state.shieldedWalletSnapshots = nextSnapshots;
+      await store.saveState(state);
     },
 
     async removeWallet(): Promise<void> {

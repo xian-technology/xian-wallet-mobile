@@ -38,6 +38,7 @@ describe("SendScreen", () => {
         dashboardUrl: "http://127.0.0.1:8080"
       },
       rpc: {
+        getStampRate: jest.fn(async () => 20),
         estimateStamps: mockEstimateStamps,
         sendTransaction: mockSendTransaction
       },
@@ -97,7 +98,7 @@ describe("SendScreen", () => {
           to: "receiver",
           amount: 9007199254740993n
         },
-        stamps: 14_400
+        stamps: 12_000
       })
     );
     expect(mockShowToast).toHaveBeenCalledWith("Transaction finalized.", "success");

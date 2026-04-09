@@ -65,7 +65,11 @@ describe("SetupScreen", () => {
     await waitFor(() =>
       expect(mockCreateWallet).toHaveBeenCalledWith({
         password: "secret123",
-        privateKey: "11".repeat(32)
+        privateKey: "11".repeat(32),
+        networkName: "Local node",
+        chainId: undefined,
+        rpcUrl: "http://127.0.0.1:26657",
+        dashboardUrl: "http://127.0.0.1:8080",
       })
     );
   });
