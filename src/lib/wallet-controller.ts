@@ -281,6 +281,10 @@ export function createWalletController() {
       password: string;
       mnemonic?: string;
       privateKey?: string;
+      networkName?: string;
+      chainId?: string;
+      rpcUrl?: string;
+      dashboardUrl?: string;
     }): Promise<{ mnemonic?: string }> {
       let mnemonic: string | undefined;
       let privateKey: string;
@@ -317,6 +321,39 @@ export function createWalletController() {
         name: "Account 1"
       };
 
+      const DEFAULT_RPC_URL = "http://127.0.0.1:26657";
+      const DEFAULT_DASHBOARD_URL = "http://127.0.0.1:8080";
+
+      const setupRpcUrl = opts.rpcUrl?.trim() || DEFAULT_RPC_URL;
+      const setupDashboardUrl = opts.dashboardUrl?.trim() || DEFAULT_DASHBOARD_URL;
+
+      const localPreset = {
+        id: "xian-local",
+        name: "Local node",
+        rpcUrl: DEFAULT_RPC_URL,
+        dashboardUrl: DEFAULT_DASHBOARD_URL,
+        builtin: true
+      };
+
+      const useLocalPreset =
+        setupRpcUrl === localPreset.rpcUrl &&
+        setupDashboardUrl === (localPreset.dashboardUrl ?? "");
+
+      const customPreset = useLocalPreset
+        ? undefined
+        : {
+            id: `custom-${Date.now()}`,
+            name: opts.networkName?.trim() || "Custom network",
+            rpcUrl: setupRpcUrl,
+            dashboardUrl: setupDashboardUrl,
+            chainId: opts.chainId?.trim() || undefined,
+          };
+
+      const activePreset = customPreset ?? localPreset;
+      const networkPresets = customPreset
+        ? [localPreset, customPreset]
+        : [localPreset];
+
       const state: StoredWalletState = {
         publicKey,
         encryptedPrivateKey,
@@ -326,19 +363,11 @@ export function createWalletController() {
         mnemonicWordCount: mnemonic ? mnemonic.split(" ").length : undefined,
         accounts: [account],
         activeAccountIndex: 0,
-        rpcUrl: "http://127.0.0.1:26657",
-        dashboardUrl: "http://127.0.0.1:8080",
-        activeNetworkId: "xian-local",
-        networkPresets: [
-          {
-            id: "xian-local",
-            name: "Local node",
-            rpcUrl: "http://127.0.0.1:26657",
-            dashboardUrl: "http://127.0.0.1:8080",
-            builtin: true
-          }
-        ],
-        watchedAssets: [{ contract: "currency", name: "Xian", symbol: "XIAN" }],
+        rpcUrl: activePreset.rpcUrl,
+        dashboardUrl: activePreset.dashboardUrl,
+        activeNetworkId: activePreset.id,
+        networkPresets,
+        watchedAssets: [{ contract: "currency", name: "Xian", symbol: "XIAN", decimals: 8 }],
         connectedOrigins: [],
         createdAt: new Date().toISOString()
       };

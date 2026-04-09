@@ -31,11 +31,24 @@ export function ReceiveScreen() {
         />
       </View>
 
-      <View style={styles.addressBox}>
-        <Text style={styles.address} selectable>
-          {address}
-        </Text>
-      </View>
+      <TouchableOpacity style={styles.addressBox} onPress={handleCopy} activeOpacity={0.7}>
+        {[0, 1, 2, 3].map((row) => (
+          <View key={row} style={styles.addressRow}>
+            {[0, 1, 2, 3].map((col) => {
+              const i = row * 4 + col;
+              const chunk = address.slice(i * 4, i * 4 + 4);
+              return (
+                <Text
+                  key={col}
+                  style={[styles.addressChunk, i % 2 === 0 ? styles.chunkBright : styles.chunkDim]}
+                >
+                  {chunk}
+                </Text>
+              );
+            })}
+          </View>
+        ))}
+      </TouchableOpacity>
 
       <TouchableOpacity style={styles.copyBtn} onPress={handleCopy}>
         <Text style={styles.copyText}>
@@ -75,14 +88,24 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.line,
-    width: "100%",
+    gap: 6,
   },
-  address: {
+  addressRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 12,
+  },
+  addressChunk: {
     fontFamily: "monospace",
-    fontSize: 13,
+    fontSize: 15,
+    fontWeight: "600",
+    letterSpacing: 1,
+  },
+  chunkBright: {
     color: colors.fg,
-    textAlign: "center",
-    lineHeight: 22,
+  },
+  chunkDim: {
+    color: colors.muted,
   },
   copyBtn: {
     backgroundColor: colors.accentSoft,

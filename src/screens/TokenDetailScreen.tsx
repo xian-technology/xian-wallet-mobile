@@ -9,12 +9,20 @@ import { useWallet } from "../lib/wallet-context";
 import { loadWalletState, saveWalletState } from "../lib/storage";
 import { lightTap } from "../lib/haptics";
 
-function formatBalance(raw: string | null): string {
+function truncateToDecimals(n: number, d: number): number {
+  if (d === 0) return Math.floor(n);
+  const factor = 10 ** d;
+  return Math.floor(n * factor) / factor;
+}
+
+function formatBalance(raw: string | null, decimals?: number): string {
   if (raw == null) return "-";
   const n = Number(raw);
   if (Number.isNaN(n)) return "0";
-  if (n === Math.floor(n)) return n.toLocaleString();
-  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 8 });
+  const d = decimals ?? 8;
+  const truncated = truncateToDecimals(n, d);
+  if (d === 0) return truncated.toLocaleString();
+  return truncated.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: d });
 }
 
 export function TokenDetailScreen({ route, navigation }: { route: any; navigation: any }) {
@@ -67,7 +75,7 @@ export function TokenDetailScreen({ route, navigation }: { route: any; navigatio
         {/* Balance hero */}
         <View style={styles.hero}>
           <Text style={styles.heroBalance}>
-            {formatBalance(balance)}
+            {formatBalance(balance, asset.decimals)}
           </Text>
           <Text style={styles.heroSymbol}>{symbol}</Text>
         </View>

@@ -33,10 +33,46 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
   const [newContactAddr, setNewContactAddr] = useState("");
   const [showContacts, setShowContacts] = useState(false);
   const [backupPassword, setBackupPassword] = useState("");
+  const [editingNetwork, setEditingNetwork] = useState(false);
+  const [netName, setNetName] = useState("");
+  const [netRpcUrl, setNetRpcUrl] = useState("");
+  const [netDashboardUrl, setNetDashboardUrl] = useState("");
+  const [netChainId, setNetChainId] = useState("");
 
   const [accountLoading, setAccountLoading] = useState(false);
   const isMnemonic = state.seedSource === "mnemonic";
   const activeAccount = state.accounts.find((a) => a.index === state.activeAccountIndex);
+  const activePreset = state.networkPresets.find((p) => p.id === state.activeNetworkId);
+
+  const startEditNetwork = () => {
+    if (!activePreset) return;
+    setNetName(activePreset.name);
+    setNetRpcUrl(activePreset.rpcUrl);
+    setNetDashboardUrl(activePreset.dashboardUrl ?? "");
+    setNetChainId(activePreset.chainId ?? "");
+    setEditingNetwork(true);
+  };
+
+  const handleSaveNetwork = async () => {
+    if (!netName.trim() || !netRpcUrl.trim()) {
+      showToast("Name and RPC URL are required.", "warning");
+      return;
+    }
+    const ws = await loadWalletState();
+    if (!ws) return;
+    const preset = ws.networkPresets.find((p) => p.id === state.activeNetworkId);
+    if (!preset) return;
+    preset.name = netName.trim();
+    preset.rpcUrl = netRpcUrl.trim();
+    preset.dashboardUrl = netDashboardUrl.trim() || undefined;
+    preset.chainId = netChainId.trim() || undefined;
+    ws.rpcUrl = preset.rpcUrl;
+    ws.dashboardUrl = preset.dashboardUrl;
+    await saveWalletState(ws);
+    setEditingNetwork(false);
+    showToast("Network updated.", "success");
+    await refresh();
+  };
 
   const handleRevealSeed = async () => {
     if (!controller) return;
@@ -271,11 +307,32 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
 
         {/* Networks */}
         <Card title="Networks" subtitle={state.activeNetworkName ?? "Local node"}>
-          <Button
-            title="Manage Networks"
-            variant="secondary"
-            onPress={() => navigation.navigate("Networks")}
-          />
+          {editingNetwork ? (
+            <>
+              <Input label="Name" value={netName} onChangeText={setNetName} placeholder="e.g. Mainnet" />
+              <Input label="RPC URL" value={netRpcUrl} onChangeText={setNetRpcUrl} placeholder="http://..." autoCapitalize="none" autoCorrect={false} />
+              <Input label="Dashboard URL" value={netDashboardUrl} onChangeText={setNetDashboardUrl} placeholder="http://... (optional)" autoCapitalize="none" autoCorrect={false} />
+              <Input label="Chain ID" value={netChainId} onChangeText={setNetChainId} placeholder="Optional, e.g. xian-1" autoCapitalize="none" />
+              <View style={styles.btnRow}>
+                <Button title="Save" variant="secondary" onPress={handleSaveNetwork} style={{ flex: 1 }} />
+                <Button title="Cancel" variant="ghost" onPress={() => setEditingNetwork(false)} style={{ flex: 1 }} />
+              </View>
+            </>
+          ) : (
+            <>
+              {activePreset && (
+                <>
+                  <DetailRow label="RPC URL" value={activePreset.rpcUrl} />
+                  <DetailRow label="Dashboard" value={activePreset.dashboardUrl ?? "-"} />
+                  <DetailRow label="Chain ID" value={activePreset.chainId ?? "-"} />
+                </>
+              )}
+              <View style={styles.btnRow}>
+                <Button title="Edit" variant="secondary" onPress={startEditNetwork} style={{ flex: 1 }} />
+                <Button title="All Networks" variant="secondary" onPress={() => navigation.navigate("Networks")} style={{ flex: 1 }} />
+              </View>
+            </>
+          )}
         </Card>
 
         {/* Security */}
@@ -399,6 +456,15 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
   );
 }
 
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.detailRow}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.detailValue} numberOfLines={1} ellipsizeMode="middle">{value}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg0 },
   scroll: { padding: 16, gap: 16, paddingBottom: 40 },
@@ -473,4 +539,7 @@ const styles = StyleSheet.create({
   prefOptionActive: { backgroundColor: colors.bg1 },
   prefOptionText: { fontSize: 13, fontWeight: "600", color: colors.muted },
   prefOptionTextActive: { color: colors.fg },
+  detailRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 6 },
+  detailLabel: { fontSize: 13, color: colors.muted },
+  detailValue: { fontSize: 13, fontFamily: "monospace", color: colors.fg, maxWidth: "65%" },
 });

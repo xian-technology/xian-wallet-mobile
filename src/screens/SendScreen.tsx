@@ -64,7 +64,7 @@ export function SendScreen({ navigation, route }: { navigation: any; route: any 
       if (!session) throw new Error("Wallet is locked");
       const parsedAmount = parseAmountInput(amount);
       if (parsedAmount == null) throw new Error("Enter a valid amount");
-      const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: selectedToken, function: "transfer", kwargs: { to: to.trim(), amount: parsedAmount }, stamps: estimate?.suggested ?? 50000 });
+      const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: selectedToken, function: "transfer", kwargs: { to: to.trim(), amount: parsedAmount }, stamps: estimate?.estimated ?? 50000 });
       setResult(r); setStep("result");
       const ok = r.finalized || r.accepted;
       if (ok) { successTap(); showToast(r.finalized ? "Transaction finalized." : "Transaction accepted.", "success"); void refreshBalances(); }
@@ -149,8 +149,8 @@ export function SendScreen({ navigation, route }: { navigation: any; route: any 
           <Card title="Transaction Summary">
             <Row label="Token" value={tokenSymbol} />
             <Row label="To" value={truncHash(to.trim())} mono />
-            <Row label="Amount" value={`${amount.trim()} ${tokenSymbol}`} />
-            <Row label="Stamps" value={estimate ? `${estimate.suggested.toLocaleString()} (est. ${estimate.estimated.toLocaleString()})` : "-"} />
+            <Row label="Amount" value={`${String(parseAmountInput(amount) ?? amount.trim())} ${tokenSymbol}`} />
+            <Row label="Stamps" value={estimate ? estimate.estimated.toLocaleString() : "-"} />
           </Card>
         </ScrollView>
         <View style={styles.stickyBottom}>
@@ -224,7 +224,7 @@ export function SendScreen({ navigation, route }: { navigation: any; route: any 
                 <Text style={styles.maxText}>MAX</Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.available}>Available: {tokenBal} {tokenSymbol}</Text>
+            <Text style={styles.available}>Available: {(() => { const n = Number(tokenBal); const f = 10 ** 8; return (Math.floor(n * f) / f).toLocaleString(undefined, { maximumFractionDigits: 8 }); })()} {tokenSymbol}</Text>
           </View>
         </Card>
 

@@ -8,6 +8,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   Linking,
+  BackHandler,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
@@ -63,6 +64,13 @@ export function ActivityScreen({ navigation }: { navigation: any }) {
   useEffect(() => {
     fetchTxs().finally(() => setLoading(false));
   }, [fetchTxs]);
+
+  useEffect(() => {
+    if (!selectedTx) return;
+    const handler = () => { setSelectedTx(null); return true; };
+    const sub = BackHandler.addEventListener("hardwareBackPress", handler);
+    return () => sub.remove();
+  }, [selectedTx]);
 
   const handleRefresh = async () => {
     setRefreshing(true);

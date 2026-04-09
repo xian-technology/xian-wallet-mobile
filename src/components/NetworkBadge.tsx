@@ -5,18 +5,23 @@ import { useWallet } from "../lib/wallet-context";
 import { lightTap } from "../lib/haptics";
 
 export function NetworkBadge() {
-  const { state, refresh, refreshBalances, showToast } = useWallet();
+  const { state, rpc, refresh, refreshBalances, showToast } = useWallet();
   const [status, setStatus] = useState<"checking" | "online" | "offline">("checking");
 
   const checkStatus = useCallback(async () => {
     setStatus("checking");
     try {
-      const resp = await fetch(`${state.rpcUrl}/status`, { signal: AbortSignal.timeout(3000) });
-      setStatus(resp.ok ? "online" : "offline");
+      const chainId = await Promise.race([
+        rpc.getChainId(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("timeout")), 3000)
+        ),
+      ]);
+      setStatus(chainId ? "online" : "offline");
     } catch {
       setStatus("offline");
     }
-  }, [state.rpcUrl]);
+  }, [rpc]);
 
   useEffect(() => {
     checkStatus();

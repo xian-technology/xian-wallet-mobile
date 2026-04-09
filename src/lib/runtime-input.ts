@@ -29,7 +29,7 @@ export function parsePositiveIntegerInput(value: string): RuntimeNumeric | null 
 }
 
 export function parseAmountInput(value: string): RuntimeNumeric | null {
-  const trimmed = value.trim();
+  const trimmed = value.trim().replace(",", ".");
   if (INTEGER_PATTERN.test(trimmed)) {
     return parsePositiveIntegerInput(trimmed);
   }

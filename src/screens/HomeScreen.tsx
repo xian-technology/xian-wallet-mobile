@@ -28,11 +28,20 @@ function assetHue(contract: string): string {
   return `hsl(${((h % 360) + 360) % 360}, 45%, 35%)`;
 }
 
-function fmtBal(raw: string | null): string {
+function truncateToDecimals(n: number, d: number): number {
+  if (d === 0) return Math.floor(n);
+  const factor = 10 ** d;
+  return Math.floor(n * factor) / factor;
+}
+
+function fmtBal(raw: string | null, decimals?: number): string {
   if (raw == null) return "-";
   const n = Number(raw);
   if (Number.isNaN(n)) return "0";
-  return n === Math.floor(n) ? n.toLocaleString() : n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 8 });
+  const d = decimals ?? 8;
+  const truncated = truncateToDecimals(n, d);
+  if (d === 0) return truncated.toLocaleString();
+  return truncated.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: d });
 }
 
 export function HomeScreen({ navigation }: { navigation: any }) {
@@ -153,6 +162,7 @@ export function HomeScreen({ navigation }: { navigation: any }) {
                 setAddTokenValue("");
                 showToast(`Added ${meta.symbol ?? contractName}.`, "success");
                 await refresh();
+                await refreshBalances();
               }}
             />
             <TouchableOpacity
@@ -208,7 +218,7 @@ export function HomeScreen({ navigation }: { navigation: any }) {
                     <Text style={styles.sym}>{sym}</Text>
                     <Text style={styles.name} numberOfLines={1}>{asset.name ?? asset.contract}</Text>
                   </View>
-                  <Text style={styles.bal}>{state.balancesLoading ? "..." : fmtBal(state.assetBalances[asset.contract] ?? null)}</Text>
+                  <Text style={styles.bal}>{state.balancesLoading ? "..." : fmtBal(state.assetBalances[asset.contract] ?? null, asset.decimals)}</Text>
                 </TouchableOpacity>
               </SwipeableRow>
             );

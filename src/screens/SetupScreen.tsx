@@ -29,6 +29,11 @@ export function SetupScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [generatedMnemonic, setGeneratedMnemonic] = useState<string | null>(null);
+  const [networkExpanded, setNetworkExpanded] = useState(false);
+  const [networkName, setNetworkName] = useState("Local node");
+  const [networkChainId, setNetworkChainId] = useState("");
+  const [networkRpcUrl, setNetworkRpcUrl] = useState("http://127.0.0.1:26657");
+  const [networkDashboardUrl, setNetworkDashboardUrl] = useState("http://127.0.0.1:8080");
 
   const handleCreate = async () => {
     if (!controller) return;
@@ -45,7 +50,13 @@ export function SetupScreen() {
     setError(null);
 
     try {
-      const opts: Parameters<typeof controller.createWallet>[0] = { password };
+      const opts: Parameters<typeof controller.createWallet>[0] = {
+        password,
+        networkName: networkName.trim() || undefined,
+        chainId: networkChainId.trim() || undefined,
+        rpcUrl: networkRpcUrl.trim() || undefined,
+        dashboardUrl: networkDashboardUrl.trim() || undefined,
+      };
       if (mode === "seed") {
         opts.mnemonic = mnemonic.trim();
       } else if (mode === "key") {
@@ -166,6 +177,49 @@ export function SetupScreen() {
             )}
           </Card>
 
+          <TouchableOpacity
+            style={styles.disclosure}
+            onPress={() => setNetworkExpanded(!networkExpanded)}
+          >
+            <Text style={styles.disclosureText}>
+              {networkExpanded ? "▼" : "▶"}  Network settings
+            </Text>
+          </TouchableOpacity>
+
+          {networkExpanded && (
+            <Card>
+              <Input
+                label="Network label"
+                value={networkName}
+                onChangeText={setNetworkName}
+                placeholder="e.g. Mainnet"
+              />
+              <Input
+                label="Expected chain ID"
+                value={networkChainId}
+                onChangeText={setNetworkChainId}
+                placeholder="Optional, e.g. xian-1"
+                autoCapitalize="none"
+              />
+              <Input
+                label="RPC URL"
+                value={networkRpcUrl}
+                onChangeText={setNetworkRpcUrl}
+                placeholder="http://..."
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <Input
+                label="Dashboard URL"
+                value={networkDashboardUrl}
+                onChangeText={setNetworkDashboardUrl}
+                placeholder="http://... (optional)"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </Card>
+          )}
+
           {error && (
             <View style={styles.errorBanner}>
               <Text style={styles.errorText}>{error}</Text>
@@ -255,6 +309,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 24,
     color: colors.warning,
+  },
+  disclosure: {
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  disclosureText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.muted,
   },
   errorBanner: {
     backgroundColor: colors.dangerSoft,
