@@ -12,6 +12,7 @@ import {
   TextInput,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
+import Constants from "expo-constants";
 import { Feather } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import { Button } from "../components/Button";
@@ -451,6 +452,8 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
           <Button title="Lock Wallet" variant="secondary" onPress={handleLock} />
           <Button title="Remove Wallet" variant="danger" onPress={handleRemoveWallet} />
         </Card>
+
+        <Text style={styles.versionText}>v{Constants.expoConfig?.version ?? "?"}</Text>
       </ScrollView>
     </View>
   );
@@ -542,4 +545,5 @@ const styles = StyleSheet.create({
   detailRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 6 },
   detailLabel: { fontSize: 13, color: colors.muted },
   detailValue: { fontSize: 13, fontFamily: "monospace", color: colors.fg, maxWidth: "65%" },
+  versionText: { fontSize: 11, color: colors.muted, textAlign: "center", opacity: 0.5, paddingBottom: 8 },
 });
