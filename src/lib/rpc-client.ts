@@ -114,6 +114,15 @@ export class XianRpcClient {
     return this.client.getChainId();
   }
 
+  async getStampRate(): Promise<number | null> {
+    try {
+      const rate = await this.client.getStampRate();
+      return rate != null ? Number(rate) : null;
+    } catch {
+      return null;
+    }
+  }
+
   async getTokenMetadata(contract: string): Promise<{
     name: string | null;
     symbol: string | null;
