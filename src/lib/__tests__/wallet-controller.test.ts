@@ -116,7 +116,8 @@ jest.mock("@xian-tech/client", () => ({
         .slice(0, 64);
     }
   },
-  isValidEd25519Key: (value: string) => /^[0-9a-f]{64}$/.test(value)
+  isValidEd25519Key: (value: string) => /^[0-9a-f]{64}$/.test(value),
+  shieldedSyncHintFromViewingPrivateKey: () => "0xsync"
 }));
 
 const { __mockStore: mockStore } = jest.requireMock("../storage") as {
@@ -243,14 +244,14 @@ describe("wallet-controller", () => {
 
     await controller.importWalletBackup(backup, "restored123");
 
-    expect(mockStoredState?.shieldedWalletSnapshots).toEqual([
+    expect((mockStoredState as StoredWalletState | null)?.shieldedWalletSnapshots).toEqual([
       expect.objectContaining({
         label: "Treasury shielded",
         assetId: "con_private"
       })
     ]);
 
-    const snapshotId = mockStoredState?.shieldedWalletSnapshots?.[0]?.id;
+    const snapshotId = (mockStoredState as StoredWalletState | null)?.shieldedWalletSnapshots?.[0]?.id;
     expect(snapshotId).toEqual(expect.any(String));
 
     const exportedSnapshot = await controller.exportShieldedWalletSnapshot(
@@ -263,6 +264,6 @@ describe("wallet-controller", () => {
     });
 
     await controller.removeShieldedWalletSnapshot(snapshotId as string);
-    expect(mockStoredState?.shieldedWalletSnapshots).toEqual([]);
+    expect((mockStoredState as StoredWalletState | null)?.shieldedWalletSnapshots).toEqual([]);
   });
 });

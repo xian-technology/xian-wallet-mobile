@@ -6,7 +6,11 @@
 import { generateMnemonic, mnemonicToSeed, validateMnemonic } from "@scure/bip39";
 // @ts-expect-error — wordlist export works at runtime
 import { wordlist } from "@scure/bip39/wordlists/english";
-import { Ed25519Signer, isValidEd25519Key } from "@xian-tech/client";
+import {
+  Ed25519Signer,
+  isValidEd25519Key,
+  shieldedSyncHintFromViewingPrivateKey,
+} from "@xian-tech/client";
 
 import {
   type StoredWalletState,
@@ -62,6 +66,7 @@ interface WalletBackup {
 interface ParsedShieldedWalletSnapshot {
   normalizedSnapshot: string;
   assetId: string;
+  syncHint: string;
   noteCount: number;
   commitmentCount: number;
   lastScannedIndex: number;
@@ -164,6 +169,7 @@ function parseShieldedWalletSnapshot(
   return {
     normalizedSnapshot: JSON.stringify(record),
     assetId,
+    syncHint: shieldedSyncHintFromViewingPrivateKey(record.viewing_private_key),
     noteCount: notes.length,
     commitmentCount: commitments.length,
     lastScannedIndex,
@@ -427,6 +433,7 @@ export function createWalletController() {
         id: globalThis.crypto.randomUUID(),
         label: trimOptionalString(item.label) ?? parsed.assetId,
         assetId: parsed.assetId,
+        syncHint: parsed.syncHint,
         encryptedStateSnapshot: encryptWithKey(
           parsed.normalizedSnapshot,
           sessionKeyBytes(sessionKey)
@@ -885,6 +892,7 @@ export function createWalletController() {
         id: existing?.id ?? globalThis.crypto.randomUUID(),
         label: resolvedLabel,
         assetId: parsed.assetId,
+        syncHint: parsed.syncHint,
         encryptedStateSnapshot: encryptWithKey(
           parsed.normalizedSnapshot,
           sessionKeyBytes(unlockedSessionKey)

@@ -15,6 +15,7 @@ export interface StoredShieldedWalletSnapshot {
   id: string;
   label: string;
   assetId: string;
+  syncHint: string;
   encryptedStateSnapshot: string;
   noteCount: number;
   commitmentCount: number;
@@ -26,6 +27,7 @@ export interface ShieldedWalletSnapshotSummary {
   id: string;
   label: string;
   assetId: string;
+  syncHint: string;
   noteCount: number;
   commitmentCount: number;
   lastScannedIndex: number;

@@ -30,8 +30,23 @@ function formatJsonText(value: string): string {
   }
 }
 
+interface ShieldedHistoryViewState {
+  loading?: boolean;
+  error?: string;
+  available?: boolean;
+  hasNewerIndexedHistory?: boolean;
+  items?: Array<{
+    noteIndex: number | bigint | null;
+    action: string | null;
+    function: string | null;
+    commitment: string | null;
+    createdAt: string | null;
+    hasPayload: boolean;
+  }>;
+}
+
 export function SettingsScreen({ navigation }: { navigation: any }) {
-  const { state, refresh, controller, showToast, setContacts, prefs, updatePrefs } = useWallet();
+  const { state, refresh, controller, rpc, showToast, setContacts, prefs, updatePrefs } = useWallet();
   const [secretPassword, setSecretPassword] = useState("");
   const [revealedSeed, setRevealedSeed] = useState<string | null>(null);
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
@@ -47,6 +62,7 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
   const [netRpcUrl, setNetRpcUrl] = useState("");
   const [netDashboardUrl, setNetDashboardUrl] = useState("");
   const [netChainId, setNetChainId] = useState("");
+  const [shieldedHistory, setShieldedHistory] = useState<Record<string, ShieldedHistoryViewState>>({});
 
   const [accountLoading, setAccountLoading] = useState(false);
   const isMnemonic = state.seedSource === "mnemonic";
@@ -294,6 +310,50 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
     );
   };
 
+  const handleCheckShieldedSnapshotHistory = async (
+    snapshotId: string,
+    syncHint: string,
+    afterNoteIndex: number
+  ) => {
+    setShieldedHistory((prev) => ({
+      ...prev,
+      [snapshotId]: { loading: true }
+    }));
+    try {
+      const history = await rpc.getShieldedWalletHistory(syncHint, {
+        afterNoteIndex,
+        limit: 5,
+      });
+      setShieldedHistory((prev) => ({
+        ...prev,
+        [snapshotId]: {
+          loading: false,
+          available: history.available,
+          hasNewerIndexedHistory: history.items.length > 0,
+          items: history.items.map((item) => ({
+            noteIndex: item.noteIndex,
+            action: item.action,
+            function: item.function,
+            commitment: item.commitment,
+            createdAt: item.createdAt,
+            hasPayload: item.outputPayload != null && item.outputPayload !== "",
+          })),
+        }
+      }));
+    } catch (error) {
+      setShieldedHistory((prev) => ({
+        ...prev,
+        [snapshotId]: {
+          loading: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to load indexed shielded history.",
+        }
+      }));
+    }
+  };
+
   const handleAddContact = async () => {
     if (!newContactName.trim() || !newContactAddr.trim()) return;
     const contact = {
@@ -536,8 +596,53 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
                   <Text style={styles.snapshotMeta}>
                     {snapshot.noteCount} notes · {snapshot.commitmentCount} commitments · scanned {snapshot.lastScannedIndex}
                   </Text>
+                  <Text style={styles.snapshotHint}>
+                    Seed-only recovery still depends on indexed shielded history being available somewhere.
+                  </Text>
+                  {shieldedHistory[snapshot.id]?.loading ? (
+                    <Text style={styles.snapshotHistoryInfo}>
+                      Checking indexed history after note {snapshot.lastScannedIndex}...
+                    </Text>
+                  ) : shieldedHistory[snapshot.id]?.error ? (
+                    <Text style={styles.snapshotHistoryWarning}>
+                      {shieldedHistory[snapshot.id]?.error}
+                    </Text>
+                  ) : shieldedHistory[snapshot.id] ? (
+                    shieldedHistory[snapshot.id]?.available === false ? (
+                      <Text style={styles.snapshotHistoryWarning}>
+                        Indexed shielded history is not available from the current RPC/BDS path right now.
+                      </Text>
+                    ) : shieldedHistory[snapshot.id]?.hasNewerIndexedHistory ? (
+                      <View style={{ marginTop: 8 }}>
+                        <Text style={styles.snapshotHistoryWarning}>
+                          Indexed history shows newer notes after this snapshot. Refresh your shielded wallet state before spending.
+                        </Text>
+                        {shieldedHistory[snapshot.id]?.items?.map((item, index) => (
+                          <Text key={`${snapshot.id}-${index}`} style={styles.snapshotHistoryInfo}>
+                            {(item.action ?? item.function ?? "shielded output")} · note {String(item.noteIndex ?? "?")} · {item.hasPayload ? "payload present" : "payload missing"}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : (
+                      <Text style={styles.snapshotHistoryInfo}>
+                        Indexed history is available and no newer notes were found after this snapshot.
+                      </Text>
+                    )
+                  ) : null}
                 </View>
                 <View style={styles.snapshotActions}>
+                  <TouchableOpacity
+                    style={styles.actionPill}
+                    onPress={() =>
+                      handleCheckShieldedSnapshotHistory(
+                        snapshot.id,
+                        snapshot.syncHint,
+                        snapshot.lastScannedIndex
+                      )
+                    }
+                  >
+                    <Text style={styles.actionPillText}>Check</Text>
+                  </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.actionPill}
                     onPress={() => handleExportShieldedSnapshot(snapshot.id)}
@@ -627,13 +732,16 @@ const styles = StyleSheet.create({
   snapshotActions: { flexDirection: "row", gap: 12 },
   snapshotRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 8,
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: colors.line,
   },
   snapshotMeta: { fontSize: 11, color: colors.muted, marginTop: 4 },
+  snapshotHint: { fontSize: 11, color: colors.muted, marginTop: 6 },
+  snapshotHistoryInfo: { fontSize: 11, color: colors.muted, marginTop: 6 },
+  snapshotHistoryWarning: { fontSize: 11, color: colors.warning, marginTop: 6 },
   loadingOverlay: { alignItems: "center" as const, paddingVertical: 8 },
   actionPill: {
     paddingVertical: 4,
