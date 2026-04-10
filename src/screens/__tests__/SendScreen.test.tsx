@@ -22,7 +22,7 @@ jest.mock("../../lib/haptics", () => ({
 import { SendScreen } from "../SendScreen";
 
 describe("SendScreen", () => {
-  const mockEstimateStamps = jest.fn() as jest.Mock;
+  const mockEstimateChi = jest.fn() as jest.Mock;
   const mockSendTransaction = jest.fn() as jest.Mock;
   const mockRefreshBalances = jest.fn(async () => undefined) as jest.Mock;
   const mockShowToast = jest.fn() as jest.Mock;
@@ -38,8 +38,8 @@ describe("SendScreen", () => {
         dashboardUrl: "http://127.0.0.1:8080"
       },
       rpc: {
-        getStampRate: jest.fn(async () => 20),
-        estimateStamps: mockEstimateStamps,
+        getChiRate: jest.fn(async () => 20),
+        estimateChi: mockEstimateChi,
         sendTransaction: mockSendTransaction
       },
       refreshBalances: mockRefreshBalances,
@@ -53,7 +53,7 @@ describe("SendScreen", () => {
   });
 
   it("reviews and sends a transfer using bigint-safe parsing", async () => {
-    mockEstimateStamps.mockImplementation(async () => ({
+    mockEstimateChi.mockImplementation(async () => ({
       estimated: 12_000,
       suggested: 14_400
     }));
@@ -76,7 +76,7 @@ describe("SendScreen", () => {
     fireEvent.press(screen.getByText("Review"));
 
     await waitFor(() =>
-      expect(mockEstimateStamps).toHaveBeenCalledWith({
+      expect(mockEstimateChi).toHaveBeenCalledWith({
         sender: "sender",
         contract: "currency",
         function: "transfer",
@@ -98,7 +98,7 @@ describe("SendScreen", () => {
           to: "receiver",
           amount: 9007199254740993n
         },
-        stamps: 12_000
+        chi: 12_000
       })
     );
     expect(mockShowToast).toHaveBeenCalledWith("Transaction finalized.", "success");

@@ -44,7 +44,7 @@ export function AdvancedTxScreen({ navigation }: { navigation: any }) {
   const [contract, setContract] = useState("");
   const [func, setFunc] = useState("");
   const [args, setArgs] = useState<Arg[]>([]);
-  const [stamps, setStamps] = useState("");
+  const [chi, setChi] = useState("");
   const [estimating, setEstimating] = useState(false);
   const [estimate, setEstimate] = useState<{ estimated: number; suggested: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +81,7 @@ export function AdvancedTxScreen({ navigation }: { navigation: any }) {
     setError(null); setEstimating(true);
     try {
       const kw = parseKwargs(args);
-      const est = await rpc.estimateStamps({ sender: state.publicKey!, contract: contract.trim(), function: func.trim(), kwargs: kw });
+      const est = await rpc.estimateChi({ sender: state.publicKey!, contract: contract.trim(), function: func.trim(), kwargs: kw });
       setEstimate(est); lightTap(); setStep("review");
     } catch (e) { setError(e instanceof Error ? e.message : "Estimation failed"); }
     finally { setEstimating(false); }
@@ -93,9 +93,9 @@ export function AdvancedTxScreen({ navigation }: { navigation: any }) {
       const session = await loadUnlockedSession();
       if (!session) throw new Error("Wallet is locked");
       const kw = parseKwargs(args);
-      const s = stamps ? parsePositiveIntegerInput(stamps) : estimate?.suggested ?? 50000;
-      if (s == null) throw new Error("Stamps must be a positive integer");
-      const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: contract.trim(), function: func.trim(), kwargs: kw, stamps: s });
+      const s = chi ? parsePositiveIntegerInput(chi) : estimate?.suggested ?? 50000;
+      if (s == null) throw new Error("Chi must be a positive integer");
+      const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: contract.trim(), function: func.trim(), kwargs: kw, chi: s });
       setResult(r); setStep("result");
       const ok = r.finalized || r.accepted;
       if (ok) { successTap(); showToast("Transaction finalized.", "success"); void refreshBalances(); }
@@ -113,7 +113,7 @@ export function AdvancedTxScreen({ navigation }: { navigation: any }) {
           <Card title="Transaction Summary">
             <Row label="Contract" value={contract} mono />
             <Row label="Function" value={func} />
-            <Row label="Stamps" value={estimate ? `${estimate.suggested.toLocaleString()}` : stamps || "auto"} />
+            <Row label="Chi" value={estimate ? `${estimate.suggested.toLocaleString()}` : chi || "auto"} />
             {Object.entries(kw).map(([k, v]) => <Row key={k} label={k} value={String(v)} mono />)}
           </Card>
         </ScrollView>
@@ -180,8 +180,8 @@ export function AdvancedTxScreen({ navigation }: { navigation: any }) {
           </Card>
         )}
 
-        <Card title="Stamps" subtitle="Leave empty to estimate automatically.">
-          <Input value={stamps} onChangeText={setStamps} placeholder="Auto-estimate" keyboardType="number-pad" />
+        <Card title="Chi" subtitle="Leave empty to estimate automatically.">
+          <Input value={chi} onChangeText={setChi} placeholder="Auto-estimate" keyboardType="number-pad" />
         </Card>
 
         {error && <View style={styles.errorBanner}><Text style={styles.errorText}>{error}</Text></View>}

@@ -35,7 +35,7 @@ export function SendScreen({ navigation, route }: { navigation: any; route: any 
   const [error, setError] = useState<string | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [estimate, setEstimate] = useState<{ estimated: number; suggested: number } | null>(null);
-  const [stampRate, setStampRate] = useState<number | null>(null);
+  const [chiRate, setChiRate] = useState<number | null>(null);
   const [showContacts, setShowContacts] = useState(false);
   const [result, setResult] = useState<{
     submitted: boolean; accepted: boolean; finalized: boolean; txHash?: string; message?: string;
@@ -54,10 +54,10 @@ export function SendScreen({ navigation, route }: { navigation: any; route: any 
     setError(null); setEstimating(true);
     try {
       const [est, rate] = await Promise.all([
-        rpc.estimateStamps({ sender: state.publicKey!, contract: selectedToken, function: "transfer", kwargs: { to: to.trim(), amount: parsedAmount } }),
-        rpc.getStampRate(),
+        rpc.estimateChi({ sender: state.publicKey!, contract: selectedToken, function: "transfer", kwargs: { to: to.trim(), amount: parsedAmount } }),
+        rpc.getChiRate(),
       ]);
-      setEstimate(est); setStampRate(rate); lightTap(); setStep("review");
+      setEstimate(est); setChiRate(rate); lightTap(); setStep("review");
     } catch (e) { setError(e instanceof Error ? e.message : "Estimation failed"); }
     finally { setEstimating(false); }
   };
@@ -69,7 +69,7 @@ export function SendScreen({ navigation, route }: { navigation: any; route: any 
       if (!session) throw new Error("Wallet is locked");
       const parsedAmount = parseAmountInput(amount);
       if (parsedAmount == null) throw new Error("Enter a valid amount");
-      const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: selectedToken, function: "transfer", kwargs: { to: to.trim(), amount: parsedAmount }, stamps: estimate?.estimated ?? 50000 });
+      const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: selectedToken, function: "transfer", kwargs: { to: to.trim(), amount: parsedAmount }, chi: estimate?.estimated ?? 50000 });
       setResult(r); setStep("result");
       const ok = r.finalized || r.accepted;
       if (ok) { successTap(); showToast(r.finalized ? "Transaction finalized." : "Transaction accepted.", "success"); void refreshBalances(); }
@@ -159,7 +159,7 @@ export function SendScreen({ navigation, route }: { navigation: any; route: any 
             <Row label="Token" value={tokenSymbol} />
             <Row label="To" value={truncHash(to.trim())} mono />
             <Row label="Amount" value={`${String(parseAmountInput(amount) ?? amount.trim())} ${tokenSymbol}`} />
-            <Row label="Stamps" value={estimate ? `${estimate.estimated.toLocaleString()}${stampRate ? ` (~${(estimate.estimated / stampRate).toLocaleString(undefined, { maximumFractionDigits: 8 })} XIAN)` : ""}` : "-"} />
+            <Row label="Chi" value={estimate ? `${estimate.estimated.toLocaleString()}${chiRate ? ` (~${(estimate.estimated / chiRate).toLocaleString(undefined, { maximumFractionDigits: 8 })} XIAN)` : ""}` : "-"} />
           </Card>
         </ScrollView>
         <View style={styles.stickyBottom}>

@@ -23,7 +23,7 @@ import { AdvancedTxScreen } from "../AdvancedTxScreen";
 
 describe("AdvancedTxScreen", () => {
   const mockGetContractMethods = jest.fn() as jest.Mock;
-  const mockEstimateStamps = jest.fn() as jest.Mock;
+  const mockEstimateChi = jest.fn() as jest.Mock;
   const mockSendTransaction = jest.fn() as jest.Mock;
   const mockRefreshBalances = jest.fn(async () => undefined) as jest.Mock;
   const mockShowToast = jest.fn() as jest.Mock;
@@ -39,7 +39,7 @@ describe("AdvancedTxScreen", () => {
       },
       rpc: {
         getContractMethods: mockGetContractMethods,
-        estimateStamps: mockEstimateStamps,
+        estimateChi: mockEstimateChi,
         sendTransaction: mockSendTransaction
       },
       refreshBalances: mockRefreshBalances,
@@ -56,7 +56,7 @@ describe("AdvancedTxScreen", () => {
     jest.useRealTimers();
   });
 
-  it("loads contract methods and preserves typed kwargs and bigint stamps", async () => {
+  it("loads contract methods and preserves typed kwargs and bigint chi", async () => {
     mockGetContractMethods.mockImplementation(async () => [
       {
         name: "mint",
@@ -67,7 +67,7 @@ describe("AdvancedTxScreen", () => {
         ]
       }
     ]);
-    mockEstimateStamps.mockImplementation(async () => ({
+    mockEstimateChi.mockImplementation(async () => ({
       estimated: 10_000,
       suggested: 12_000
     }));
@@ -97,7 +97,7 @@ describe("AdvancedTxScreen", () => {
     fireEvent.press(screen.getByText("Review Transaction"));
 
     await waitFor(() =>
-      expect(mockEstimateStamps).toHaveBeenCalledWith({
+      expect(mockEstimateChi).toHaveBeenCalledWith({
         sender: "sender",
         contract: "con_token",
         function: "mint",
@@ -121,7 +121,7 @@ describe("AdvancedTxScreen", () => {
           config: { mode: "fast" },
           flag: true
         },
-        stamps: 9007199254740995n
+        chi: 9007199254740995n
       })
     );
     expect(mockShowToast).toHaveBeenCalledWith("Transaction finalized.", "success");

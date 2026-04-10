@@ -23,7 +23,7 @@ interface TxRecord {
   contract: string;
   function: string;
   success: boolean;
-  stamps_used: number;
+  chi_used: number;
   created_at: string;
   kwargs?: Record<string, unknown>;
 }
@@ -106,7 +106,7 @@ export function ActivityScreen({ navigation }: { navigation: any }) {
           <Row label="Block" value={String(selectedTx.block_height)} />
           <Row label="Contract" value={selectedTx.contract} mono />
           <Row label="Function" value={selectedTx.function} />
-          <Row label="Stamps" value={selectedTx.stamps_used.toLocaleString()} />
+          <Row label="Chi" value={selectedTx.chi_used.toLocaleString()} />
           <Row label="Time" value={selectedTx.created_at} />
           {selectedTx.kwargs && Object.entries(selectedTx.kwargs).map(([k, v]) => (
             <Row key={k} label={k} value={String(v)} mono />

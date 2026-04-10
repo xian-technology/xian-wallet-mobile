@@ -75,7 +75,7 @@ export class XianRpcClient {
       contract: string;
       function: string;
       success: boolean;
-      stamps_used: number;
+      chi_used: number;
       created_at: string;
       kwargs?: Record<string, unknown>;
     }>
@@ -100,7 +100,7 @@ export class XianRpcClient {
           contract: string;
           function: string;
           success: boolean;
-          stamps_used: number;
+          chi_used: number;
           created_at: string;
           kwargs?: Record<string, unknown>;
         }>;
@@ -115,9 +115,9 @@ export class XianRpcClient {
     return this.client.getChainId();
   }
 
-  async getStampRate(): Promise<number | null> {
+  async getChiRate(): Promise<number | null> {
     try {
-      const rate = await this.client.getStampRate();
+      const rate = await this.client.getChiRate();
       return rate != null ? Number(rate) : null;
     } catch {
       return null;
@@ -181,13 +181,13 @@ export class XianRpcClient {
     return this.client.getContractMethods(contract);
   }
 
-  async estimateStamps(opts: {
+  async estimateChi(opts: {
     sender: string;
     contract: string;
     function: string;
     kwargs: Record<string, unknown>;
   }): Promise<{ estimated: number; suggested: number }> {
-    const result = await this.client.estimateStamps({
+    const result = await this.client.estimateChi({
       sender: opts.sender,
       contract: opts.contract,
       function: opts.function,
@@ -204,7 +204,7 @@ export class XianRpcClient {
     contract: string;
     function: string;
     kwargs: Record<string, unknown>;
-    stamps: number | bigint;
+    chi: number | bigint;
   }): Promise<{
     submitted: boolean;
     accepted: boolean;
@@ -218,7 +218,7 @@ export class XianRpcClient {
       contract: opts.contract,
       function: opts.function,
       kwargs: opts.kwargs,
-      stamps: opts.stamps
+      chi: opts.chi
     });
     const signedTx = await this.client.signTx(tx, signer);
     const submission = await this.client.broadcastTx(signedTx, {

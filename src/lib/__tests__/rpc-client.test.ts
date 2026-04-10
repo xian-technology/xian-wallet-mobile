@@ -4,7 +4,7 @@ const mockGetChainId = jest.fn() as jest.Mock;
 const mockGetTokenMetadata = jest.fn() as jest.Mock;
 const mockGetBalance = jest.fn() as jest.Mock;
 const mockGetContractMethods = jest.fn() as jest.Mock;
-const mockEstimateStamps = jest.fn() as jest.Mock;
+const mockEstimateChi = jest.fn() as jest.Mock;
 const mockBuildTx = jest.fn() as jest.Mock;
 const mockSignTx = jest.fn() as jest.Mock;
 const mockBroadcastTx = jest.fn() as jest.Mock;
@@ -24,7 +24,7 @@ jest.mock("@xian-tech/client", () => ({
     getTokenMetadata = mockGetTokenMetadata;
     getBalance = mockGetBalance;
     getContractMethods = mockGetContractMethods;
-    estimateStamps = mockEstimateStamps;
+    estimateChi = mockEstimateChi;
     buildTx = mockBuildTx;
     signTx = mockSignTx;
     broadcastTx = mockBroadcastTx;
@@ -40,7 +40,7 @@ describe("XianRpcClient", () => {
     mockGetTokenMetadata.mockReset();
     mockGetBalance.mockReset();
     mockGetContractMethods.mockReset();
-    mockEstimateStamps.mockReset();
+    mockEstimateChi.mockReset();
     mockBuildTx.mockReset();
     mockSignTx.mockReset();
     mockBroadcastTx.mockReset();
@@ -54,7 +54,7 @@ describe("XianRpcClient", () => {
         contract: "currency",
         function: "transfer",
         kwargs: { to: "alice", amount: 9007199254740993n },
-        stamps_supplied: 75_000,
+        chi_supplied: 75_000,
         nonce: 7
       }
     }));
@@ -78,7 +78,7 @@ describe("XianRpcClient", () => {
       contract: "currency",
       function: "transfer",
       kwargs: { to: "alice", amount: 9007199254740993n },
-      stamps: 75_000
+      chi: 75_000
     });
 
     expect(mockBuildTx).toHaveBeenCalledWith({
@@ -86,7 +86,7 @@ describe("XianRpcClient", () => {
       contract: "currency",
       function: "transfer",
       kwargs: { to: "alice", amount: 9007199254740993n },
-      stamps: 75_000
+      chi: 75_000
     });
     expect(mockSignTx).toHaveBeenCalledWith(
       expect.objectContaining({ payload: expect.objectContaining({ nonce: 7 }) }),
@@ -128,7 +128,7 @@ describe("XianRpcClient", () => {
       contract: "currency",
       function: "transfer",
       kwargs: { to: "alice", amount: 5 },
-      stamps: 50_000
+      chi: 50_000
     });
 
     expect(mockWaitForTx).not.toHaveBeenCalled();
