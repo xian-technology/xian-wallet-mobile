@@ -16,7 +16,8 @@ import { useWallet } from "../lib/wallet-context";
 import { loadWalletState, saveWalletState } from "../lib/storage";
 import { SwipeableRow } from "../components/SwipeableRow";
 import { DraggableList } from "../components/DraggableList";
-import { lightTap, mediumTap, selectionTap } from "../lib/haptics";
+import { TokenAvatar } from "../components/TokenAvatar";
+import { lightTap, mediumTap } from "../lib/haptics";
 
 function truncAddr(addr: string): string {
   return addr.length <= 16 ? addr : `${addr.slice(0, 8)}...${addr.slice(-6)}`;
@@ -132,6 +133,7 @@ export function HomeScreen({ navigation }: { navigation: any }) {
               key: asset.contract,
               label: asset.symbol ?? asset.contract.slice(0, 6),
               sublabel: asset.name ?? asset.contract,
+              icon: asset.icon,
               iconLetter: (asset.symbol ?? asset.contract.slice(0, 6)).charAt(0).toUpperCase(),
               iconColor: asset.contract === "currency" ? colors.accentDim : assetHue(asset.contract),
               hidden: asset.hidden,
@@ -157,7 +159,12 @@ export function HomeScreen({ navigation }: { navigation: any }) {
                 }
                 const contractName = addTokenValue.trim();
                 const meta = await rpc.getTokenMetadata(contractName);
-                ws.watchedAssets.push({ contract: contractName, name: meta.name ?? undefined, symbol: meta.symbol ?? undefined, icon: meta.logoUrl ?? undefined });
+                ws.watchedAssets.push({
+                  contract: contractName,
+                  name: meta.name ?? undefined,
+                  symbol: meta.symbol ?? undefined,
+                  icon: meta.logoUrl ?? meta.logoSvg ?? undefined,
+                });
                 await saveWalletState(ws);
                 setAddTokenValue("");
                 showToast(`Added ${meta.symbol ?? contractName}.`, "success");
@@ -178,7 +185,12 @@ export function HomeScreen({ navigation }: { navigation: any }) {
                 }
                 const contractName = addTokenValue.trim();
                 const meta = await rpc.getTokenMetadata(contractName);
-                ws.watchedAssets.push({ contract: contractName, name: meta.name ?? undefined, symbol: meta.symbol ?? undefined, icon: meta.logoUrl ?? undefined });
+                ws.watchedAssets.push({
+                  contract: contractName,
+                  name: meta.name ?? undefined,
+                  symbol: meta.symbol ?? undefined,
+                  icon: meta.logoUrl ?? meta.logoSvg ?? undefined,
+                });
                 await saveWalletState(ws);
                 setAddTokenValue("");
                 showToast(`Added ${meta.symbol ?? contractName}.`, "success");
@@ -192,7 +204,6 @@ export function HomeScreen({ navigation }: { navigation: any }) {
         ) : (
           visible.map((asset) => {
             const sym = asset.symbol ?? asset.contract.slice(0, 6);
-            const letter = sym.charAt(0).toUpperCase();
             const bg = asset.contract === "currency" ? colors.accentDim : assetHue(asset.contract);
 
             return (
@@ -213,7 +224,14 @@ export function HomeScreen({ navigation }: { navigation: any }) {
                   onLongPress={() => { mediumTap(); setManaging(true); }}
                   activeOpacity={0.6}
                 >
-                  <View style={[styles.icon, { backgroundColor: bg }]}><Text style={styles.iconLetter}>{letter}</Text></View>
+                  <TokenAvatar
+                    contract={asset.contract}
+                    symbol={sym}
+                    icon={asset.icon}
+                    size={40}
+                    textSize={16}
+                    backgroundColor={bg}
+                  />
                   <View style={styles.body}>
                     <Text style={styles.sym}>{sym}</Text>
                     <Text style={styles.name} numberOfLines={1}>{asset.name ?? asset.contract}</Text>
@@ -260,8 +278,6 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 12 },
   rowBg: { backgroundColor: colors.bg0 },
   rowHidden: { opacity: 0.4 },
-  icon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-  iconLetter: { fontSize: 16, fontWeight: "700", color: colors.fg },
   body: { flex: 1 },
   sym: { fontSize: 14, fontWeight: "600", color: colors.fg },
   name: { fontSize: 12, color: colors.muted },

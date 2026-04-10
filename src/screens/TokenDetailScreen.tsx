@@ -5,9 +5,16 @@ import * as Clipboard from "expo-clipboard";
 import { colors } from "../theme/colors";
 import { Card } from "../components/Card";
 import { Button } from "../components/Button";
+import { TokenAvatar } from "../components/TokenAvatar";
 import { useWallet } from "../lib/wallet-context";
 import { loadWalletState, saveWalletState } from "../lib/storage";
 import { lightTap } from "../lib/haptics";
+
+function assetHue(contract: string): string {
+  let h = 0;
+  for (let i = 0; i < contract.length; i++) h = contract.charCodeAt(i) + ((h << 5) - h);
+  return `hsl(${((h % 360) + 360) % 360}, 45%, 35%)`;
+}
 
 function truncateToDecimals(n: number, d: number): number {
   if (d === 0) return Math.floor(n);
@@ -40,6 +47,7 @@ export function TokenDetailScreen({ route, navigation }: { route: any; navigatio
 
   const symbol = asset.symbol ?? asset.contract.slice(0, 6);
   const balance = state.assetBalances[contract];
+  const iconBg = contract === "currency" ? colors.accentDim : assetHue(contract);
 
   const handleCopyContract = async () => {
     await Clipboard.setStringAsync(contract);
@@ -74,6 +82,14 @@ export function TokenDetailScreen({ route, navigation }: { route: any; navigatio
       <ScrollView contentContainerStyle={styles.scroll}>
         {/* Balance hero */}
         <View style={styles.hero}>
+          <TokenAvatar
+            contract={contract}
+            symbol={symbol}
+            icon={asset.icon}
+            size={56}
+            textSize={20}
+            backgroundColor={iconBg}
+          />
           <Text style={styles.heroBalance}>
             {formatBalance(balance, asset.decimals)}
           </Text>
@@ -174,7 +190,7 @@ const styles = StyleSheet.create({
   centered: { alignItems: "center", justifyContent: "center" },
   scroll: { padding: 16, gap: 16 },
   muted: { color: colors.muted, fontSize: 14 },
-  hero: { alignItems: "center", paddingVertical: 24 },
+  hero: { alignItems: "center", paddingVertical: 24, gap: 8 },
   heroBalance: { fontSize: 36, fontWeight: "700", color: colors.fg },
   heroSymbol: { fontSize: 16, color: colors.muted, marginTop: 4 },
   actions: { flexDirection: "row", gap: 12 },

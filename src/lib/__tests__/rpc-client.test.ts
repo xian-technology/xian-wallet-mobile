@@ -9,7 +9,6 @@ const mockBuildTx = jest.fn() as jest.Mock;
 const mockSignTx = jest.fn() as jest.Mock;
 const mockBroadcastTx = jest.fn() as jest.Mock;
 const mockWaitForTx = jest.fn() as jest.Mock;
-
 jest.mock("@xian-tech/client", () => ({
   Ed25519Signer: class {
     address: string;
@@ -139,6 +138,23 @@ describe("XianRpcClient", () => {
       finalized: false,
       txHash: "NOPE",
       message: "rejected"
+    });
+  });
+
+  it("falls back to on-chain SVG metadata when no logo URL is set", async () => {
+    mockGetTokenMetadata.mockImplementation(async () => ({
+      name: "Example",
+      symbol: "EXP",
+      logoUrl: null,
+      logoSvg: "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'></svg>"
+    }));
+
+    const client = new XianRpcClient("http://127.0.0.1:26657");
+    await expect(client.getTokenMetadata("con_token")).resolves.toEqual({
+      name: "Example",
+      symbol: "EXP",
+      logoUrl: null,
+      logoSvg: "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'></svg>"
     });
   });
 });

@@ -13,6 +13,7 @@ import {
   loadWalletState,
   loadContacts,
   saveContacts,
+  saveWalletState,
   loadUnlockedSession,
 } from "./storage";
 import { XianRpcClient } from "./rpc-client";
@@ -104,13 +105,60 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     await savePreferences(next);
   }, [prefs]);
 
+  const hydrateWatchedAssetIcons = useCallback(
+    async (walletState: StoredWalletState): Promise<StoredWalletState> => {
+      const assetsMissingIcons = walletState.watchedAssets.some(
+        (asset) => !asset.icon?.trim()
+      );
+      if (!assetsMissingIcons) {
+        return walletState;
+      }
+
+      let changed = false;
+      const watchedAssets = await Promise.all(
+        walletState.watchedAssets.map(async (asset) => {
+          if (asset.icon?.trim()) {
+            return asset;
+          }
+          try {
+            const metadata = await rpcRef.current.getTokenMetadata(asset.contract);
+            const icon = metadata.logoUrl ?? metadata.logoSvg ?? undefined;
+            if (!icon) {
+              return asset;
+            }
+            changed = true;
+            return {
+              ...asset,
+              icon,
+            };
+          } catch {
+            return asset;
+          }
+        })
+      );
+
+      if (!changed) {
+        return walletState;
+      }
+
+      const nextState = {
+        ...walletState,
+        watchedAssets,
+      };
+      await saveWalletState(nextState);
+      return nextState;
+    },
+    []
+  );
+
   const refresh = useCallback(async () => {
-    const walletState = await loadWalletState();
+    let walletState = await loadWalletState();
     const session = await loadUnlockedSession();
     const contacts = await loadContacts();
 
     if (walletState) {
       rpcRef.current.setRpcUrl(walletState.rpcUrl);
+      walletState = await hydrateWatchedAssetIcons(walletState);
     }
 
     const activePreset = walletState
@@ -142,7 +190,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       watchedAssets: walletState?.watchedAssets ?? [],
       contacts,
     }));
-  }, []);
+  }, [hydrateWatchedAssetIcons]);
 
   const refreshBalances = useCallback(async () => {
     const walletState = await loadWalletState();

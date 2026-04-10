@@ -17,6 +17,7 @@ import { colors } from "../theme/colors";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Card } from "../components/Card";
+import { TokenAvatar } from "../components/TokenAvatar";
 import { useWallet } from "../lib/wallet-context";
 import { loadUnlockedSession } from "../lib/storage";
 import { lightTap, successTap, errorTap } from "../lib/haptics";
@@ -121,16 +122,20 @@ export function SendScreen({ navigation, route }: { navigation: any; route: any 
             keyExtractor={(a) => a.contract}
             renderItem={({ item }) => {
               const sym = item.symbol ?? item.contract.slice(0, 6);
-              const letter = sym.charAt(0).toUpperCase();
               const isActive = item.contract === selectedToken;
               return (
                 <TouchableOpacity
                   style={[styles.tokenPickerItem, isActive && styles.tokenPickerActive]}
                   onPress={() => { lightTap(); setSelectedToken(item.contract); setShowTokenPicker(false); }}
                 >
-                  <View style={[styles.tokenPickerIcon, { backgroundColor: item.contract === "currency" ? colors.accentDim : colors.bg2 }]}>
-                    <Text style={styles.tokenPickerLetter}>{letter}</Text>
-                  </View>
+                  <TokenAvatar
+                    contract={item.contract}
+                    symbol={sym}
+                    icon={item.icon}
+                    size={32}
+                    textSize={14}
+                    backgroundColor={item.contract === "currency" ? colors.accentDim : colors.bg2}
+                  />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.tokenPickerSym}>{sym}</Text>
                     <Text style={styles.tokenPickerName}>{item.name ?? item.contract}</Text>
@@ -200,9 +205,14 @@ export function SendScreen({ navigation, route }: { navigation: any; route: any 
         <Card title="Send" subtitle="Transfer tokens to another address.">
           {/* Token selector */}
           <TouchableOpacity style={styles.tokenSelector} onPress={() => { lightTap(); setShowTokenPicker(true); }}>
-            <View style={[styles.tokenSelIcon, { backgroundColor: selectedToken === "currency" ? colors.accentDim : colors.bg2 }]}>
-              <Text style={styles.tokenSelLetter}>{tokenSymbol.charAt(0)}</Text>
-            </View>
+            <TokenAvatar
+              contract={selectedToken}
+              symbol={tokenSymbol}
+              icon={tokenAsset?.icon}
+              size={36}
+              textSize={15}
+              backgroundColor={selectedToken === "currency" ? colors.accentDim : colors.bg2}
+            />
             <View style={{ flex: 1 }}>
               <Text style={styles.tokenSelSym}>{tokenSymbol}</Text>
               <Text style={styles.tokenSelName}>{tokenAsset?.name ?? selectedToken}</Text>
@@ -281,15 +291,11 @@ const styles = StyleSheet.create({
   contactAddr: { fontSize: 11, fontFamily: "monospace", color: colors.muted },
   // Token selector
   tokenSelector: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 12, backgroundColor: colors.bg2 },
-  tokenSelIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
-  tokenSelLetter: { fontSize: 15, fontWeight: "700", color: colors.fg },
   tokenSelSym: { fontSize: 14, fontWeight: "600", color: colors.fg },
   tokenSelName: { fontSize: 11, color: colors.muted },
   // Token picker modal items
   tokenPickerItem: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
   tokenPickerActive: { backgroundColor: colors.accentSoft },
-  tokenPickerIcon: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
-  tokenPickerLetter: { fontSize: 14, fontWeight: "700", color: colors.fg },
   tokenPickerSym: { fontSize: 14, fontWeight: "600", color: colors.fg },
   tokenPickerName: { fontSize: 11, color: colors.muted },
 });

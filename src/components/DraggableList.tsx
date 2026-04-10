@@ -10,11 +10,13 @@ import {
 import { Feather } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import { selectionTap } from "../lib/haptics";
+import { TokenAvatar } from "./TokenAvatar";
 
 interface Item {
   key: string;
   label: string;
   sublabel: string;
+  icon?: string;
   iconLetter: string;
   iconColor: string;
   hidden?: boolean;
@@ -116,9 +118,14 @@ export function DraggableList({ items, onReorder, onToggleHide }: DraggableListP
             </View>
 
             {/* Icon */}
-            <View style={[styles.icon, { backgroundColor: item.iconColor }]}>
-              <Text style={styles.iconLetter}>{item.iconLetter}</Text>
-            </View>
+            <TokenAvatar
+              contract={item.key}
+              symbol={item.label}
+              icon={item.icon}
+              size={32}
+              textSize={14}
+              backgroundColor={item.iconColor}
+            />
 
             {/* Info */}
             <View style={styles.body}>
@@ -170,14 +177,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  icon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  iconLetter: { fontSize: 14, fontWeight: "700", color: colors.fg },
   body: { flex: 1, minWidth: 0 },
   label: { fontSize: 14, fontWeight: "600", color: colors.fg },
   sublabel: { fontSize: 11, color: colors.muted },
