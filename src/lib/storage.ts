@@ -11,6 +11,29 @@ const CONTACTS_KEY = "xian_contacts";
 const REQUEST_PREFIX = "xian_req_";
 const APPROVAL_PREFIX = "xian_approval_";
 
+export interface StoredShieldedWalletSnapshot {
+  id: string;
+  label: string;
+  assetId: string;
+  syncHint: string;
+  encryptedStateSnapshot: string;
+  noteCount: number;
+  commitmentCount: number;
+  lastScannedIndex: number;
+  updatedAt: string;
+}
+
+export interface ShieldedWalletSnapshotSummary {
+  id: string;
+  label: string;
+  assetId: string;
+  syncHint: string;
+  noteCount: number;
+  commitmentCount: number;
+  lastScannedIndex: number;
+  updatedAt: string;
+}
+
 // Types matching wallet-core interfaces
 export interface StoredWalletState {
   publicKey: string;
@@ -46,6 +69,7 @@ export interface StoredWalletState {
     hidden?: boolean;
     order?: number;
   }>;
+  shieldedWalletSnapshots?: StoredShieldedWalletSnapshot[];
   connectedOrigins: string[];
   createdAt: string;
 }

@@ -22,8 +22,31 @@ import { useWallet } from "../lib/wallet-context";
 import { saveWalletState, loadWalletState } from "../lib/storage";
 import { lightTap } from "../lib/haptics";
 
+function formatJsonText(value: string): string {
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
+}
+
+interface ShieldedHistoryViewState {
+  loading?: boolean;
+  error?: string;
+  available?: boolean;
+  hasNewerIndexedHistory?: boolean;
+  items?: Array<{
+    noteIndex: number | bigint | null;
+    action: string | null;
+    function: string | null;
+    commitment: string | null;
+    createdAt: string | null;
+    hasPayload: boolean;
+  }>;
+}
+
 export function SettingsScreen({ navigation }: { navigation: any }) {
-  const { state, refresh, controller, showToast, setContacts, prefs, updatePrefs } = useWallet();
+  const { state, refresh, controller, rpc, showToast, setContacts, prefs, updatePrefs } = useWallet();
   const [secretPassword, setSecretPassword] = useState("");
   const [revealedSeed, setRevealedSeed] = useState<string | null>(null);
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
@@ -39,6 +62,7 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
   const [netRpcUrl, setNetRpcUrl] = useState("");
   const [netDashboardUrl, setNetDashboardUrl] = useState("");
   const [netChainId, setNetChainId] = useState("");
+  const [shieldedHistory, setShieldedHistory] = useState<Record<string, ShieldedHistoryViewState>>({});
 
   const [accountLoading, setAccountLoading] = useState(false);
   const isMnemonic = state.seedSource === "mnemonic";
@@ -205,17 +229,129 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
           try {
             const backup = JSON.parse(json);
             if (!backup?.version || !backup?.type) { showToast("Invalid backup.", "danger"); return; }
-            await controller.removeWallet();
-            // Re-create from backup
-            const opts: Parameters<typeof controller.createWallet>[0] = { password: backupPassword };
-            if (backup.type === "mnemonic" && backup.mnemonic) opts.mnemonic = backup.mnemonic;
-            else if (backup.privateKey) opts.privateKey = backup.privateKey;
-            await controller.createWallet(opts);
+            await controller.importWalletBackup(backup, backupPassword);
             showToast("Wallet imported.", "success");
             await refresh();
           } catch (e) { showToast(e instanceof Error ? e.message : "Import failed", "danger"); }
         })
       : showToast("Import: paste your backup JSON in the export field on the source device.", "info");
+  };
+
+  const handleImportShieldedSnapshot = async () => {
+    if (!controller) return;
+    Alert.prompt
+      ? Alert.prompt(
+          "Import Shielded Snapshot",
+          "Paste ShieldedWallet.to_json() output:",
+          async (json) => {
+            if (!json) return;
+            try {
+              await controller.saveShieldedWalletSnapshot(json);
+              showToast("Shielded snapshot stored.", "success");
+              await refresh();
+            } catch (e) {
+              showToast(
+                e instanceof Error ? e.message : "Shielded snapshot import failed",
+                "danger"
+              );
+            }
+          }
+        )
+      : showToast("Shielded snapshot import requires text input support on this device.", "info");
+  };
+
+  const handleExportShieldedSnapshot = async (snapshotId: string) => {
+    if (!controller || !backupPassword) {
+      showToast("Enter your backup password first.", "warning");
+      return;
+    }
+    try {
+      const payload = await controller.exportShieldedWalletSnapshot(
+        snapshotId,
+        backupPassword
+      );
+      await Share.share({
+        message: formatJsonText(payload.stateSnapshot),
+        title: `${payload.label} Shielded Snapshot`,
+      });
+      showToast("Shielded snapshot exported.", "success");
+    } catch (e) {
+      showToast(
+        e instanceof Error ? e.message : "Shielded snapshot export failed",
+        "danger"
+      );
+    }
+  };
+
+  const handleRemoveShieldedSnapshot = (snapshotId: string) => {
+    Alert.alert(
+      "Remove Shielded Snapshot",
+      "This removes the locally stored encrypted state_snapshot record from the wallet.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            if (!controller) return;
+            try {
+              await controller.removeShieldedWalletSnapshot(snapshotId);
+              showToast("Shielded snapshot removed.", "info");
+              await refresh();
+            } catch (e) {
+              showToast(
+                e instanceof Error ? e.message : "Shielded snapshot removal failed",
+                "danger"
+              );
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleCheckShieldedSnapshotHistory = async (
+    snapshotId: string,
+    syncHint: string,
+    afterNoteIndex: number
+  ) => {
+    setShieldedHistory((prev) => ({
+      ...prev,
+      [snapshotId]: { loading: true }
+    }));
+    try {
+      const history = await rpc.getShieldedWalletHistory(syncHint, {
+        afterNoteIndex,
+        limit: 5,
+      });
+      setShieldedHistory((prev) => ({
+        ...prev,
+        [snapshotId]: {
+          loading: false,
+          available: history.available,
+          hasNewerIndexedHistory: history.items.length > 0,
+          items: history.items.map((item) => ({
+            noteIndex: item.noteIndex,
+            action: item.action,
+            function: item.function,
+            commitment: item.commitment,
+            createdAt: item.createdAt,
+            hasPayload: item.outputPayload != null && item.outputPayload !== "",
+          })),
+        }
+      }));
+    } catch (error) {
+      setShieldedHistory((prev) => ({
+        ...prev,
+        [snapshotId]: {
+          loading: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to load indexed shielded history.",
+        }
+      }));
+    }
   };
 
   const handleAddContact = async () => {
@@ -438,6 +574,96 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
             <Button title="Export" variant="secondary" onPress={handleExport} style={{ flex: 1 }} />
             <Button title="Import" variant="secondary" onPress={handleImport} style={{ flex: 1 }} />
           </View>
+          <Text style={styles.backupHint}>
+            Full wallet backups now include any stored shielded state_snapshot records.
+          </Text>
+        </Card>
+
+        <Card
+          title="Shielded Snapshots"
+          subtitle="Encrypted xian-zk state_snapshot backups stored with this wallet."
+        >
+          {state.shieldedWalletSnapshots.length === 0 ? (
+            <Text style={styles.emptyText}>No shielded snapshots stored yet.</Text>
+          ) : (
+            state.shieldedWalletSnapshots.map((snapshot) => (
+              <View key={snapshot.id} style={styles.snapshotRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.accountName}>{snapshot.label}</Text>
+                  <Text style={styles.accountAddr} numberOfLines={1}>
+                    {snapshot.assetId}
+                  </Text>
+                  <Text style={styles.snapshotMeta}>
+                    {snapshot.noteCount} notes · {snapshot.commitmentCount} commitments · scanned {snapshot.lastScannedIndex}
+                  </Text>
+                  <Text style={styles.snapshotHint}>
+                    Seed-only recovery still depends on indexed shielded history being available somewhere.
+                  </Text>
+                  {shieldedHistory[snapshot.id]?.loading ? (
+                    <Text style={styles.snapshotHistoryInfo}>
+                      Checking indexed history after note {snapshot.lastScannedIndex}...
+                    </Text>
+                  ) : shieldedHistory[snapshot.id]?.error ? (
+                    <Text style={styles.snapshotHistoryWarning}>
+                      {shieldedHistory[snapshot.id]?.error}
+                    </Text>
+                  ) : shieldedHistory[snapshot.id] ? (
+                    shieldedHistory[snapshot.id]?.available === false ? (
+                      <Text style={styles.snapshotHistoryWarning}>
+                        Indexed shielded history is not available from the current RPC/BDS path right now.
+                      </Text>
+                    ) : shieldedHistory[snapshot.id]?.hasNewerIndexedHistory ? (
+                      <View style={{ marginTop: 8 }}>
+                        <Text style={styles.snapshotHistoryWarning}>
+                          Indexed history shows newer notes after this snapshot. Refresh your shielded wallet state before spending.
+                        </Text>
+                        {shieldedHistory[snapshot.id]?.items?.map((item, index) => (
+                          <Text key={`${snapshot.id}-${index}`} style={styles.snapshotHistoryInfo}>
+                            {(item.action ?? item.function ?? "shielded output")} · note {String(item.noteIndex ?? "?")} · {item.hasPayload ? "payload present" : "payload missing"}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : (
+                      <Text style={styles.snapshotHistoryInfo}>
+                        Indexed history is available and no newer notes were found after this snapshot.
+                      </Text>
+                    )
+                  ) : null}
+                </View>
+                <View style={styles.snapshotActions}>
+                  <TouchableOpacity
+                    style={styles.actionPill}
+                    onPress={() =>
+                      handleCheckShieldedSnapshotHistory(
+                        snapshot.id,
+                        snapshot.syncHint,
+                        snapshot.lastScannedIndex
+                      )
+                    }
+                  >
+                    <Text style={styles.actionPillText}>Check</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionPill}
+                    onPress={() => handleExportShieldedSnapshot(snapshot.id)}
+                  >
+                    <Text style={styles.actionPillText}>Share</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionPill}
+                    onPress={() => handleRemoveShieldedSnapshot(snapshot.id)}
+                  >
+                    <Feather name="trash-2" size={14} color={colors.danger} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          )}
+          <Button
+            title="Import Shielded Snapshot"
+            variant="secondary"
+            onPress={handleImportShieldedSnapshot}
+          />
         </Card>
 
         {/* Actions */}
@@ -503,6 +729,19 @@ const styles = StyleSheet.create({
   activePill: { fontSize: 11, fontWeight: "600", color: colors.accent },
   accountAddr: { fontFamily: "monospace", fontSize: 11, color: colors.muted, marginTop: 2 },
   accountActions: { flexDirection: "row", gap: 12 },
+  snapshotActions: { flexDirection: "row", gap: 12 },
+  snapshotRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  snapshotMeta: { fontSize: 11, color: colors.muted, marginTop: 4 },
+  snapshotHint: { fontSize: 11, color: colors.muted, marginTop: 6 },
+  snapshotHistoryInfo: { fontSize: 11, color: colors.muted, marginTop: 6 },
+  snapshotHistoryWarning: { fontSize: 11, color: colors.warning, marginTop: 6 },
   loadingOverlay: { alignItems: "center" as const, paddingVertical: 8 },
   actionPill: {
     paddingVertical: 4,
@@ -514,6 +753,8 @@ const styles = StyleSheet.create({
   actionPillTextMuted: { fontSize: 14 },
   linkText: { fontSize: 12, color: colors.accent, fontWeight: "600" },
   mutedLink: { fontSize: 12, color: colors.muted, fontWeight: "600" },
+  backupHint: { fontSize: 12, color: colors.muted, marginTop: 8 },
+  emptyText: { fontSize: 13, color: colors.muted },
   secretBox: {
     backgroundColor: colors.bg0,
     padding: 12,

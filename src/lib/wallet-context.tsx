@@ -10,6 +10,7 @@ import React, {
 import {
   type StoredWalletState,
   type Contact,
+  type ShieldedWalletSnapshotSummary,
   loadWalletState,
   loadContacts,
   saveContacts,
@@ -44,6 +45,7 @@ export interface WalletState {
   assetBalances: Record<string, string | null>;
   balancesLoading: boolean;
   contacts: Contact[];
+  shieldedWalletSnapshots: ShieldedWalletSnapshotSummary[];
 }
 
 type ToastMessage = { message: string; tone: "success" | "danger" | "warning" | "info" } | null;
@@ -77,6 +79,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     assetBalances: {},
     balancesLoading: false,
     contacts: [],
+    shieldedWalletSnapshots: [],
   });
 
   const [controller, setController] = useState<WalletContextValue["controller"]>(null);
@@ -189,6 +192,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       networkPresets: walletState?.networkPresets ?? [],
       watchedAssets: walletState?.watchedAssets ?? [],
       contacts,
+      shieldedWalletSnapshots: [...(walletState?.shieldedWalletSnapshots ?? [])].sort((left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt)
+      ),
     }));
   }, [hydrateWatchedAssetIcons]);
 

@@ -5,6 +5,7 @@
 import {
   Ed25519Signer,
   type TransactionReceipt,
+  type XianShieldedWalletHistoryResult,
   XianClient
 } from "@xian-tech/client";
 
@@ -130,6 +131,20 @@ export class XianRpcClient {
     logoSvg: string | null;
   }> {
     return this.client.getTokenMetadata(contract);
+  }
+
+  async getShieldedWalletHistory(
+    syncHint: string,
+    options?: {
+      limit?: number;
+      afterNoteIndex?: number;
+    }
+  ): Promise<XianShieldedWalletHistoryResult> {
+    return this.client.getShieldedWalletHistory(syncHint, {
+      kind: "sync_hint",
+      limit: options?.limit,
+      afterNoteIndex: options?.afterNoteIndex,
+    });
   }
 
   async getBalance(
