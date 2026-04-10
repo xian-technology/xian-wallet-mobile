@@ -128,13 +128,9 @@ export class XianRpcClient {
     name: string | null;
     symbol: string | null;
     logoUrl: string | null;
+    logoSvg: string | null;
   }> {
-    const metadata = await this.client.getTokenMetadata(contract);
-    return {
-      name: metadata.name,
-      symbol: metadata.symbol,
-      logoUrl: metadata.logoUrl
-    };
+    return this.client.getTokenMetadata(contract);
   }
 
   async getShieldedWalletHistory(
