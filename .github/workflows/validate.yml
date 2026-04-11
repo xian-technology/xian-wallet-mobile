@@ -1,0 +1,52 @@
+name: Validate
+
+on:
+  push:
+    branches:
+      - "*"
+  pull_request:
+    branches:
+      - "*"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout xian-wallet-mobile
+        uses: actions/checkout@v6
+        with:
+          path: xian-wallet-mobile
+
+      - name: Checkout xian-js
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.repository_owner }}/xian-js
+          ref: main
+          path: xian-js
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            xian-js/package-lock.json
+            xian-wallet-mobile/package-lock.json
+
+      - name: Install and build xian-js
+        working-directory: xian-js
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install xian-wallet-mobile
+        working-directory: xian-wallet-mobile
+        run: npm ci
+
+      - name: Typecheck xian-wallet-mobile
+        working-directory: xian-wallet-mobile
+        run: npm run typecheck
+
+      - name: Test xian-wallet-mobile
+        working-directory: xian-wallet-mobile
+        run: npm test
