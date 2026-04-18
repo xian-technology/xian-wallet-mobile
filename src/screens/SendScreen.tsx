@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   ActivityIndicator,
   Linking,
@@ -48,13 +49,22 @@ export function SendScreen({ navigation, route }: { navigation: any; route: any 
   const handleMax = () => { lightTap(); setAmount(tokenBal && tokenBal !== "null" ? tokenBal : "0"); };
 
   const handleReview = async () => {
-    if (!to.trim()) { setError("Recipient address is required."); return; }
+    const trimmedTo = to.trim();
+    if (!trimmedTo) { setError("Recipient address is required."); return; }
+    if (!/^[0-9a-fA-F]{64}$/.test(trimmedTo)) {
+      setError("Recipient must be a 64-character hex Xian address.");
+      return;
+    }
+    if (trimmedTo === state.publicKey) {
+      setError("You can't send tokens to your own address.");
+      return;
+    }
     const parsedAmount = parseAmountInput(amount);
     if (parsedAmount == null) { setError("Enter a valid amount."); return; }
     setError(null); setEstimating(true);
     try {
       const [est, rate] = await Promise.all([
-        rpc.estimateChi({ sender: state.publicKey!, contract: selectedToken, function: "transfer", kwargs: { to: to.trim(), amount: parsedAmount } }),
+        rpc.estimateChi({ sender: state.publicKey!, contract: selectedToken, function: "transfer", kwargs: { to: trimmedTo, amount: parsedAmount } }),
         rpc.getChiRate(),
       ]);
       setEstimate(est); setChiRate(rate); lightTap(); setStep("review");
@@ -204,7 +214,7 @@ export function SendScreen({ navigation, route }: { navigation: any; route: any 
       <ScrollView contentContainerStyle={styles.scroll}>
         <Card title="Send" subtitle="Transfer tokens to another address.">
           {/* Token selector */}
-          <TouchableOpacity style={styles.tokenSelector} onPress={() => { lightTap(); setShowTokenPicker(true); }}>
+          <TouchableOpacity style={styles.tokenSelector} onPress={() => { lightTap(); Keyboard.dismiss(); setShowTokenPicker(true); }}>
             <TokenAvatar
               contract={selectedToken}
               symbol={tokenSymbol}
@@ -224,7 +234,7 @@ export function SendScreen({ navigation, route }: { navigation: any; route: any 
             <Text style={styles.fieldLabel}>Recipient</Text>
             <View style={styles.inputWithIcon}>
               <Input value={to} onChangeText={setTo} placeholder="Wallet address" autoCapitalize="none" autoCorrect={false} style={{ paddingRight: 44 }} />
-              <TouchableOpacity style={styles.inlineIconBtn} onPress={() => { lightTap(); setShowContacts(true); }}>
+              <TouchableOpacity style={styles.inlineIconBtn} onPress={() => { lightTap(); Keyboard.dismiss(); setShowContacts(true); }}>
                 <Feather name="users" size={16} color={colors.muted} />
               </TouchableOpacity>
             </View>

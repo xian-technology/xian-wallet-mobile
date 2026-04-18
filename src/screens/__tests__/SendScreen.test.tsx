@@ -68,7 +68,7 @@ describe("SendScreen", () => {
       <SendScreen navigation={{ navigate: jest.fn() }} route={{ params: { token: "currency" } }} />
     );
 
-    fireEvent.changeText(screen.getByPlaceholderText("Wallet address"), "receiver");
+    fireEvent.changeText(screen.getByPlaceholderText("Wallet address"), "ab".repeat(32));
     fireEvent.changeText(
       screen.getByPlaceholderText("0.00"),
       "9007199254740993"
@@ -81,7 +81,7 @@ describe("SendScreen", () => {
         contract: "currency",
         function: "transfer",
         kwargs: {
-          to: "receiver",
+          to: "ab".repeat(32),
           amount: 9007199254740993n
         }
       })
@@ -95,7 +95,7 @@ describe("SendScreen", () => {
         contract: "currency",
         function: "transfer",
         kwargs: {
-          to: "receiver",
+          to: "ab".repeat(32),
           amount: 9007199254740993n
         },
         chi: 12_000

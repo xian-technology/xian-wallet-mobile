@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import QRCode from "react-native-qrcode-svg";
 import { colors } from "../theme/colors";
@@ -11,11 +12,22 @@ export function ReceiveScreen() {
   const address = state.publicKey ?? "";
 
   const handleCopy = async () => {
+    if (!address) return;
     await Clipboard.setStringAsync(address);
     setCopied(true);
     showToast("Address copied.", "success");
     setTimeout(() => setCopied(false), 2000);
   };
+
+  if (!address) {
+    return (
+      <View style={[styles.container, styles.emptyState]}>
+        <Feather name="lock" size={32} color={colors.muted} />
+        <Text style={styles.heading}>No address available</Text>
+        <Text style={styles.sub}>Unlock your wallet to view your receive address.</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -24,7 +36,7 @@ export function ReceiveScreen() {
 
       <View style={styles.qrContainer}>
         <QRCode
-          value={address || "empty"}
+          value={address}
           size={200}
           backgroundColor={colors.fg}
           color={colors.bg0}
@@ -67,6 +79,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 20,
+  },
+  emptyState: {
+    gap: 12,
   },
   heading: {
     fontSize: 22,

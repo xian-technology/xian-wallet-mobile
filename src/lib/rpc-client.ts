@@ -31,6 +31,34 @@ interface AbciResult {
   };
 }
 
+export interface TxHistoryRecord {
+  hash: string;
+  block_height?: number | null;
+  block_hash?: string | null;
+  block_time?: string | number | null;
+  tx_index?: number | null;
+  sender: string;
+  nonce?: number | null;
+  contract: string;
+  function: string;
+  success: boolean;
+  status_code?: number | null;
+  chi_used?: number | null;
+  created_at?: string | null;
+  result?: unknown;
+  payload?: {
+    sender?: string;
+    nonce?: number;
+    contract?: string;
+    function?: string;
+    kwargs?: Record<string, unknown>;
+    [key: string]: unknown;
+  } | null;
+  envelope?: unknown;
+  /** Legacy convenience: some backends flatten payload.kwargs into the row. */
+  kwargs?: Record<string, unknown>;
+}
+
 export class XianRpcClient {
   private client: XianClient;
 
@@ -66,49 +94,22 @@ export class XianRpcClient {
     address: string,
     limit: number = 50,
     offset: number = 0
-  ): Promise<
-    Array<{
-      hash: string;
-      block_height: number;
-      sender: string;
-      nonce: number;
-      contract: string;
-      function: string;
-      success: boolean;
-      chi_used: number;
-      created_at: string;
-      kwargs?: Record<string, unknown>;
-    }>
-  > {
-    try {
-      const result = await this.abciQuery(
-        `/txs_by_sender/${address}/limit=${limit}/offset=${offset}`
-      );
-      if (Array.isArray(result)) {
-        return result;
-      }
-      if (
-        result &&
-        typeof result === "object" &&
-        "items" in (result as Record<string, unknown>)
-      ) {
-        return (result as { items: unknown[] }).items as Array<{
-          hash: string;
-          block_height: number;
-          sender: string;
-          nonce: number;
-          contract: string;
-          function: string;
-          success: boolean;
-          chi_used: number;
-          created_at: string;
-          kwargs?: Record<string, unknown>;
-        }>;
-      }
-      return [];
-    } catch {
-      return [];
+  ): Promise<TxHistoryRecord[]> {
+    const result = await this.abciQuery(
+      `/txs_by_sender/${address}/limit=${limit}/offset=${offset}`
+    );
+    if (Array.isArray(result)) {
+      return result as TxHistoryRecord[];
     }
+    if (
+      result &&
+      typeof result === "object" &&
+      "items" in (result as Record<string, unknown>)
+    ) {
+      const items = (result as { items: unknown }).items;
+      return Array.isArray(items) ? (items as TxHistoryRecord[]) : [];
+    }
+    return [];
   }
 
   async getChainId(): Promise<string> {

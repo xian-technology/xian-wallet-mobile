@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -50,21 +50,39 @@ export function AdvancedTxScreen({ navigation }: { navigation: any }) {
   const [error, setError] = useState<string | null>(null);
   const [methods, setMethods] = useState<ContractMethod[]>([]);
   const [methodsLoading, setMethodsLoading] = useState(false);
+  const [methodsError, setMethodsError] = useState<string | null>(null);
+  const methodsGen = useRef(0);
   const [result, setResult] = useState<{ submitted: boolean; accepted: boolean; finalized: boolean; txHash?: string; message?: string; } | null>(null);
 
-  // Load methods when contract changes
+  // Load methods when contract changes (debounced + generation-guarded so late
+  // responses can't overwrite newer input).
   useEffect(() => {
     const c = contract.trim();
-    if (!c) { setMethods([]); return; }
+    if (!c) {
+      methodsGen.current += 1;
+      setMethods([]);
+      setMethodsError(null);
+      setMethodsLoading(false);
+      return;
+    }
+    const gen = ++methodsGen.current;
     const timer = setTimeout(async () => {
       setMethodsLoading(true);
+      setMethodsError(null);
       try {
-        setMethods(await rpc.getContractMethods(c));
-      } catch { setMethods([]); }
-      finally { setMethodsLoading(false); }
+        const result = await rpc.getContractMethods(c);
+        if (gen !== methodsGen.current) return;
+        setMethods(result);
+      } catch (e) {
+        if (gen !== methodsGen.current) return;
+        setMethods([]);
+        setMethodsError(e instanceof Error ? e.message : "Failed to load contract functions");
+      } finally {
+        if (gen === methodsGen.current) setMethodsLoading(false);
+      }
     }, 500);
     return () => clearTimeout(timer);
-  }, [contract, state.rpcUrl]);
+  }, [contract, state.rpcUrl, rpc]);
 
   // Update args when function changes
   useEffect(() => {
@@ -166,7 +184,15 @@ export function AdvancedTxScreen({ navigation }: { navigation: any }) {
                 ))}
               </ScrollView>
             ) : (
-              <Input value={func} onChangeText={setFunc} placeholder="e.g. transfer" autoCapitalize="none" />
+              <>
+                {methodsError && (
+                  <View style={styles.inlineHint}>
+                    <Feather name="alert-circle" size={12} color={colors.warning} />
+                    <Text style={styles.inlineHintText}>{methodsError}. Enter the function name manually below.</Text>
+                  </View>
+                )}
+                <Input value={func} onChangeText={setFunc} placeholder="e.g. transfer" autoCapitalize="none" />
+              </>
             )}
           </View>
         </Card>
@@ -212,6 +238,8 @@ const styles = StyleSheet.create({
   methodChipActive: { backgroundColor: colors.accentSoft },
   methodChipText: { fontSize: 13, color: colors.muted, fontWeight: "500" },
   methodChipTextActive: { color: colors.accent },
+  inlineHint: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, paddingHorizontal: 4 },
+  inlineHintText: { fontSize: 11, color: colors.warning, flex: 1 },
   detailRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 6 },
   detailLabel: { fontSize: 13, color: colors.muted },
   detailValue: { fontSize: 13, color: colors.fg, fontWeight: "500", maxWidth: "60%" },

@@ -101,6 +101,10 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
 
   const handleRevealSeed = async () => {
     if (!controller) return;
+    if (!secretPassword) {
+      setError("Enter your wallet password.");
+      return;
+    }
     try {
       setError(null);
       setRevealedSeed(await controller.revealMnemonic(secretPassword));
@@ -109,6 +113,10 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
 
   const handleRevealKey = async () => {
     if (!controller) return;
+    if (!secretPassword) {
+      setError("Enter your wallet password.");
+      return;
+    }
     try {
       setError(null);
       setRevealedKey(await controller.revealPrivateKey(secretPassword));
@@ -367,9 +375,23 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
     showToast("Contact saved.", "success");
   };
 
-  const handleDeleteContact = async (id: string) => {
-    await setContacts(state.contacts.filter((c) => c.id !== id));
-    showToast("Contact removed.", "info");
+  const handleDeleteContact = (id: string) => {
+    const contact = state.contacts.find((c) => c.id === id);
+    Alert.alert(
+      "Remove Contact",
+      contact ? `Remove ${contact.name} from your contacts?` : "Remove this contact?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            await setContacts(state.contacts.filter((c) => c.id !== id));
+            showToast("Contact removed.", "info");
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -506,8 +528,8 @@ export function SettingsScreen({ navigation }: { navigation: any }) {
             <>
               <Input label="Password" secureTextEntry value={secretPassword} onChangeText={setSecretPassword} placeholder="Wallet password" />
               <View style={styles.btnRow}>
-                {isMnemonic && <Button title="Show Seed" variant="secondary" onPress={handleRevealSeed} style={{ flex: 1 }} />}
-                <Button title="Show Key" variant="secondary" onPress={handleRevealKey} style={{ flex: 1 }} />
+                {isMnemonic && <Button title="Show Seed" variant="secondary" onPress={handleRevealSeed} disabled={!secretPassword} style={{ flex: 1 }} />}
+                <Button title="Show Key" variant="secondary" onPress={handleRevealKey} disabled={!secretPassword} style={{ flex: 1 }} />
               </View>
               {error && <Text style={styles.errorText}>{error}</Text>}
             </>

@@ -86,6 +86,44 @@ export function HomeScreen({ navigation }: { navigation: any }) {
     await refresh();
   };
 
+  const addToken = async (rawContract: string) => {
+    const contractName = rawContract.trim();
+    if (!contractName) return;
+    const ws = await loadWalletState();
+    if (!ws) return;
+    if (ws.watchedAssets.some((a) => a.contract === contractName)) {
+      showToast("Already tracked.", "warning");
+      return;
+    }
+    let meta: Awaited<ReturnType<typeof rpc.getTokenMetadata>>;
+    try {
+      meta = await rpc.getTokenMetadata(contractName);
+    } catch (e) {
+      showToast(
+        e instanceof Error
+          ? `Couldn't load ${contractName}: ${e.message}`
+          : `Couldn't load token metadata for ${contractName}.`,
+        "danger"
+      );
+      return;
+    }
+    if (!meta.name && !meta.symbol) {
+      showToast(`No token found at ${contractName}.`, "danger");
+      return;
+    }
+    ws.watchedAssets.push({
+      contract: contractName,
+      name: meta.name ?? undefined,
+      symbol: meta.symbol ?? undefined,
+      icon: meta.logoUrl ?? meta.logoSvg ?? undefined,
+    });
+    await saveWalletState(ws);
+    setAddTokenValue("");
+    showToast(`Added ${meta.symbol ?? contractName}.`, "success");
+    await refresh();
+    await refreshBalances();
+  };
+
   const quickActions = (
     <View style={styles.actions}>
       <TouchableOpacity style={styles.actionBtn} onPress={() => { lightTap(); navigation.navigate("Send"); }}>
@@ -149,53 +187,11 @@ export function HomeScreen({ navigation }: { navigation: any }) {
               placeholder="Contract name"
               placeholderTextColor={colors.muted}
               autoCapitalize="none"
-              onSubmitEditing={async () => {
-                if (!addTokenValue.trim()) return;
-                const ws = await loadWalletState();
-                if (!ws) return;
-                if (ws.watchedAssets.some((a) => a.contract === addTokenValue.trim())) {
-                  showToast("Already tracked.", "warning");
-                  return;
-                }
-                const contractName = addTokenValue.trim();
-                const meta = await rpc.getTokenMetadata(contractName);
-                ws.watchedAssets.push({
-                  contract: contractName,
-                  name: meta.name ?? undefined,
-                  symbol: meta.symbol ?? undefined,
-                  icon: meta.logoUrl ?? meta.logoSvg ?? undefined,
-                });
-                await saveWalletState(ws);
-                setAddTokenValue("");
-                showToast(`Added ${meta.symbol ?? contractName}.`, "success");
-                await refresh();
-                await refreshBalances();
-              }}
+              onSubmitEditing={() => addToken(addTokenValue)}
             />
             <TouchableOpacity
               style={styles.addTokenBtn}
-              onPress={async () => {
-                if (!addTokenValue.trim()) return;
-                lightTap();
-                const ws = await loadWalletState();
-                if (!ws) return;
-                if (ws.watchedAssets.some((a) => a.contract === addTokenValue.trim())) {
-                  showToast("Already tracked.", "warning");
-                  return;
-                }
-                const contractName = addTokenValue.trim();
-                const meta = await rpc.getTokenMetadata(contractName);
-                ws.watchedAssets.push({
-                  contract: contractName,
-                  name: meta.name ?? undefined,
-                  symbol: meta.symbol ?? undefined,
-                  icon: meta.logoUrl ?? meta.logoSvg ?? undefined,
-                });
-                await saveWalletState(ws);
-                setAddTokenValue("");
-                showToast(`Added ${meta.symbol ?? contractName}.`, "success");
-                await refresh();
-              }}
+              onPress={() => { lightTap(); void addToken(addTokenValue); }}
             >
               <Feather name="plus" size={16} color={colors.accent} />
             </TouchableOpacity>
