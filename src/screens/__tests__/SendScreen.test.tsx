@@ -64,9 +64,9 @@ describe("SendScreen", () => {
       txHash: "ABC123"
     }));
 
-    const screen = render(
-      <SendScreen navigation={{ navigate: jest.fn() }} route={{ params: { token: "currency" } }} />
-    );
+    const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof SendScreen>["navigation"];
+    const route = { params: { token: "currency" } } as unknown as React.ComponentProps<typeof SendScreen>["route"];
+    const screen = render(<SendScreen navigation={navigation} route={route} />);
 
     fireEvent.changeText(screen.getByPlaceholderText("Wallet address"), "ab".repeat(32));
     fireEvent.changeText(

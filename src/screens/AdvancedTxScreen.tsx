@@ -38,7 +38,7 @@ function parseKwargs(args: Arg[]): Record<string, unknown> {
   return kw;
 }
 
-export function AdvancedTxScreen({ navigation }: { navigation: any }) {
+export function AdvancedTxScreen() {
   const { state, rpc, refreshBalances, showToast } = useWallet();
   const [step, setStep] = useState<Step>("draft");
   const [contract, setContract] = useState("");

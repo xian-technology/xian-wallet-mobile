@@ -18,6 +18,7 @@ import { SwipeableRow } from "../components/SwipeableRow";
 import { DraggableList } from "../components/DraggableList";
 import { TokenAvatar } from "../components/TokenAvatar";
 import { lightTap, mediumTap } from "../lib/haptics";
+import type { HomeTabScreenProps } from "../navigation/types";
 
 function truncAddr(addr: string): string {
   return addr.length <= 16 ? addr : `${addr.slice(0, 8)}...${addr.slice(-6)}`;
@@ -45,7 +46,7 @@ function fmtBal(raw: string | null, decimals?: number): string {
   return truncated.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: d });
 }
 
-export function HomeScreen({ navigation }: { navigation: any }) {
+export function HomeScreen({ navigation }: HomeTabScreenProps<"Home">) {
   const { state, refreshBalances, showToast, refresh, prefs, rpc } = useWallet();
   const [refreshing, setRefreshing] = useState(false);
   const [managing, setManaging] = useState(false);

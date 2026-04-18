@@ -127,8 +127,7 @@ function subtitleFor(cls: TxClassification, tx: TxHistoryRecord): string {
   return `${tx.contract}.${tx.function}`;
 }
 
-export function ActivityScreen({ navigation }: { navigation: unknown }) {
-  void navigation;
+export function ActivityScreen() {
   const { state, rpc, showToast } = useWallet();
   const [txs, setTxs] = useState<TxHistoryRecord[]>([]);
   const [loading, setLoading] = useState(true);

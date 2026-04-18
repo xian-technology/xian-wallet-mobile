@@ -21,6 +21,7 @@ import { Card } from "../components/Card";
 import { useWallet } from "../lib/wallet-context";
 import { saveWalletState, loadWalletState } from "../lib/storage";
 import { lightTap } from "../lib/haptics";
+import type { HomeTabScreenProps } from "../navigation/types";
 
 function formatJsonText(value: string): string {
   try {
@@ -45,7 +46,7 @@ interface ShieldedHistoryViewState {
   }>;
 }
 
-export function SettingsScreen({ navigation }: { navigation: any }) {
+export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
   const { state, refresh, controller, rpc, showToast, setContacts, prefs, updatePrefs } = useWallet();
   const [secretPassword, setSecretPassword] = useState("");
   const [revealedSeed, setRevealedSeed] = useState<string | null>(null);

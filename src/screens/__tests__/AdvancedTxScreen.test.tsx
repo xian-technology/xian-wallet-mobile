@@ -78,7 +78,7 @@ describe("AdvancedTxScreen", () => {
       txHash: "XYZ789"
     }));
 
-    const screen = render(<AdvancedTxScreen navigation={{ navigate: jest.fn() }} />);
+    const screen = render(<AdvancedTxScreen />);
 
     fireEvent.changeText(screen.getByPlaceholderText("e.g. currency"), "con_token");
     await act(async () => {

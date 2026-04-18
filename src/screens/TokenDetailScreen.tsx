@@ -9,6 +9,7 @@ import { TokenAvatar } from "../components/TokenAvatar";
 import { useWallet } from "../lib/wallet-context";
 import { loadWalletState, saveWalletState } from "../lib/storage";
 import { lightTap } from "../lib/haptics";
+import type { RootStackScreenProps } from "../navigation/types";
 
 function assetHue(contract: string): string {
   let h = 0;
@@ -32,7 +33,7 @@ function formatBalance(raw: string | null, decimals?: number): string {
   return truncated.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: d });
 }
 
-export function TokenDetailScreen({ route, navigation }: { route: any; navigation: any }) {
+export function TokenDetailScreen({ route, navigation }: RootStackScreenProps<"TokenDetail">) {
   const { state, refresh, showToast } = useWallet();
   const contract: string = route.params?.contract ?? "";
 

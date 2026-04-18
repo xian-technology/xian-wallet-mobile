@@ -25,9 +25,10 @@ import { AppsScreen } from "./src/screens/AppsScreen";
 import { ActivityScreen } from "./src/screens/ActivityScreen";
 import { NetworkBadge } from "./src/components/NetworkBadge";
 import { lightTap } from "./src/lib/haptics";
+import type { HomeTabParamList, RootStackParamList } from "./src/navigation/types";
 
-const Stack = createNativeStackNavigator();
-const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator<RootStackParamList>();
+const Tab = createBottomTabNavigator<HomeTabParamList>();
 
 function HomeTabs() {
   return (

@@ -23,10 +23,11 @@ import { useWallet } from "../lib/wallet-context";
 import { loadUnlockedSession } from "../lib/storage";
 import { lightTap, successTap, errorTap } from "../lib/haptics";
 import { parseAmountInput } from "../lib/runtime-input";
+import type { RootStackScreenProps } from "../navigation/types";
 
 type Step = "draft" | "review" | "sending" | "result";
 
-export function SendScreen({ navigation, route }: { navigation: any; route: any }) {
+export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) {
   const { state, rpc, refreshBalances, showToast } = useWallet();
   const [step, setStep] = useState<Step>("draft");
   const [selectedToken, setSelectedToken] = useState(route.params?.token ?? "currency");

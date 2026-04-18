@@ -7,7 +7,7 @@ import { Card } from "../components/Card";
 import { useWallet } from "../lib/wallet-context";
 import { loadWalletState, saveWalletState } from "../lib/storage";
 
-export function NetworksScreen({ navigation }: { navigation: any }) {
+export function NetworksScreen() {
   const { state, refresh, showToast } = useWallet();
   const [editing, setEditing] = useState<string | null>(null); // preset id or "new"
   const [name, setName] = useState("");
