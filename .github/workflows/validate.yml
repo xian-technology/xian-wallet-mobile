@@ -54,7 +54,9 @@ jobs:
 
       - name: Install xian-wallet-mobile
         working-directory: xian-wallet-mobile
-        run: npm ci
+        run: |
+          npm ci
+          npm audit --audit-level=critical --omit=dev
 
       - name: Typecheck xian-wallet-mobile
         working-directory: xian-wallet-mobile
