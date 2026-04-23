@@ -685,16 +685,29 @@ export function createWalletController() {
       if (index === 0) {
         throw new Error("cannot remove primary account");
       }
+      await restoreSession();
       const state = await store.loadState();
       if (!state?.accounts) {
         throw new Error("no accounts");
       }
+      const removedActiveAccount = state.activeAccountIndex === index;
       state.accounts = state.accounts.filter((account) => account.index !== index);
-      if (state.activeAccountIndex === index && state.accounts.length > 0) {
+      if (removedActiveAccount && state.accounts.length > 0) {
         const primary = state.accounts[0]!;
         state.publicKey = primary.publicKey;
         state.encryptedPrivateKey = primary.encryptedPrivateKey;
         state.activeAccountIndex = primary.index;
+
+        if (unlockedMnemonic && unlockedSessionKey) {
+          const privateKey = await derivePrivateKeyFromMnemonic(
+            unlockedMnemonic,
+            primary.index
+          );
+          unlockedPrivateKey = privateKey;
+          await persistSession(privateKey);
+        } else if (unlockedPrivateKey) {
+          await clearSession();
+        }
       }
       await store.saveState(state);
     },

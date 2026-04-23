@@ -198,6 +198,28 @@ describe("wallet-controller", () => {
     expect(mockStoredSession?.sessionKey).toEqual(expect.any(String));
   });
 
+  it("refreshes the unlocked session when removing the active derived account", async () => {
+    const controller = createWalletController();
+
+    await controller.createWallet({
+      password: "secret123",
+      mnemonic: VALID_MNEMONIC
+    });
+    const primaryPrivateKey = mockStoredSession?.privateKey;
+
+    await controller.addAccount();
+    expect(mockStoredState?.activeAccountIndex).toBe(1);
+    expect(mockStoredSession?.privateKey).not.toBe(primaryPrivateKey);
+
+    const resumedController = createWalletController();
+    await resumedController.removeAccount(1);
+
+    expect(mockStoredState?.activeAccountIndex).toBe(0);
+    expect(mockStoredState?.publicKey).toBe(mockStoredState?.accounts?.[0]?.publicKey);
+    expect(mockStoredSession?.privateKey).toBe(primaryPrivateKey);
+    expect(mockStore.clearUnlockedSession).not.toHaveBeenCalled();
+  });
+
   it("fails unlock with the wrong password", async () => {
     const controller = createWalletController();
 
