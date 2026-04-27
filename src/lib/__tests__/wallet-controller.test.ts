@@ -65,7 +65,7 @@ jest.mock("@scure/bip39", () => ({
   )
 }));
 
-jest.mock("@scure/bip39/wordlists/english", () => ({
+jest.mock("@scure/bip39/wordlists/english.js", () => ({
   wordlist: []
 }), { virtual: true });
 

@@ -4,8 +4,7 @@
  * the React Native crypto polyfill for encryption and derivation.
  */
 import { generateMnemonic, mnemonicToSeed, validateMnemonic } from "@scure/bip39";
-// @ts-expect-error — wordlist export works at runtime
-import { wordlist } from "@scure/bip39/wordlists/english";
+import { wordlist } from "@scure/bip39/wordlists/english.js";
 import {
   Ed25519Signer,
   isValidEd25519Key,
