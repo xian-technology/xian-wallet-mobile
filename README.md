@@ -34,6 +34,49 @@ npm run android          # build and run on a connected Android device or emulat
 npm run ios              # build and run on the iOS simulator
 ```
 
+## Product Workflows
+
+The mobile wallet is a full wallet product, not a thin SDK demo. The current
+app covers:
+
+| Flow | Screen / layer | Notes |
+| --- | --- | --- |
+| Create or restore wallet | `Setup` | generates or restores mnemonic-backed wallet state |
+| Lock / unlock | `Lock`, wallet controller | keeps private key access behind the local session boundary |
+| Receive funds | `Receive` | shows the public address and QR code |
+| Send token transfer | `Send` | estimates chi, submits transfer, refreshes balances |
+| Inspect balances | `Home`, `TokenDetail` | reads token balances through `@xian-tech/client` |
+| Review activity | `Activity` | pulls indexed transaction history where available |
+| Manage networks | `Networks`, `Settings` | stores RPC / dashboard presets and switches active network |
+| Advanced contract call | `AdvancedTx` | loads contract methods, validates kwargs JSON, estimates chi, sends tx |
+| Apps / watched assets | `Apps`, wallet context | tracks dapp-requested or user-added assets |
+
+The default network preset points at `http://127.0.0.1:26657`, which is
+convenient for local desktop testing but not always reachable from a device:
+
+- iOS simulator usually reaches the Mac host through `http://127.0.0.1:26657`
+- Android emulator usually needs `http://10.0.2.2:26657`
+- physical devices need the host machine's LAN IP, for example
+  `http://192.168.1.50:26657`
+
+When testing against `xian-stack`, start the node first and then update the
+wallet network preset to the RPC URL reachable from the simulator or device:
+
+```bash
+cd ../xian-stack
+python3 ./scripts/backend.py start --no-service-node --dashboard
+python3 ./scripts/backend.py endpoints --no-service-node --dashboard
+```
+
+For local development, keep Metro running in one terminal and use a second
+terminal for tests or native rebuilds:
+
+```bash
+npm run start
+npm run typecheck
+npm run test
+```
+
 ## Principles
 
 - **Mobile-first product code.** The repo is a wallet app, not an SDK
