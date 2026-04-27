@@ -9,6 +9,20 @@ This repo is the *mobile product*. It depends on the `xian-js` SDK
 workspace as a sibling checkout. The browser wallet product lives in the
 sibling [`xian-wallet-browser`](../xian-wallet-browser) repo.
 
+## Product Shape
+
+```mermaid
+flowchart LR
+  App["Expo app"] --> Screens["Wallet screens"]
+  Screens --> Controller["Wallet controller"]
+  Controller --> SecureStore["Platform secure store"]
+  Controller --> Client["@xian-tech/client"]
+  Client --> Node["Xian node"]
+  Controller --> NetworkPresets["Network presets"]
+  Activity["Activity and balances"] --> Client
+  AdvancedTx["Advanced contract call"] --> Client
+```
+
 ## Quick Start
 
 This repo consumes `@xian-tech/client` from the sibling `xian-js`
