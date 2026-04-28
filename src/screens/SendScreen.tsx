@@ -22,7 +22,11 @@ import { TokenAvatar } from "../components/TokenAvatar";
 import { useWallet } from "../lib/wallet-context";
 import { loadUnlockedSession } from "../lib/storage";
 import { lightTap, successTap, errorTap } from "../lib/haptics";
-import { formatRuntimeInput, parseAmountInput } from "../lib/runtime-input";
+import {
+  formatRuntimeInput,
+  isRecognizedXianRecipient,
+  parseAmountInput
+} from "../lib/runtime-input";
 import type { RootStackScreenProps } from "../navigation/types";
 
 type Step = "draft" | "review" | "sending" | "result";
@@ -36,9 +40,10 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [estimating, setEstimating] = useState(false);
-  const [estimate, setEstimate] = useState<{ estimated: number; suggested: number } | null>(null);
+  const [estimate, setEstimate] = useState<{ estimated: number } | null>(null);
   const [chiRate, setChiRate] = useState<number | null>(null);
   const [showContacts, setShowContacts] = useState(false);
+  const [unrecognizedRecipient, setUnrecognizedRecipient] = useState<string | null>(null);
   const [result, setResult] = useState<{
     submitted: boolean; accepted: boolean; finalized: boolean; txHash?: string; message?: string;
   } | null>(null);
@@ -49,17 +54,7 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
 
   const handleMax = () => { lightTap(); setAmount(tokenBal && tokenBal !== "null" ? tokenBal : "0"); };
 
-  const handleReview = async () => {
-    const trimmedTo = to.trim();
-    if (!trimmedTo) { setError("Recipient address is required."); return; }
-    if (!/^[0-9a-fA-F]{64}$/.test(trimmedTo)) {
-      setError("Recipient must be a 64-character hex Xian address.");
-      return;
-    }
-    if (trimmedTo === state.publicKey) {
-      setError("You can't send tokens to your own address.");
-      return;
-    }
+  const startReview = async (trimmedTo: string) => {
     const parsedAmount = parseAmountInput(amount);
     if (parsedAmount == null) { setError("Enter a valid amount."); return; }
     setError(null); setEstimating(true);
@@ -71,6 +66,28 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
       setEstimate(est); setChiRate(rate); lightTap(); setStep("review");
     } catch (e) { setError(e instanceof Error ? e.message : "Estimation failed"); }
     finally { setEstimating(false); }
+  };
+
+  const handleReview = async () => {
+    const trimmedTo = to.trim();
+    if (!trimmedTo) { setError("Recipient address is required."); return; }
+    if (trimmedTo === state.publicKey) {
+      setError("You can't send tokens to your own address.");
+      return;
+    }
+    if (!isRecognizedXianRecipient(trimmedTo)) {
+      setUnrecognizedRecipient(trimmedTo);
+      return;
+    }
+    await startReview(trimmedTo);
+  };
+
+  const handleConfirmUnrecognizedRecipient = () => {
+    const recipient = unrecognizedRecipient;
+    setUnrecognizedRecipient(null);
+    if (recipient) {
+      void startReview(recipient);
+    }
   };
 
   const handleSend = async () => {
@@ -113,6 +130,44 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
               )}
             />
           )}
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const unrecognizedRecipientModal = (
+    <Modal
+      visible={unrecognizedRecipient != null}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setUnrecognizedRecipient(null)}
+    >
+      <View style={styles.confirmOverlay}>
+        <View style={styles.confirmDialog}>
+          <View style={styles.confirmIcon}>
+            <Feather name="alert-triangle" size={20} color={colors.warning} />
+          </View>
+          <Text style={styles.confirmTitle}>Confirm recipient</Text>
+          <Text style={styles.confirmBody}>
+            This recipient is not a standard Xian address or contract name. Send funds to it anyway?
+          </Text>
+          <Text style={styles.confirmAddress} numberOfLines={3}>
+            {unrecognizedRecipient}
+          </Text>
+          <View style={styles.confirmActions}>
+            <Button
+              title="Cancel"
+              variant="secondary"
+              onPress={() => setUnrecognizedRecipient(null)}
+              style={styles.confirmButton}
+            />
+            <Button
+              title="Send Anyway"
+              variant="danger"
+              onPress={handleConfirmUnrecognizedRecipient}
+              style={styles.confirmButton}
+            />
+          </View>
         </View>
       </View>
     </Modal>
@@ -211,6 +266,7 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       {contactModal}
+      {unrecognizedRecipientModal}
       {tokenPickerModal}
       <ScrollView contentContainerStyle={styles.scroll}>
         <Card title="Send" subtitle="Transfer tokens to another address.">
@@ -296,6 +352,14 @@ const styles = StyleSheet.create({
   modalContent: { backgroundColor: colors.bg1, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "50%", padding: 16 },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   modalTitle: { fontSize: 16, fontWeight: "700", color: colors.fg },
+  confirmOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.68)", justifyContent: "center", padding: 20 },
+  confirmDialog: { backgroundColor: colors.bg1, borderRadius: 18, borderWidth: 1, borderColor: colors.line, padding: 18, gap: 12 },
+  confirmIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.warningSoft, alignItems: "center", justifyContent: "center" },
+  confirmTitle: { fontSize: 18, fontWeight: "700", color: colors.fg },
+  confirmBody: { fontSize: 13, lineHeight: 19, color: colors.muted },
+  confirmAddress: { fontSize: 12, fontFamily: "monospace", color: colors.fg, backgroundColor: colors.bg2, borderRadius: 10, padding: 10 },
+  confirmActions: { flexDirection: "row", gap: 10, marginTop: 4 },
+  confirmButton: { flex: 1, paddingHorizontal: 10 },
   emptyText: { color: colors.muted, textAlign: "center", paddingVertical: 24 },
   contactItem: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
   contactName: { fontSize: 14, fontWeight: "500", color: colors.fg },

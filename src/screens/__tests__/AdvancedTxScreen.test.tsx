@@ -69,8 +69,7 @@ describe("AdvancedTxScreen", () => {
       }
     ]);
     mockEstimateChi.mockImplementation(async () => ({
-      estimated: 10_000,
-      suggested: 12_000
+      estimated: 10_000
     }));
     mockSendTransaction.mockImplementation(async () => ({
       submitted: true,
@@ -129,5 +128,45 @@ describe("AdvancedTxScreen", () => {
       })
     );
     expect(mockShowToast).toHaveBeenCalledWith("Transaction finalized.", "success");
+  });
+
+  it("uses the exact simulated chi when chi is auto-estimated", async () => {
+    mockGetContractMethods.mockImplementation(async () => []);
+    mockEstimateChi.mockImplementation(async () => ({
+      estimated: 10_000
+    }));
+    mockSendTransaction.mockImplementation(async () => ({
+      submitted: true,
+      accepted: true,
+      finalized: true,
+      txHash: "AUTO123"
+    }));
+
+    const screen = render(<AdvancedTxScreen />);
+
+    fireEvent.changeText(screen.getByPlaceholderText("e.g. currency"), "currency");
+    fireEvent.changeText(screen.getByPlaceholderText("e.g. transfer"), "approve");
+    fireEvent.press(screen.getByText("Review Transaction"));
+
+    await waitFor(() =>
+      expect(mockEstimateChi).toHaveBeenCalledWith({
+        sender: "sender",
+        contract: "currency",
+        function: "approve",
+        kwargs: {}
+      })
+    );
+
+    fireEvent.press(screen.getByText("Send Transaction"));
+
+    await waitFor(() =>
+      expect(mockSendTransaction).toHaveBeenCalledWith({
+        privateKey: "11".repeat(32),
+        contract: "currency",
+        function: "approve",
+        kwargs: {},
+        chi: 10_000
+      })
+    );
   });
 });

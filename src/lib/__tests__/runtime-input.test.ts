@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@jest/globals";
 
 import {
+  isRecognizedXianRecipient,
   parseAmountInput,
   parseIntegerInput,
   parsePositiveIntegerInput,
@@ -30,5 +31,14 @@ describe("runtime-input", () => {
     expect(parseTypedInput("{\"mode\":\"fast\"}", "dict")).toEqual({ mode: "fast" });
     expect(parseTypedInput("[1,2,3]", "list")).toEqual([1, 2, 3]);
     expect(parseTypedInput("hello", "str")).toBe("hello");
+  });
+
+  it("recognizes normal Xian recipients without requiring extra confirmation", () => {
+    expect(isRecognizedXianRecipient("ab".repeat(32))).toBe(true);
+    expect(isRecognizedXianRecipient("currency")).toBe(true);
+    expect(isRecognizedXianRecipient("con_bridge_1")).toBe(true);
+    expect(isRecognizedXianRecipient("qwe")).toBe(false);
+    expect(isRecognizedXianRecipient("external:abc123")).toBe(false);
+    expect(isRecognizedXianRecipient("0xabc123")).toBe(false);
   });
 });

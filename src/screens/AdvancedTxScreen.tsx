@@ -46,7 +46,7 @@ export function AdvancedTxScreen() {
   const [args, setArgs] = useState<Arg[]>([]);
   const [chi, setChi] = useState("");
   const [estimating, setEstimating] = useState(false);
-  const [estimate, setEstimate] = useState<{ estimated: number; suggested: number } | null>(null);
+  const [estimate, setEstimate] = useState<{ estimated: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [methods, setMethods] = useState<ContractMethod[]>([]);
   const [methodsLoading, setMethodsLoading] = useState(false);
@@ -111,7 +111,7 @@ export function AdvancedTxScreen() {
       const session = await loadUnlockedSession();
       if (!session) throw new Error("Wallet is locked");
       const kw = parseKwargs(args);
-      const s = chi ? parsePositiveIntegerInput(chi) : estimate?.suggested ?? 50000;
+      const s = chi ? parsePositiveIntegerInput(chi) : estimate?.estimated ?? 50000;
       if (s == null) throw new Error("Chi must be a positive integer");
       const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: contract.trim(), function: func.trim(), kwargs: kw, chi: s });
       setResult(r); setStep("result");
@@ -131,7 +131,7 @@ export function AdvancedTxScreen() {
           <Card title="Transaction Summary">
             <Row label="Contract" value={contract} mono />
             <Row label="Function" value={func} />
-            <Row label="Chi" value={estimate ? `${estimate.suggested.toLocaleString()}` : chi || "auto"} />
+            <Row label="Chi" value={estimate ? `${estimate.estimated.toLocaleString()}` : chi || "auto"} />
             {Object.entries(kw).map(([k, v]) => <Row key={k} label={k} value={String(v)} mono />)}
           </Card>
         </ScrollView>

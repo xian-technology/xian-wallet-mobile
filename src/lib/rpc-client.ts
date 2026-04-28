@@ -187,7 +187,7 @@ export class XianRpcClient {
     contract: string;
     function: string;
     kwargs: Record<string, unknown>;
-  }): Promise<{ estimated: number; suggested: number }> {
+  }): Promise<{ estimated: number }> {
     const result = await this.client.estimateChi({
       sender: opts.sender,
       contract: opts.contract,
@@ -195,8 +195,7 @@ export class XianRpcClient {
       kwargs: opts.kwargs
     });
     return {
-      estimated: result.estimated,
-      suggested: result.suggested
+      estimated: result.estimated
     };
   }
 
