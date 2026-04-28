@@ -1,4 +1,5 @@
-export type RuntimeNumeric = number | bigint;
+export type RuntimeFixed = { __fixed__: string };
+export type RuntimeNumeric = number | bigint | RuntimeFixed;
 
 const INTEGER_PATTERN = /^-?\d+$/;
 const DECIMAL_PATTERN = /^-?(?:\d+\.?\d*|\.\d+)$/;
@@ -9,7 +10,38 @@ function safeBigIntToNumber(value: bigint): number | bigint {
   return value >= minSafe && value <= maxSafe ? Number(value) : value;
 }
 
-export function parseIntegerInput(value: string): RuntimeNumeric | null {
+function normalizeDecimalText(value: string): string {
+  return value.trim().replace(",", ".");
+}
+
+function fixed(value: string): RuntimeFixed {
+  return { __fixed__: value };
+}
+
+function parseFixedInput(value: string): RuntimeFixed | null {
+  const trimmed = normalizeDecimalText(value);
+  if (!DECIMAL_PATTERN.test(trimmed)) {
+    return null;
+  }
+  return Number.isFinite(Number(trimmed)) ? fixed(trimmed) : null;
+}
+
+export function isRuntimeFixed(value: unknown): value is RuntimeFixed {
+  return (
+    typeof value === "object" &&
+    value != null &&
+    typeof (value as { __fixed__?: unknown }).__fixed__ === "string"
+  );
+}
+
+export function formatRuntimeInput(value: RuntimeNumeric | null): string {
+  if (value == null) {
+    return "";
+  }
+  return isRuntimeFixed(value) ? value.__fixed__ : String(value);
+}
+
+export function parseIntegerInput(value: string): number | bigint | null {
   const trimmed = value.trim();
   if (!INTEGER_PATTERN.test(trimmed)) {
     return null;
@@ -17,7 +49,7 @@ export function parseIntegerInput(value: string): RuntimeNumeric | null {
   return safeBigIntToNumber(BigInt(trimmed));
 }
 
-export function parsePositiveIntegerInput(value: string): RuntimeNumeric | null {
+export function parsePositiveIntegerInput(value: string): number | bigint | null {
   const parsed = parseIntegerInput(value);
   if (parsed == null) {
     return null;
@@ -29,15 +61,18 @@ export function parsePositiveIntegerInput(value: string): RuntimeNumeric | null 
 }
 
 export function parseAmountInput(value: string): RuntimeNumeric | null {
-  const trimmed = value.trim().replace(",", ".");
+  const trimmed = normalizeDecimalText(value);
   if (INTEGER_PATTERN.test(trimmed)) {
     return parsePositiveIntegerInput(trimmed);
   }
   if (!DECIMAL_PATTERN.test(trimmed)) {
     return null;
   }
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  const parsed = parseFixedInput(trimmed);
+  if (parsed == null || Number(parsed.__fixed__) <= 0) {
+    return null;
+  }
+  return parsed;
 }
 
 export function parseTypedInput(value: string, type: string): unknown {
@@ -46,8 +81,7 @@ export function parseTypedInput(value: string, type: string): unknown {
     case "int":
       return parseIntegerInput(trimmed) ?? trimmed;
     case "float": {
-      const parsed = Number(trimmed);
-      return Number.isFinite(parsed) ? parsed : trimmed;
+      return parseFixedInput(trimmed) ?? trimmed;
     }
     case "bool":
       return trimmed === "true";

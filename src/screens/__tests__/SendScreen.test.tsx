@@ -103,4 +103,52 @@ describe("SendScreen", () => {
     );
     expect(mockShowToast).toHaveBeenCalledWith("Transaction finalized.", "success");
   });
+
+  it("reviews and sends decimal transfers as runtime fixed values", async () => {
+    mockEstimateChi.mockImplementation(async () => ({
+      estimated: 12_000,
+      suggested: 14_400
+    }));
+    mockSendTransaction.mockImplementation(async () => ({
+      submitted: true,
+      accepted: true,
+      finalized: true,
+      txHash: "DEC123"
+    }));
+
+    const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof SendScreen>["navigation"];
+    const route = { params: { token: "currency" } } as unknown as React.ComponentProps<typeof SendScreen>["route"];
+    const screen = render(<SendScreen navigation={navigation} route={route} />);
+
+    fireEvent.changeText(screen.getByPlaceholderText("Wallet address"), "ab".repeat(32));
+    fireEvent.changeText(screen.getByPlaceholderText("0.00"), "12.5");
+    fireEvent.press(screen.getByText("Review"));
+
+    await waitFor(() =>
+      expect(mockEstimateChi).toHaveBeenCalledWith({
+        sender: "sender",
+        contract: "currency",
+        function: "transfer",
+        kwargs: {
+          to: "ab".repeat(32),
+          amount: { __fixed__: "12.5" }
+        }
+      })
+    );
+
+    fireEvent.press(screen.getByText("Send Transaction"));
+
+    await waitFor(() =>
+      expect(mockSendTransaction).toHaveBeenCalledWith({
+        privateKey: "11".repeat(32),
+        contract: "currency",
+        function: "transfer",
+        kwargs: {
+          to: "ab".repeat(32),
+          amount: { __fixed__: "12.5" }
+        },
+        chi: 12_000
+      })
+    );
+  });
 });

@@ -62,6 +62,7 @@ describe("AdvancedTxScreen", () => {
         name: "mint",
         arguments: [
           { name: "count", type: "int" },
+          { name: "amount", type: "float" },
           { name: "config", type: "dict" },
           { name: "flag", type: "bool" }
         ]
@@ -88,6 +89,7 @@ describe("AdvancedTxScreen", () => {
     await waitFor(() => expect(screen.getByText("mint")).toBeTruthy());
     fireEvent.press(screen.getByText("mint"));
     fireEvent.changeText(screen.getByPlaceholderText("int value"), "9007199254740993");
+    fireEvent.changeText(screen.getByPlaceholderText("float value"), "12.5");
     fireEvent.changeText(
       screen.getByPlaceholderText("dict value"),
       "{\"mode\":\"fast\"}"
@@ -103,6 +105,7 @@ describe("AdvancedTxScreen", () => {
         function: "mint",
         kwargs: {
           count: 9007199254740993n,
+          amount: { __fixed__: "12.5" },
           config: { mode: "fast" },
           flag: true
         }
@@ -118,6 +121,7 @@ describe("AdvancedTxScreen", () => {
         function: "mint",
         kwargs: {
           count: 9007199254740993n,
+          amount: { __fixed__: "12.5" },
           config: { mode: "fast" },
           flag: true
         },

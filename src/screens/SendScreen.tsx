@@ -22,7 +22,7 @@ import { TokenAvatar } from "../components/TokenAvatar";
 import { useWallet } from "../lib/wallet-context";
 import { loadUnlockedSession } from "../lib/storage";
 import { lightTap, successTap, errorTap } from "../lib/haptics";
-import { parseAmountInput } from "../lib/runtime-input";
+import { formatRuntimeInput, parseAmountInput } from "../lib/runtime-input";
 import type { RootStackScreenProps } from "../navigation/types";
 
 type Step = "draft" | "review" | "sending" | "result";
@@ -169,7 +169,7 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
           <Card title="Transaction Summary">
             <Row label="Token" value={tokenSymbol} />
             <Row label="To" value={truncHash(to.trim())} mono />
-            <Row label="Amount" value={`${String(parseAmountInput(amount) ?? amount.trim())} ${tokenSymbol}`} />
+            <Row label="Amount" value={`${formatRuntimeInput(parseAmountInput(amount)) || amount.trim()} ${tokenSymbol}`} />
             <Row label="Chi" value={estimate ? `${estimate.estimated.toLocaleString()}${chiRate ? ` (~${(estimate.estimated / chiRate).toLocaleString(undefined, { maximumFractionDigits: 8 })} XIAN)` : ""}` : "-"} />
           </Card>
         </ScrollView>
