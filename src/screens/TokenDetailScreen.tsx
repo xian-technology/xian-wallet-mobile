@@ -1,10 +1,11 @@
-import React from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from "react-native";
+import React, { useState } from "react";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { colors } from "../theme/colors";
 import { Card } from "../components/Card";
 import { Button } from "../components/Button";
+import { ConfirmDialog } from "../components/AppDialog";
 import { TokenAvatar } from "../components/TokenAvatar";
 import { useWallet } from "../lib/wallet-context";
 import { loadWalletState, saveWalletState } from "../lib/storage";
@@ -36,6 +37,8 @@ function formatBalance(raw: string | null, decimals?: number): string {
 export function TokenDetailScreen({ route, navigation }: RootStackScreenProps<"TokenDetail">) {
   const { state, refresh, showToast } = useWallet();
   const contract: string = route.params?.contract ?? "";
+  const [confirmRemoveAsset, setConfirmRemoveAsset] = useState(false);
+  const [removingAsset, setRemovingAsset] = useState(false);
 
   const asset = state.watchedAssets.find((a) => a.contract === contract);
   if (!asset) {
@@ -60,22 +63,23 @@ export function TokenDetailScreen({ route, navigation }: RootStackScreenProps<"T
       showToast("Cannot remove the native token.", "warning");
       return;
     }
-    Alert.alert("Remove Asset", `Stop tracking ${symbol}?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Remove",
-        style: "destructive",
-        onPress: async () => {
-          const ws = await loadWalletState();
-          if (!ws) return;
-          ws.watchedAssets = ws.watchedAssets.filter((a) => a.contract !== contract);
-          await saveWalletState(ws);
-          showToast(`${symbol} removed.`, "info");
-          await refresh();
-          navigation.goBack();
-        },
-      },
-    ]);
+    setConfirmRemoveAsset(true);
+  };
+
+  const confirmRemoveAssetAction = async () => {
+    setRemovingAsset(true);
+    try {
+      const ws = await loadWalletState();
+      if (!ws) return;
+      ws.watchedAssets = ws.watchedAssets.filter((a) => a.contract !== contract);
+      await saveWalletState(ws);
+      setConfirmRemoveAsset(false);
+      showToast(`${symbol} removed.`, "info");
+      await refresh();
+      navigation.goBack();
+    } finally {
+      setRemovingAsset(false);
+    }
   };
 
   return (
@@ -152,6 +156,15 @@ export function TokenDetailScreen({ route, navigation }: RootStackScreenProps<"T
           <Button title="Remove Asset" variant="danger" onPress={handleRemoveAsset} />
         )}
       </ScrollView>
+      <ConfirmDialog
+        visible={confirmRemoveAsset}
+        title="Remove Asset"
+        message={`Stop tracking ${symbol}?`}
+        confirmTitle="Remove"
+        loading={removingAsset}
+        onCancel={() => setConfirmRemoveAsset(false)}
+        onConfirm={confirmRemoveAssetAction}
+      />
     </View>
   );
 }

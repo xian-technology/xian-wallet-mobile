@@ -6,12 +6,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
-  Alert,
   TouchableOpacity,
 } from "react-native";
 import { colors } from "../theme/colors";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
+import { ConfirmDialog } from "../components/AppDialog";
 import { useWallet } from "../lib/wallet-context";
 import { errorTap, successTap } from "../lib/haptics";
 
@@ -20,6 +20,8 @@ export function LockScreen() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   const handleUnlock = async () => {
     if (!controller || !password) return;
@@ -70,27 +72,29 @@ export function LockScreen() {
 
         <TouchableOpacity
           style={styles.forgotLink}
-          onPress={() => {
-            Alert.alert(
-              "Remove Wallet",
-              "This will permanently remove the wallet and all data. Are you sure?",
-              [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Remove",
-                  style: "destructive",
-                  onPress: async () => {
-                    if (!controller) return;
-                    await controller.removeWallet();
-                    await refresh();
-                  },
-                },
-              ]
-            );
-          }}
+          onPress={() => setConfirmRemove(true)}
         >
           <Text style={styles.forgotText}>Forgot password? Remove wallet</Text>
         </TouchableOpacity>
+        <ConfirmDialog
+          visible={confirmRemove}
+          title="Remove Wallet"
+          message="This will permanently remove the wallet and all data. Are you sure?"
+          confirmTitle="Remove"
+          loading={removing}
+          onCancel={() => setConfirmRemove(false)}
+          onConfirm={async () => {
+            if (!controller) return;
+            setRemoving(true);
+            try {
+              await controller.removeWallet();
+              setConfirmRemove(false);
+              await refresh();
+            } finally {
+              setRemoving(false);
+            }
+          }}
+        />
       </View>
     </KeyboardAvoidingView>
   );

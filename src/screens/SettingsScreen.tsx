@@ -5,16 +5,18 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
-  Share,
   ActivityIndicator,
   Linking,
   TextInput,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import Constants from "expo-constants";
+import * as DocumentPicker from "expo-document-picker";
+import { File, Paths } from "expo-file-system";
+import * as Sharing from "expo-sharing";
 import { Feather } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
+import { AppDialog, ConfirmDialog } from "../components/AppDialog";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Card } from "../components/Card";
@@ -31,6 +33,11 @@ function formatJsonText(value: string): string {
   }
 }
 
+function sanitizeFilename(value: string): string {
+  const sanitized = value.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-");
+  return sanitized.length > 0 ? sanitized : "backup";
+}
+
 interface ShieldedHistoryViewState {
   loading?: boolean;
   error?: string;
@@ -44,6 +51,30 @@ interface ShieldedHistoryViewState {
     createdAt: string | null;
     hasPayload: boolean;
   }>;
+}
+
+interface ConfirmDialogState {
+  title: string;
+  message: string;
+  confirmTitle: string;
+  onConfirm: () => Promise<void>;
+}
+
+type TextDialogKind = "walletImport" | "shieldedImport";
+
+interface TextDialogState {
+  kind: TextDialogKind;
+  title: string;
+  message: string;
+  placeholder: string;
+  value: string;
+}
+
+interface ExportDialogState {
+  title: string;
+  message: string;
+  value: string;
+  filename: string;
 }
 
 export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
@@ -64,11 +95,146 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
   const [netDashboardUrl, setNetDashboardUrl] = useState("");
   const [netChainId, setNetChainId] = useState("");
   const [shieldedHistory, setShieldedHistory] = useState<Record<string, ShieldedHistoryViewState>>({});
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [textDialog, setTextDialog] = useState<TextDialogState | null>(null);
+  const [textDialogLoading, setTextDialogLoading] = useState(false);
+  const [exportDialog, setExportDialog] = useState<ExportDialogState | null>(null);
 
   const [accountLoading, setAccountLoading] = useState(false);
   const isMnemonic = state.seedSource === "mnemonic";
   const activeAccount = state.accounts.find((a) => a.index === state.activeAccountIndex);
   const activePreset = state.networkPresets.find((p) => p.id === state.activeNetworkId);
+
+  const runConfirmDialogAction = async () => {
+    if (!confirmDialog) return;
+    setConfirmLoading(true);
+    try {
+      await confirmDialog.onConfirm();
+      setConfirmDialog(null);
+    } finally {
+      setConfirmLoading(false);
+    }
+  };
+
+  const closeTextDialog = () => {
+    if (textDialogLoading) return;
+    setTextDialog(null);
+  };
+
+  const importWalletBackupJson = async (json: string) => {
+    if (!controller) return;
+    const backup = JSON.parse(json);
+    if (!backup?.version || !backup?.type) {
+      throw new Error("Invalid backup.");
+    }
+    await controller.importWalletBackup(backup, backupPassword);
+    showToast("Wallet imported.", "success");
+    await refresh();
+  };
+
+  const importShieldedSnapshotJson = async (json: string) => {
+    if (!controller) return;
+    await controller.saveShieldedWalletSnapshot(json);
+    showToast("Shielded snapshot stored.", "success");
+    await refresh();
+  };
+
+  const submitTextDialog = async () => {
+    if (!textDialog) return;
+    const json = textDialog.value.trim();
+    if (!json) return;
+    setTextDialogLoading(true);
+    try {
+      if (textDialog.kind === "walletImport") {
+        await importWalletBackupJson(json);
+      } else {
+        await importShieldedSnapshotJson(json);
+      }
+      setTextDialog(null);
+    } catch (e) {
+      showToast(
+        e instanceof Error
+          ? e.message
+          : textDialog.kind === "walletImport"
+            ? "Import failed"
+            : "Shielded snapshot import failed",
+        "danger"
+      );
+    } finally {
+      setTextDialogLoading(false);
+    }
+  };
+
+  const importJsonFromFile = async (kind: TextDialogKind) => {
+    if (kind === "walletImport" && !backupPassword) {
+      showToast("Enter a password first.", "warning");
+      return;
+    }
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "application/json",
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if (!asset) return;
+      const file = new File(asset.uri);
+      const json = (await file.text()).trim();
+      if (!json) {
+        showToast("Selected file is empty.", "warning");
+        return;
+      }
+      if (kind === "walletImport") {
+        await importWalletBackupJson(json);
+      } else {
+        await importShieldedSnapshotJson(json);
+      }
+    } catch (e) {
+      showToast(
+        e instanceof Error
+          ? e.message
+          : kind === "walletImport"
+            ? "Import failed"
+            : "Shielded snapshot import failed",
+        "danger"
+      );
+    }
+  };
+
+  const copyExportDialogValue = async () => {
+    if (!exportDialog) return;
+    await Clipboard.setStringAsync(exportDialog.value);
+    showToast("Copied to clipboard.", "success");
+  };
+
+  const shareExportDialogFile = async () => {
+    if (!exportDialog) return;
+    try {
+      const available = await Sharing.isAvailableAsync();
+      if (!available) {
+        showToast("File sharing is not available on this device.", "warning");
+        return;
+      }
+      const file = new File(Paths.cache, exportDialog.filename);
+      file.create({ overwrite: true, intermediates: true });
+      try {
+        file.write(exportDialog.value);
+        await Sharing.shareAsync(file.uri, {
+          mimeType: "application/json",
+          UTI: "public.json",
+          dialogTitle: exportDialog.title,
+        });
+      } finally {
+        if (file.exists) {
+          file.delete();
+        }
+      }
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Export failed", "danger");
+    }
+  };
 
   const startEditNetwork = () => {
     if (!activePreset) return;
@@ -138,22 +304,16 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
   };
 
   const handleRemoveWallet = () => {
-    Alert.alert(
-      "Remove Wallet",
-      "This permanently removes the wallet. Make sure you have your recovery seed backed up.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: async () => {
-            if (!controller) return;
-            await controller.removeWallet();
-            await refresh();
-          },
-        },
-      ]
-    );
+    setConfirmDialog({
+      title: "Remove Wallet",
+      message: "This permanently removes the wallet. Make sure you have your recovery seed backed up.",
+      confirmTitle: "Remove",
+      onConfirm: async () => {
+        if (!controller) return;
+        await controller.removeWallet();
+        await refresh();
+      },
+    });
   };
 
   const handleAddAccount = async () => {
@@ -200,19 +360,17 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
   };
 
   const handleRemoveAccount = (index: number) => {
-    Alert.alert("Remove Account", "You can re-derive it later from the seed.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Remove",
-        style: "destructive",
-        onPress: async () => {
-          if (!controller) return;
-          await controller.removeAccount(index);
-          showToast("Account removed.", "info");
-          await refresh();
-        },
+    setConfirmDialog({
+      title: "Remove Account",
+      message: "You can re-derive it later from the seed.",
+      confirmTitle: "Remove",
+      onConfirm: async () => {
+        if (!controller) return;
+        await controller.removeAccount(index);
+        showToast("Account removed.", "info");
+        await refresh();
       },
-    ]);
+    });
   };
 
   const handleExport = async () => {
@@ -220,8 +378,12 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
     try {
       const backup = await controller.exportWallet(backupPassword);
       const json = JSON.stringify(backup, null, 2);
-      await Share.share({ message: json, title: "Xian Wallet Backup" });
-      showToast("Wallet exported.", "success");
+      setExportDialog({
+        title: "Wallet Backup",
+        message: "Copy this encrypted backup JSON and store it somewhere safe.",
+        value: json,
+        filename: `xian-wallet-backup-${new Date().toISOString().slice(0, 10)}.json`,
+      });
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Export failed", "danger");
     }
@@ -232,41 +394,24 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
       showToast("Enter a password first.", "warning");
       return;
     }
-    Alert.prompt
-      ? Alert.prompt("Import Backup", "Paste the exported JSON:", async (json) => {
-          if (!json || !controller) return;
-          try {
-            const backup = JSON.parse(json);
-            if (!backup?.version || !backup?.type) { showToast("Invalid backup.", "danger"); return; }
-            await controller.importWalletBackup(backup, backupPassword);
-            showToast("Wallet imported.", "success");
-            await refresh();
-          } catch (e) { showToast(e instanceof Error ? e.message : "Import failed", "danger"); }
-        })
-      : showToast("Import: paste your backup JSON in the export field on the source device.", "info");
+    setTextDialog({
+      kind: "walletImport",
+      title: "Import Backup",
+      message: "Paste the exported wallet backup JSON.",
+      placeholder: "Paste backup JSON",
+      value: "",
+    });
   };
 
   const handleImportShieldedSnapshot = async () => {
     if (!controller) return;
-    Alert.prompt
-      ? Alert.prompt(
-          "Import Shielded Snapshot",
-          "Paste ShieldedWallet.to_json() output:",
-          async (json) => {
-            if (!json) return;
-            try {
-              await controller.saveShieldedWalletSnapshot(json);
-              showToast("Shielded snapshot stored.", "success");
-              await refresh();
-            } catch (e) {
-              showToast(
-                e instanceof Error ? e.message : "Shielded snapshot import failed",
-                "danger"
-              );
-            }
-          }
-        )
-      : showToast("Shielded snapshot import requires text input support on this device.", "info");
+    setTextDialog({
+      kind: "shieldedImport",
+      title: "Import Shielded Snapshot",
+      message: "Paste ShieldedWallet.to_json() output.",
+      placeholder: "Paste state_snapshot JSON",
+      value: "",
+    });
   };
 
   const handleExportShieldedSnapshot = async (snapshotId: string) => {
@@ -279,11 +424,12 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
         snapshotId,
         backupPassword
       );
-      await Share.share({
-        message: formatJsonText(payload.stateSnapshot),
+      setExportDialog({
         title: `${payload.label} Shielded Snapshot`,
+        message: "Copy this shielded state_snapshot JSON and store it somewhere safe.",
+        value: formatJsonText(payload.stateSnapshot),
+        filename: `xian-shielded-state-${sanitizeFilename(payload.label)}-${new Date().toISOString().slice(0, 10)}.json`,
       });
-      showToast("Shielded snapshot exported.", "success");
     } catch (e) {
       showToast(
         e instanceof Error ? e.message : "Shielded snapshot export failed",
@@ -293,30 +439,24 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
   };
 
   const handleRemoveShieldedSnapshot = (snapshotId: string) => {
-    Alert.alert(
-      "Remove Shielded Snapshot",
-      "This removes the locally stored encrypted state_snapshot record from the wallet.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: async () => {
-            if (!controller) return;
-            try {
-              await controller.removeShieldedWalletSnapshot(snapshotId);
-              showToast("Shielded snapshot removed.", "info");
-              await refresh();
-            } catch (e) {
-              showToast(
-                e instanceof Error ? e.message : "Shielded snapshot removal failed",
-                "danger"
-              );
-            }
-          },
-        },
-      ]
-    );
+    setConfirmDialog({
+      title: "Remove Shielded Snapshot",
+      message: "This removes the locally stored encrypted state_snapshot record from the wallet.",
+      confirmTitle: "Remove",
+      onConfirm: async () => {
+        if (!controller) return;
+        try {
+          await controller.removeShieldedWalletSnapshot(snapshotId);
+          showToast("Shielded snapshot removed.", "info");
+          await refresh();
+        } catch (e) {
+          showToast(
+            e instanceof Error ? e.message : "Shielded snapshot removal failed",
+            "danger"
+          );
+        }
+      },
+    });
   };
 
   const handleCheckShieldedSnapshotHistory = async (
@@ -378,21 +518,15 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
 
   const handleDeleteContact = (id: string) => {
     const contact = state.contacts.find((c) => c.id === id);
-    Alert.alert(
-      "Remove Contact",
-      contact ? `Remove ${contact.name} from your contacts?` : "Remove this contact?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: async () => {
-            await setContacts(state.contacts.filter((c) => c.id !== id));
-            showToast("Contact removed.", "info");
-          },
-        },
-      ]
-    );
+    setConfirmDialog({
+      title: "Remove Contact",
+      message: contact ? `Remove ${contact.name} from your contacts?` : "Remove this contact?",
+      confirmTitle: "Remove",
+      onConfirm: async () => {
+        await setContacts(state.contacts.filter((c) => c.id !== id));
+        showToast("Contact removed.", "info");
+      },
+    });
   };
 
   return (
@@ -593,9 +727,10 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
         {/* Backup */}
         <Card title="Backup" subtitle="Export or import wallet data.">
           <Input label="Password" secureTextEntry value={backupPassword} onChangeText={setBackupPassword} placeholder="Wallet password" />
+          <Button title="Export" variant="secondary" onPress={handleExport} />
           <View style={styles.btnRow}>
-            <Button title="Export" variant="secondary" onPress={handleExport} style={{ flex: 1 }} />
-            <Button title="Import" variant="secondary" onPress={handleImport} style={{ flex: 1 }} />
+            <Button title="Import File" variant="secondary" onPress={() => importJsonFromFile("walletImport")} style={{ flex: 1 }} />
+            <Button title="Paste JSON" variant="secondary" onPress={handleImport} style={{ flex: 1 }} />
           </View>
           <Text style={styles.backupHint}>
             Full wallet backups now include any stored shielded state_snapshot records.
@@ -670,7 +805,7 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
                     style={styles.actionPill}
                     onPress={() => handleExportShieldedSnapshot(snapshot.id)}
                   >
-                    <Text style={styles.actionPillText}>Share</Text>
+                    <Text style={styles.actionPillText}>Export</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.actionPill}
@@ -682,11 +817,20 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
               </View>
             ))
           )}
-          <Button
-            title="Import Shielded Snapshot"
-            variant="secondary"
-            onPress={handleImportShieldedSnapshot}
-          />
+          <View style={styles.btnRow}>
+            <Button
+              title="Import File"
+              variant="secondary"
+              onPress={() => importJsonFromFile("shieldedImport")}
+              style={{ flex: 1 }}
+            />
+            <Button
+              title="Paste JSON"
+              variant="secondary"
+              onPress={handleImportShieldedSnapshot}
+              style={{ flex: 1 }}
+            />
+          </View>
         </Card>
 
         {/* Actions */}
@@ -704,6 +848,77 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
 
         <Text style={styles.versionText}>v{Constants.expoConfig?.version ?? "?"}</Text>
       </ScrollView>
+      <ConfirmDialog
+        visible={confirmDialog != null}
+        title={confirmDialog?.title ?? ""}
+        message={confirmDialog?.message ?? ""}
+        confirmTitle={confirmDialog?.confirmTitle ?? "Confirm"}
+        loading={confirmLoading}
+        onCancel={() => setConfirmDialog(null)}
+        onConfirm={runConfirmDialogAction}
+      />
+      <AppDialog
+        visible={textDialog != null}
+        title={textDialog?.title ?? ""}
+        message={textDialog?.message}
+        onRequestClose={closeTextDialog}
+        actions={[
+          {
+            title: "Cancel",
+            onPress: closeTextDialog,
+            variant: "secondary",
+            disabled: textDialogLoading,
+          },
+          {
+            title: "Import",
+            onPress: submitTextDialog,
+            loading: textDialogLoading,
+            disabled: !textDialog?.value.trim(),
+          },
+        ]}
+      >
+        <TextInput
+          style={styles.dialogTextInput}
+          value={textDialog?.value ?? ""}
+          onChangeText={(value) =>
+            setTextDialog((current) => current ? { ...current, value } : current)
+          }
+          placeholder={textDialog?.placeholder}
+          placeholderTextColor={colors.muted}
+          multiline
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+      </AppDialog>
+      <AppDialog
+        visible={exportDialog != null}
+        title={exportDialog?.title ?? ""}
+        message={exportDialog?.message}
+        onRequestClose={() => setExportDialog(null)}
+        contentStyle={styles.exportDialogContent}
+        actions={[
+          {
+            title: "Close",
+            onPress: () => setExportDialog(null),
+            variant: "secondary",
+          },
+          {
+            title: "Copy",
+            onPress: copyExportDialogValue,
+            variant: "secondary",
+          },
+          {
+            title: "Save File",
+            onPress: shareExportDialogFile,
+          },
+        ]}
+      >
+        <View style={styles.exportBox}>
+          <Text style={styles.exportText} selectable>
+            {exportDialog?.value ?? ""}
+          </Text>
+        </View>
+      </AppDialog>
     </View>
   );
 }
@@ -778,6 +993,36 @@ const styles = StyleSheet.create({
   mutedLink: { fontSize: 12, color: colors.muted, fontWeight: "600" },
   backupHint: { fontSize: 12, color: colors.muted, marginTop: 8 },
   emptyText: { fontSize: 13, color: colors.muted },
+  dialogTextInput: {
+    minHeight: 180,
+    color: colors.fg,
+    backgroundColor: colors.bg2,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.line,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    textAlignVertical: "top",
+    fontFamily: "monospace",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  exportDialogContent: {
+    maxHeight: 420,
+  },
+  exportBox: {
+    backgroundColor: colors.bg2,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: 12,
+  },
+  exportText: {
+    color: colors.fg,
+    fontFamily: "monospace",
+    fontSize: 11,
+    lineHeight: 17,
+  },
   secretBox: {
     backgroundColor: colors.bg0,
     padding: 12,

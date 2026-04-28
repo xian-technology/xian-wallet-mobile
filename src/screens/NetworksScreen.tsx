@@ -1,9 +1,10 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
 import { colors } from "../theme/colors";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Card } from "../components/Card";
+import { ConfirmDialog } from "../components/AppDialog";
 import { useWallet } from "../lib/wallet-context";
 import { loadWalletState, saveWalletState } from "../lib/storage";
 
@@ -14,6 +15,8 @@ export function NetworksScreen() {
   const [rpcUrl, setRpcUrl] = useState("");
   const [dashboardUrl, setDashboardUrl] = useState("");
   const [chainId, setChainId] = useState("");
+  const [deleteNetworkId, setDeleteNetworkId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const startEdit = (preset: typeof state.networkPresets[0]) => {
     setEditing(preset.id);
@@ -66,28 +69,29 @@ export function NetworksScreen() {
   };
 
   const handleDelete = (id: string) => {
-    const preset = state.networkPresets.find((p) => p.id === id);
-    Alert.alert("Delete Network", `Remove "${preset?.name}"?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          const ws = await loadWalletState();
-          if (!ws) return;
-          ws.networkPresets = ws.networkPresets.filter((p) => p.id !== id);
-          if (ws.activeNetworkId === id && ws.networkPresets.length > 0) {
-            const fallback = ws.networkPresets[0]!;
-            ws.activeNetworkId = fallback.id;
-            ws.rpcUrl = fallback.rpcUrl;
-            ws.dashboardUrl = fallback.dashboardUrl;
-          }
-          await saveWalletState(ws);
-          showToast("Network removed.", "info");
-          await refresh();
-        },
-      },
-    ]);
+    setDeleteNetworkId(id);
+  };
+
+  const confirmDeleteNetwork = async () => {
+    if (!deleteNetworkId) return;
+    setDeleting(true);
+    try {
+      const ws = await loadWalletState();
+      if (!ws) return;
+      ws.networkPresets = ws.networkPresets.filter((p) => p.id !== deleteNetworkId);
+      if (ws.activeNetworkId === deleteNetworkId && ws.networkPresets.length > 0) {
+        const fallback = ws.networkPresets[0]!;
+        ws.activeNetworkId = fallback.id;
+        ws.rpcUrl = fallback.rpcUrl;
+        ws.dashboardUrl = fallback.dashboardUrl;
+      }
+      await saveWalletState(ws);
+      setDeleteNetworkId(null);
+      showToast("Network removed.", "info");
+      await refresh();
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleSwitch = async (id: string) => {
@@ -120,6 +124,8 @@ export function NetworksScreen() {
     );
   }
 
+  const deleteNetwork = state.networkPresets.find((p) => p.id === deleteNetworkId);
+
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -150,6 +156,15 @@ export function NetworksScreen() {
         </Card>
         <Button title="Add Network" variant="secondary" onPress={startNew} />
       </ScrollView>
+      <ConfirmDialog
+        visible={deleteNetworkId != null}
+        title="Delete Network"
+        message={`Remove "${deleteNetwork?.name ?? "this network"}"?`}
+        confirmTitle="Delete"
+        loading={deleting}
+        onCancel={() => setDeleteNetworkId(null)}
+        onConfirm={confirmDeleteNetwork}
+      />
     </View>
   );
 }
