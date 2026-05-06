@@ -19,6 +19,7 @@ import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Card } from "../components/Card";
 import { TokenAvatar } from "../components/TokenAvatar";
+import { AppDialog } from "../components/AppDialog";
 import { useWallet } from "../lib/wallet-context";
 import { loadUnlockedSession } from "../lib/storage";
 import { lightTap, successTap, errorTap } from "../lib/haptics";
@@ -136,41 +137,28 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
   );
 
   const unrecognizedRecipientModal = (
-    <Modal
+    <AppDialog
       visible={unrecognizedRecipient != null}
-      transparent
-      animationType="fade"
+      title="Confirm recipient"
+      message="This recipient is not a standard Xian address or contract name. Send funds to it anyway?"
       onRequestClose={() => setUnrecognizedRecipient(null)}
+      actions={[
+        {
+          title: "Cancel",
+          variant: "secondary",
+          onPress: () => setUnrecognizedRecipient(null),
+        },
+        {
+          title: "Send Anyway",
+          variant: "danger",
+          onPress: handleConfirmUnrecognizedRecipient,
+        },
+      ]}
     >
-      <View style={styles.confirmOverlay}>
-        <View style={styles.confirmDialog}>
-          <View style={styles.confirmIcon}>
-            <Feather name="alert-triangle" size={20} color={colors.warning} />
-          </View>
-          <Text style={styles.confirmTitle}>Confirm recipient</Text>
-          <Text style={styles.confirmBody}>
-            This recipient is not a standard Xian address or contract name. Send funds to it anyway?
-          </Text>
-          <Text style={styles.confirmAddress} numberOfLines={3}>
-            {unrecognizedRecipient}
-          </Text>
-          <View style={styles.confirmActions}>
-            <Button
-              title="Cancel"
-              variant="secondary"
-              onPress={() => setUnrecognizedRecipient(null)}
-              style={styles.confirmButton}
-            />
-            <Button
-              title="Send Anyway"
-              variant="danger"
-              onPress={handleConfirmUnrecognizedRecipient}
-              style={styles.confirmButton}
-            />
-          </View>
-        </View>
-      </View>
-    </Modal>
+      <Text style={styles.unrecognizedAddress} numberOfLines={3}>
+        {unrecognizedRecipient}
+      </Text>
+    </AppDialog>
   );
 
   const visibleTokens = state.watchedAssets.filter((a) => !a.hidden);
@@ -352,14 +340,7 @@ const styles = StyleSheet.create({
   modalContent: { backgroundColor: colors.bg1, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "50%", padding: 16 },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   modalTitle: { fontSize: 16, fontWeight: "700", color: colors.fg },
-  confirmOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.68)", justifyContent: "center", padding: 20 },
-  confirmDialog: { backgroundColor: colors.bg1, borderRadius: 18, borderWidth: 1, borderColor: colors.line, padding: 18, gap: 12 },
-  confirmIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.warningSoft, alignItems: "center", justifyContent: "center" },
-  confirmTitle: { fontSize: 18, fontWeight: "700", color: colors.fg },
-  confirmBody: { fontSize: 13, lineHeight: 19, color: colors.muted },
-  confirmAddress: { fontSize: 12, fontFamily: "monospace", color: colors.fg, backgroundColor: colors.bg2, borderRadius: 10, padding: 10 },
-  confirmActions: { flexDirection: "row", gap: 10, marginTop: 4 },
-  confirmButton: { flex: 1, paddingHorizontal: 10 },
+  unrecognizedAddress: { fontSize: 12, fontFamily: "monospace", color: colors.fg, backgroundColor: colors.bg2, borderRadius: 10, padding: 10 },
   emptyText: { color: colors.muted, textAlign: "center", paddingVertical: 24 },
   contactItem: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
   contactName: { fontSize: 14, fontWeight: "500", color: colors.fg },

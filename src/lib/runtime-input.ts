@@ -4,7 +4,7 @@ export type RuntimeNumeric = number | bigint | RuntimeFixed;
 const INTEGER_PATTERN = /^-?\d+$/;
 const DECIMAL_PATTERN = /^-?(?:\d+\.?\d*|\.\d+)$/;
 const XIAN_ADDRESS_PATTERN = /^[0-9a-fA-F]{64}$/;
-const XIAN_CONTRACT_NAME_PATTERN = /^(?:currency|con_[a-zA-Z0-9_]+)$/;
+const XIAN_CONTRACT_NAME_PATTERN = /^(?:currency|con_[a-z0-9_]+)$/;
 
 function safeBigIntToNumber(value: bigint): number | bigint {
   const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
