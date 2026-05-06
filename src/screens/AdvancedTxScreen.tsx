@@ -39,7 +39,7 @@ function parseKwargs(args: Arg[]): Record<string, unknown> {
 }
 
 export function AdvancedTxScreen() {
-  const { state, rpc, refreshBalances, showToast } = useWallet();
+  const { state, rpc, refreshBalances, showToast, notifyActivityChanged } = useWallet();
   const [step, setStep] = useState<Step>("draft");
   const [contract, setContract] = useState("");
   const [func, setFunc] = useState("");
@@ -116,7 +116,7 @@ export function AdvancedTxScreen() {
       const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: contract.trim(), function: func.trim(), kwargs: kw, chi: s });
       setResult(r); setStep("result");
       const ok = r.finalized || r.accepted;
-      if (ok) { successTap(); showToast("Transaction finalized.", "success"); void refreshBalances(); }
+      if (ok) { successTap(); showToast("Transaction finalized.", "success"); notifyActivityChanged({ txHash: r.txHash, sender: state.publicKey!, contract: contract.trim(), function: func.trim(), kwargs: kw, accepted: r.accepted, finalized: r.finalized, message: r.message }); void refreshBalances(); }
       else { errorTap(); showToast("Transaction failed.", "danger"); }
     } catch (e) { errorTap(); setResult({ submitted: false, accepted: false, finalized: false, message: e instanceof Error ? e.message : "Failed" }); setStep("result"); }
   };

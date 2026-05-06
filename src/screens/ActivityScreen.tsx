@@ -11,11 +11,18 @@ import {
   BackHandler,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { colors } from "../theme/colors";
+import { Button } from "../components/Button";
 import { useWallet } from "../lib/wallet-context";
 import { lightTap } from "../lib/haptics";
 import type { TxHistoryRecord } from "../lib/rpc-client";
 import { classifyTx, type TxClassification } from "../lib/tx-classify";
+import {
+  activityNetworkKey,
+  loadLocalActivityTxs,
+  mergeActivityTxs,
+} from "../lib/local-activity";
 
 function truncHash(h: string, head = 8, tail = 6): string {
   return h.length > head + tail + 3 ? `${h.slice(0, head)}...${h.slice(-tail)}` : h;
@@ -39,6 +46,7 @@ function timeAgo(dateStr: string | null | undefined): string {
 
 function formatAmount(value: unknown): string | null {
   if (value === null || value === undefined) return null;
+  if (typeof value === "bigint") return value.toLocaleString();
   if (typeof value === "number" && Number.isFinite(value)) {
     return value.toLocaleString(undefined, { maximumFractionDigits: 8 });
   }
@@ -65,6 +73,7 @@ function formatAmount(value: unknown): string | null {
 function formatArgValue(value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "string") return value;
+  if (typeof value === "bigint") return value.toString();
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   if (typeof value === "object" && "__fixed__" in (value as Record<string, unknown>)) {
     const fixed = (value as Record<string, unknown>).__fixed__;
@@ -127,8 +136,20 @@ function subtitleFor(cls: TxClassification, tx: TxHistoryRecord): string {
   return `${tx.contract}.${tx.function}`;
 }
 
+function isLocalUnindexed(tx: TxHistoryRecord): boolean {
+  return tx.local === true && tx.block_height == null;
+}
+
+function statusLabel(tx: TxHistoryRecord): string {
+  if (!tx.success) return "Failed";
+  if (isLocalUnindexed(tx)) {
+    return tx.local_status === "finalized" ? "Finalized" : "Accepted";
+  }
+  return "Success";
+}
+
 export function ActivityScreen() {
-  const { state, rpc, showToast } = useWallet();
+  const { state, rpc, activityRefreshRequest } = useWallet();
   const [txs, setTxs] = useState<TxHistoryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -136,23 +157,90 @@ export function ActivityScreen() {
   const [selectedTx, setSelectedTx] = useState<TxHistoryRecord | null>(null);
 
   const address = state.publicKey ?? "";
+  const networkKey = activityNetworkKey(state);
 
-  const fetchTxs = useCallback(async () => {
-    if (!address) return;
+  const fetchTxs = useCallback(async (extraLocalTxs: TxHistoryRecord[] = []): Promise<TxHistoryRecord[]> => {
+    if (!address) return [];
+    let storedLocalTxs: TxHistoryRecord[] = [];
+    try {
+      storedLocalTxs = await loadLocalActivityTxs(networkKey);
+    } catch {
+      storedLocalTxs = [];
+    }
+    const localTxs = mergeActivityTxs(
+      [],
+      [
+        ...extraLocalTxs,
+        ...storedLocalTxs
+      ]
+    );
     try {
       const results = await rpc.getTransactionHistory(address, 50, 0);
-      setTxs(results);
+      const merged = mergeActivityTxs(results, localTxs);
+      setTxs(merged);
       setLoadError(null);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Failed to load transactions";
-      setLoadError(msg);
-      showToast(msg, "danger");
+      return merged;
+    } catch {
+      setTxs(localTxs);
+      setLoadError(localTxs.length > 0 ? null : "Activity is unavailable on this network.");
+      return localTxs;
     }
-  }, [address, rpc, showToast]);
+  }, [address, networkKey, rpc]);
 
   useEffect(() => {
-    fetchTxs().finally(() => setLoading(false));
+    let cancelled = false;
+    setLoading(true);
+    setRefreshing(false);
+    setTxs([]);
+    setLoadError(null);
+    setSelectedTx(null);
+    fetchTxs().finally(() => {
+      if (!cancelled) {
+        setLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [fetchTxs]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void fetchTxs();
+    }, [fetchTxs])
+  );
+
+  useEffect(() => {
+    if (activityRefreshRequest.id === 0 || !address) {
+      return;
+    }
+
+    let cancelled = false;
+    const expectedHash = activityRefreshRequest.txHash;
+    const localTxs = activityRefreshRequest.localTx ? [activityRefreshRequest.localTx] : [];
+    const delays = expectedHash ? [0, 750, 2_000, 5_000, 10_000] : [0];
+
+    const poll = async () => {
+      for (const delay of delays) {
+        if (delay > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+        if (cancelled) {
+          return;
+        }
+        const results = await fetchTxs(localTxs);
+        if (cancelled || !expectedHash || results.some((tx) => tx.hash === expectedHash)) {
+          return;
+        }
+      }
+    };
+
+    void poll();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activityRefreshRequest, address, fetchTxs]);
 
   useEffect(() => {
     if (!selectedTx) return;
@@ -316,7 +404,7 @@ export function ActivityScreen() {
             <View style={[styles.statusBadge, selectedTx.success ? styles.statusSuccess : styles.statusFail]}>
               <Feather name={selectedTx.success ? "check" : "x"} size={12} color={selectedTx.success ? colors.success : colors.danger} />
               <Text style={[styles.statusText, { color: selectedTx.success ? colors.success : colors.danger }]}>
-                {selectedTx.success ? "Success" : "Failed"}
+                {statusLabel(selectedTx)}
               </Text>
             </View>
           </View>
@@ -363,12 +451,6 @@ export function ActivityScreen() {
 
   return (
     <View style={styles.container}>
-      {loadError && txs.length === 0 && (
-        <TouchableOpacity style={styles.errorBanner} onPress={handleRefresh}>
-          <Feather name="alert-circle" size={14} color={colors.danger} />
-          <Text style={styles.errorBannerText}>{loadError}. Tap to retry.</Text>
-        </TouchableOpacity>
-      )}
       <FlatList
         data={txs}
         keyExtractor={(item) => item.hash}
@@ -376,13 +458,26 @@ export function ActivityScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} colors={[colors.accent]} progressBackgroundColor={colors.bg2} />
         }
         ListEmptyComponent={
-          !loadError ? (
+          loadError ? (
+            <View style={styles.emptyContainer}>
+              <Feather name="alert-circle" size={32} color={colors.danger} />
+              <Text style={[styles.emptyText, styles.emptyErrorText]}>{loadError}</Text>
+              <Text style={styles.emptyHint}>Check the RPC endpoint and try again.</Text>
+              <Button
+                title="Retry"
+                variant="secondary"
+                onPress={handleRefresh}
+                loading={refreshing}
+                style={styles.retryButton}
+              />
+            </View>
+          ) : (
             <View style={styles.emptyContainer}>
               <Feather name="clock" size={32} color={colors.muted} />
-              <Text style={styles.emptyText}>No transactions yet.</Text>
+              <Text style={styles.emptyText}>No transactions on this network yet.</Text>
               <Text style={styles.emptyHint}>Send or receive tokens to see activity here.</Text>
             </View>
-          ) : null
+          )
         }
         renderItem={({ item }) => {
           const cls = classifyTx(item);
@@ -401,6 +496,9 @@ export function ActivityScreen() {
                 <Text style={styles.txFunc}>
                   {cls.label}
                   {!item.success && <Text style={styles.txFailedTag}> · Failed</Text>}
+                  {item.success && isLocalUnindexed(item) && (
+                    <Text style={styles.txPendingTag}> · {statusLabel(item)}</Text>
+                  )}
                 </Text>
                 <Text style={styles.txTime} numberOfLines={1} ellipsizeMode="tail">{subtitle}</Text>
               </View>
@@ -433,6 +531,7 @@ const styles = StyleSheet.create({
   txBody: { flex: 1 },
   txFunc: { fontSize: 14, fontWeight: "500", color: colors.fg },
   txFailedTag: { fontSize: 11, color: colors.danger, fontWeight: "500" },
+  txPendingTag: { fontSize: 11, color: colors.warning, fontWeight: "500" },
   txTime: { fontSize: 12, color: colors.muted, marginTop: 2 },
   txEnd: { alignItems: "flex-end" },
   txTimeAgo: { fontSize: 11, color: colors.muted },
@@ -440,6 +539,8 @@ const styles = StyleSheet.create({
   emptyContainer: { alignItems: "center", justifyContent: "center", paddingVertical: 80, gap: 12 },
   emptyText: { fontSize: 16, fontWeight: "600", color: colors.fg },
   emptyHint: { fontSize: 13, color: colors.muted, textAlign: "center" },
+  retryButton: { minWidth: 120, marginTop: 4 },
+  emptyErrorText: { color: colors.danger },
   errorBanner: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 10, paddingHorizontal: 16, backgroundColor: colors.dangerSoft, borderBottomWidth: 1, borderBottomColor: colors.line },
   errorBannerText: { fontSize: 12, color: colors.danger, flex: 1 },
   // Detail

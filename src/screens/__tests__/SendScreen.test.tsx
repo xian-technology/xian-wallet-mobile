@@ -26,6 +26,7 @@ describe("SendScreen", () => {
   const mockSendTransaction = jest.fn() as jest.Mock;
   const mockRefreshBalances = jest.fn(async () => undefined) as jest.Mock;
   const mockShowToast = jest.fn() as jest.Mock;
+  const mockNotifyActivityChanged = jest.fn() as jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -43,7 +44,8 @@ describe("SendScreen", () => {
         sendTransaction: mockSendTransaction
       },
       refreshBalances: mockRefreshBalances,
-      showToast: mockShowToast
+      showToast: mockShowToast,
+      notifyActivityChanged: mockNotifyActivityChanged
     });
     mockLoadUnlockedSession.mockImplementation(async () => ({
       privateKey: "11".repeat(32),
@@ -101,6 +103,20 @@ describe("SendScreen", () => {
       })
     );
     expect(mockShowToast).toHaveBeenCalledWith("Transaction finalized.", "success");
+    expect(mockNotifyActivityChanged).toHaveBeenCalledWith(
+      expect.objectContaining({
+        txHash: "ABC123",
+        sender: "sender",
+        contract: "currency",
+        function: "transfer",
+        accepted: true,
+        finalized: true,
+        kwargs: {
+          to: "ab".repeat(32),
+          amount: 9007199254740993n
+        }
+      })
+    );
   });
 
   it("reviews and sends decimal transfers as runtime fixed values", async () => {

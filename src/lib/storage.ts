@@ -11,6 +11,17 @@ const CONTACTS_KEY = "xian_contacts";
 const REQUEST_PREFIX = "xian_req_";
 const APPROVAL_PREFIX = "xian_approval_";
 
+export type AssetNetworkStatus = "available" | "not_found" | "unknown";
+
+export interface AssetNetworkState {
+  status?: AssetNetworkStatus;
+  hidden?: boolean;
+  lastCheckedAt?: string;
+  error?: string;
+}
+
+export type AssetNetworkStates = Record<string, Record<string, AssetNetworkState>>;
+
 export interface StoredShieldedWalletSnapshot {
   id: string;
   label: string;
@@ -69,6 +80,7 @@ export interface StoredWalletState {
     hidden?: boolean;
     order?: number;
   }>;
+  assetNetworkStates?: AssetNetworkStates;
   shieldedWalletSnapshots?: StoredShieldedWalletSnapshot[];
   connectedOrigins: string[];
   createdAt: string;

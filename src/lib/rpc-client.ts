@@ -8,6 +8,18 @@ import {
   type XianShieldedWalletHistoryResult,
   XianClient
 } from "@xian-tech/client";
+import {
+  isMissingContractError,
+  messageFromUnknown,
+  type WalletAsset,
+} from "./assets";
+
+export interface BalanceResult {
+  contract: string;
+  balance: string | null;
+  status: "available" | "not_found" | "unknown";
+  error?: string;
+}
 
 function base64ToUtf8(value: string): string {
   const binary = atob(value);
@@ -57,6 +69,9 @@ export interface TxHistoryRecord {
   envelope?: unknown;
   /** Legacy convenience: some backends flatten payload.kwargs into the row. */
   kwargs?: Record<string, unknown>;
+  /** Wallet-local fallback row for nodes without indexed transaction history. */
+  local?: boolean;
+  local_status?: "accepted" | "finalized";
 }
 
 export class XianRpcClient {
@@ -78,15 +93,33 @@ export class XianRpcClient {
     if (!response.ok) {
       throw new Error(`RPC error: ${response.status}`);
     }
-    const data: AbciResult = await response.json();
+    const text = await response.text();
+    if (!text.trim()) {
+      return null;
+    }
+    let data: AbciResult;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      return null;
+    }
     const value = data?.result?.response?.value;
     if (!value) {
       return null;
     }
+    let decoded = "";
     try {
-      return JSON.parse(base64ToUtf8(value));
+      decoded = base64ToUtf8(value);
     } catch {
-      return base64ToUtf8(value);
+      return null;
+    }
+    if (!decoded.trim()) {
+      return null;
+    }
+    try {
+      return JSON.parse(decoded);
+    } catch {
+      return decoded;
     }
   }
 
@@ -152,14 +185,42 @@ export class XianRpcClient {
     address: string,
     contract: string = "currency"
   ): Promise<string | null> {
+    return (await this.getBalanceResult(address, contract)).balance;
+  }
+
+  async getBalanceResult(
+    address: string,
+    contract: string = "currency"
+  ): Promise<BalanceResult> {
     try {
       const result = await this.client.getBalance(address, { contract });
-      if (result == null) {
-        return "0";
+      if (isMissingContractError(result)) {
+        return {
+          contract,
+          balance: null,
+          status: "not_found",
+          error: messageFromUnknown(result),
+        };
       }
-      return String(result);
-    } catch {
-      return null;
+      if (result == null) {
+        return {
+          contract,
+          balance: "0",
+          status: "available",
+        };
+      }
+      return {
+        contract,
+        balance: String(result),
+        status: "available",
+      };
+    } catch (error) {
+      return {
+        contract,
+        balance: null,
+        status: isMissingContractError(error) ? "not_found" : "unknown",
+        error: messageFromUnknown(error),
+      };
     }
   }
 
@@ -167,13 +228,23 @@ export class XianRpcClient {
     address: string,
     contracts: string[]
   ): Promise<Record<string, string | null>> {
-    const results: Record<string, string | null> = {};
-    await Promise.allSettled(
-      contracts.map(async (contract) => {
-        results[contract] = await this.getBalance(address, contract);
+    const results = await this.getMultipleBalanceResults(address, contracts);
+    return Object.fromEntries(
+      results.map((result) => [result.contract, result.balance])
+    );
+  }
+
+  async getMultipleBalanceResults(
+    address: string,
+    contracts: Array<string | WalletAsset>
+  ): Promise<BalanceResult[]> {
+    const balanceResults = await Promise.all(
+      contracts.map((entry) => {
+        const contract = typeof entry === "string" ? entry : entry.contract;
+        return this.getBalanceResult(address, contract);
       })
     );
-    return results;
+    return balanceResults;
   }
 
   async getContractMethods(

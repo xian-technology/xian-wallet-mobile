@@ -20,6 +20,8 @@ interface Item {
   iconLetter: string;
   iconColor: string;
   hidden?: boolean;
+  unavailable?: boolean;
+  statusLabel?: string;
 }
 
 interface DraggableListProps {
@@ -99,6 +101,7 @@ export function DraggableList({ items, onReorder, onToggleHide }: DraggableListP
             style={[
               styles.row,
               item.hidden && styles.rowHidden,
+              item.unavailable && styles.rowUnavailable,
               isDragging && styles.rowDragging,
               isDragging && { transform: [{ translateY: dragY }] },
             ]}
@@ -131,17 +134,20 @@ export function DraggableList({ items, onReorder, onToggleHide }: DraggableListP
             <View style={styles.body}>
               <Text style={styles.label}>{item.label}</Text>
               <Text style={styles.sublabel} numberOfLines={1}>{item.sublabel}</Text>
+              {item.statusLabel && <Text style={styles.statusLabel}>{item.statusLabel}</Text>}
             </View>
 
             {/* Hide toggle */}
             <View
-              style={styles.hideBtn}
-              onTouchEnd={() => onToggleHide(item.key)}
+              style={[styles.hideBtn, item.unavailable && styles.hideBtnDisabled]}
+              onTouchEnd={() => {
+                if (!item.unavailable) onToggleHide(item.key);
+              }}
             >
               <Feather
                 name={item.hidden ? "eye-off" : "eye"}
                 size={16}
-                color={item.hidden ? colors.muted : colors.fg}
+                color={item.hidden || item.unavailable ? colors.muted : colors.fg}
               />
             </View>
           </Animated.View>
@@ -162,6 +168,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg0,
   },
   rowHidden: { opacity: 0.4 },
+  rowUnavailable: { opacity: 0.55 },
   rowDragging: {
     backgroundColor: colors.bg2,
     zIndex: 10,
@@ -180,6 +187,7 @@ const styles = StyleSheet.create({
   body: { flex: 1, minWidth: 0 },
   label: { fontSize: 14, fontWeight: "600", color: colors.fg },
   sublabel: { fontSize: 11, color: colors.muted },
+  statusLabel: { fontSize: 11, color: colors.warning, marginTop: 2 },
   hideBtn: {
     width: 32,
     height: 32,
@@ -188,4 +196,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  hideBtnDisabled: { opacity: 0.6 },
 });

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -22,6 +22,7 @@ import { TokenAvatar } from "../components/TokenAvatar";
 import { AppDialog } from "../components/AppDialog";
 import { useWallet } from "../lib/wallet-context";
 import { loadUnlockedSession } from "../lib/storage";
+import { visibleAssetsForActiveNetwork } from "../lib/assets";
 import { lightTap, successTap, errorTap } from "../lib/haptics";
 import {
   formatRuntimeInput,
@@ -33,7 +34,7 @@ import type { RootStackScreenProps } from "../navigation/types";
 type Step = "draft" | "review" | "sending" | "result";
 
 export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) {
-  const { state, rpc, refreshBalances, showToast } = useWallet();
+  const { state, rpc, refreshBalances, showToast, notifyActivityChanged } = useWallet();
   const [step, setStep] = useState<Step>("draft");
   const [selectedToken, setSelectedToken] = useState(route.params?.token ?? "currency");
   const [showTokenPicker, setShowTokenPicker] = useState(false);
@@ -49,9 +50,18 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
     submitted: boolean; accepted: boolean; finalized: boolean; txHash?: string; message?: string;
   } | null>(null);
 
-  const tokenAsset = state.watchedAssets.find((a) => a.contract === selectedToken);
-  const tokenSymbol = tokenAsset?.symbol ?? selectedToken.slice(0, 6).toUpperCase();
-  const tokenBal = state.assetBalances[selectedToken] ?? "0";
+  const visibleTokens = visibleAssetsForActiveNetwork(state);
+  const activeToken = visibleTokens.some((asset) => asset.contract === selectedToken)
+    ? selectedToken
+    : visibleTokens.find((asset) => asset.contract === "currency")?.contract ?? visibleTokens[0]?.contract ?? "currency";
+  useEffect(() => {
+    if (activeToken !== selectedToken) {
+      setSelectedToken(activeToken);
+    }
+  }, [activeToken, selectedToken]);
+  const tokenAsset = state.watchedAssets.find((a) => a.contract === activeToken);
+  const tokenSymbol = tokenAsset?.symbol ?? activeToken.slice(0, 6).toUpperCase();
+  const tokenBal = state.assetBalances[activeToken] ?? "0";
 
   const handleMax = () => { lightTap(); setAmount(tokenBal && tokenBal !== "null" ? tokenBal : "0"); };
 
@@ -61,7 +71,7 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
     setError(null); setEstimating(true);
     try {
       const [est, rate] = await Promise.all([
-        rpc.estimateChi({ sender: state.publicKey!, contract: selectedToken, function: "transfer", kwargs: { to: trimmedTo, amount: parsedAmount } }),
+        rpc.estimateChi({ sender: state.publicKey!, contract: activeToken, function: "transfer", kwargs: { to: trimmedTo, amount: parsedAmount } }),
         rpc.getChiRate(),
       ]);
       setEstimate(est); setChiRate(rate); lightTap(); setStep("review");
@@ -98,10 +108,11 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
       if (!session) throw new Error("Wallet is locked");
       const parsedAmount = parseAmountInput(amount);
       if (parsedAmount == null) throw new Error("Enter a valid amount");
-      const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: selectedToken, function: "transfer", kwargs: { to: to.trim(), amount: parsedAmount }, chi: estimate?.estimated ?? 50000 });
+      const kwargs = { to: to.trim(), amount: parsedAmount };
+      const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: activeToken, function: "transfer", kwargs, chi: estimate?.estimated ?? 50000 });
       setResult(r); setStep("result");
       const ok = r.finalized || r.accepted;
-      if (ok) { successTap(); showToast(r.finalized ? "Transaction finalized." : "Transaction accepted.", "success"); void refreshBalances(); }
+      if (ok) { successTap(); showToast(r.finalized ? "Transaction finalized." : "Transaction accepted.", "success"); notifyActivityChanged({ txHash: r.txHash, sender: state.publicKey!, contract: activeToken, function: "transfer", kwargs, accepted: r.accepted, finalized: r.finalized, message: r.message }); void refreshBalances(); }
       else { errorTap(); showToast("Transaction failed.", "danger"); }
     } catch (e) { errorTap(); setResult({ submitted: false, accepted: false, finalized: false, message: e instanceof Error ? e.message : "Failed" }); setStep("result"); }
   };
@@ -161,8 +172,6 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
     </AppDialog>
   );
 
-  const visibleTokens = state.watchedAssets.filter((a) => !a.hidden);
-
   const tokenPickerModal = (
     <Modal visible={showTokenPicker} transparent animationType="slide">
       <View style={styles.modalOverlay}>
@@ -176,7 +185,7 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
             keyExtractor={(a) => a.contract}
             renderItem={({ item }) => {
               const sym = item.symbol ?? item.contract.slice(0, 6);
-              const isActive = item.contract === selectedToken;
+              const isActive = item.contract === activeToken;
               return (
                 <TouchableOpacity
                   style={[styles.tokenPickerItem, isActive && styles.tokenPickerActive]}
@@ -261,16 +270,16 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
           {/* Token selector */}
           <TouchableOpacity style={styles.tokenSelector} onPress={() => { lightTap(); Keyboard.dismiss(); setShowTokenPicker(true); }}>
             <TokenAvatar
-              contract={selectedToken}
+              contract={activeToken}
               symbol={tokenSymbol}
               icon={tokenAsset?.icon}
               size={36}
               textSize={15}
-              backgroundColor={selectedToken === "currency" ? colors.accentDim : colors.bg2}
+              backgroundColor={activeToken === "currency" ? colors.accentDim : colors.bg2}
             />
             <View style={{ flex: 1 }}>
               <Text style={styles.tokenSelSym}>{tokenSymbol}</Text>
-              <Text style={styles.tokenSelName}>{tokenAsset?.name ?? selectedToken}</Text>
+              <Text style={styles.tokenSelName}>{tokenAsset?.name ?? activeToken}</Text>
             </View>
             <Feather name="chevron-down" size={18} color={colors.muted} />
           </TouchableOpacity>

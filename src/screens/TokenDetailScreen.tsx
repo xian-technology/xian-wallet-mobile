@@ -9,6 +9,11 @@ import { ConfirmDialog } from "../components/AppDialog";
 import { TokenAvatar } from "../components/TokenAvatar";
 import { useWallet } from "../lib/wallet-context";
 import { loadWalletState, saveWalletState } from "../lib/storage";
+import {
+  isAssetUnavailableOnActiveNetwork,
+  removeAssetNetworkState,
+  unavailableAssetLabel,
+} from "../lib/assets";
 import { lightTap } from "../lib/haptics";
 import type { RootStackScreenProps } from "../navigation/types";
 
@@ -52,6 +57,7 @@ export function TokenDetailScreen({ route, navigation }: RootStackScreenProps<"T
   const symbol = asset.symbol ?? asset.contract.slice(0, 6);
   const balance = state.assetBalances[contract];
   const iconBg = contract === "currency" ? colors.accentDim : assetHue(contract);
+  const unavailable = isAssetUnavailableOnActiveNetwork(state, asset);
 
   const handleCopyContract = async () => {
     await Clipboard.setStringAsync(contract);
@@ -71,8 +77,10 @@ export function TokenDetailScreen({ route, navigation }: RootStackScreenProps<"T
     try {
       const ws = await loadWalletState();
       if (!ws) return;
-      ws.watchedAssets = ws.watchedAssets.filter((a) => a.contract !== contract);
-      await saveWalletState(ws);
+      await saveWalletState(removeAssetNetworkState({
+        ...ws,
+        watchedAssets: ws.watchedAssets.filter((a) => a.contract !== contract),
+      }, contract));
       setConfirmRemoveAsset(false);
       showToast(`${symbol} removed.`, "info");
       await refresh();
@@ -99,14 +107,16 @@ export function TokenDetailScreen({ route, navigation }: RootStackScreenProps<"T
             {formatBalance(balance, asset.decimals)}
           </Text>
           <Text style={styles.heroSymbol}>{symbol}</Text>
+          {unavailable && <Text style={styles.unavailable}>{unavailableAssetLabel(state)}</Text>}
         </View>
 
         {/* Quick actions */}
         <View style={styles.actions}>
           <Button
             title={`Send ${symbol}`}
-            onPress={() => navigation.navigate("Send")}
+            onPress={() => navigation.navigate("Send", { token: contract })}
             style={{ flex: 1 }}
+            disabled={unavailable}
           />
         </View>
 
@@ -207,6 +217,7 @@ const styles = StyleSheet.create({
   hero: { alignItems: "center", paddingVertical: 24, gap: 8 },
   heroBalance: { fontSize: 36, fontWeight: "700", color: colors.fg },
   heroSymbol: { fontSize: 16, color: colors.muted, marginTop: 4 },
+  unavailable: { fontSize: 12, color: colors.warning },
   actions: { flexDirection: "row", gap: 12 },
   row: {
     flexDirection: "row",

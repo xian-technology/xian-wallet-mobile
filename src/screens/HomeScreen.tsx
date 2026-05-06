@@ -17,7 +17,19 @@ import { loadWalletState, saveWalletState } from "../lib/storage";
 import { SwipeableRow } from "../components/SwipeableRow";
 import { DraggableList } from "../components/DraggableList";
 import { TokenAvatar } from "../components/TokenAvatar";
+import { AppDialog } from "../components/AppDialog";
 import { lightTap, mediumTap } from "../lib/haptics";
+import {
+  hiddenAssetCount,
+  isAssetHiddenOnActiveNetwork,
+  isAssetUnavailableOnActiveNetwork,
+  isMissingContractError,
+  sortAssets,
+  unavailableAssetCount,
+  unavailableAssetLabel,
+  updateAssetNetworkState,
+  visibleAssetsForActiveNetwork,
+} from "../lib/assets";
 import type { HomeTabScreenProps } from "../navigation/types";
 
 function truncAddr(addr: string): string {
@@ -51,12 +63,18 @@ export function HomeScreen({ navigation }: HomeTabScreenProps<"Home">) {
   const [refreshing, setRefreshing] = useState(false);
   const [managing, setManaging] = useState(false);
   const [addTokenValue, setAddTokenValue] = useState("");
+  const [pendingUnavailableTokenContract, setPendingUnavailableTokenContract] = useState<string | null>(null);
 
   const address = state.publicKey ?? "";
   const activeAcct = state.accounts.find((a) => a.index === state.activeAccountIndex);
-  const sorted = [...state.watchedAssets].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  const visible = managing ? sorted : sorted.filter((a) => !a.hidden);
-  const hiddenN = state.watchedAssets.filter((a) => a.hidden).length;
+  const sorted = sortAssets(state.watchedAssets);
+  const visible = visibleAssetsForActiveNetwork(state);
+  const hiddenN = hiddenAssetCount(state);
+  const unavailableN = unavailableAssetCount(state);
+  const secondaryCount = [
+    hiddenN > 0 ? `${hiddenN} hidden` : "",
+    unavailableN > 0 ? `${unavailableN} unavailable` : "",
+  ].filter(Boolean).join(" · ");
 
   const doRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -68,7 +86,7 @@ export function HomeScreen({ navigation }: HomeTabScreenProps<"Home">) {
   const reorderAsset = async (fromIndex: number, toIndex: number) => {
     const ws = await loadWalletState();
     if (!ws) return;
-    const s = [...ws.watchedAssets].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const s = sortAssets(ws.watchedAssets);
     const [moved] = s.splice(fromIndex, 1);
     if (moved) s.splice(toIndex, 0, moved);
     s.forEach((a, i) => { a.order = i; });
@@ -82,12 +100,18 @@ export function HomeScreen({ navigation }: HomeTabScreenProps<"Home">) {
     const ws = await loadWalletState();
     if (!ws) return;
     const a = ws.watchedAssets.find((x) => x.contract === contract);
-    if (a) a.hidden = !a.hidden;
-    await saveWalletState(ws);
+    if (!a || isAssetUnavailableOnActiveNetwork(state, a)) return;
+    const nextState = updateAssetNetworkState(ws, contract, {
+      hidden: !isAssetHiddenOnActiveNetwork(state, a),
+    });
+    await saveWalletState(nextState);
     await refresh();
   };
 
-  const addToken = async (rawContract: string) => {
+  const addToken = async (
+    rawContract: string,
+    options: { confirmedInactive?: boolean } = {}
+  ) => {
     const contractName = rawContract.trim();
     if (!contractName) return;
     const ws = await loadWalletState();
@@ -96,31 +120,59 @@ export function HomeScreen({ navigation }: HomeTabScreenProps<"Home">) {
       showToast("Already tracked.", "warning");
       return;
     }
-    let meta: Awaited<ReturnType<typeof rpc.getTokenMetadata>>;
+    let meta: Awaited<ReturnType<typeof rpc.getTokenMetadata>> | null = null;
     try {
       meta = await rpc.getTokenMetadata(contractName);
     } catch (e) {
-      showToast(
-        e instanceof Error
-          ? `Couldn't load ${contractName}: ${e.message}`
-          : `Couldn't load token metadata for ${contractName}.`,
-        "danger"
-      );
-      return;
+      if (isMissingContractError(e) && !options.confirmedInactive) {
+        setPendingUnavailableTokenContract(contractName);
+        return;
+      }
+      if (!isMissingContractError(e)) {
+        showToast(
+          e instanceof Error
+            ? `Couldn't load ${contractName}: ${e.message}`
+            : `Couldn't load token metadata for ${contractName}.`,
+          "danger"
+        );
+        return;
+      }
     }
-    if (!meta.name && !meta.symbol) {
+    if (!meta?.name && !meta?.symbol && !options.confirmedInactive) {
       showToast(`No token found at ${contractName}.`, "danger");
       return;
     }
-    ws.watchedAssets.push({
-      contract: contractName,
-      name: meta.name ?? undefined,
-      symbol: meta.symbol ?? undefined,
-      icon: meta.logoUrl ?? meta.logoSvg ?? undefined,
-    });
-    await saveWalletState(ws);
+    const nextState = updateAssetNetworkState(
+      {
+        ...ws,
+        watchedAssets: [
+          ...ws.watchedAssets,
+          {
+            contract: contractName,
+            name: meta?.name ?? undefined,
+            symbol: meta?.symbol ?? undefined,
+            icon: meta?.logoUrl ?? meta?.logoSvg ?? undefined,
+          },
+        ],
+      },
+      contractName,
+      {
+        status: meta ? "available" : "not_found",
+        lastCheckedAt: new Date().toISOString(),
+        error: meta ? undefined : "Token contract not found on this network",
+      }
+    );
+    await saveWalletState(nextState);
+    setPendingUnavailableTokenContract(null);
     setAddTokenValue("");
-    showToast(`Added ${meta.symbol ?? contractName}.`, "success");
+    showToast(
+      meta?.symbol
+        ? `Added ${meta.symbol}.`
+        : options.confirmedInactive
+          ? `Added ${contractName} as inactive.`
+          : `Added ${contractName}.`,
+      "success"
+    );
     await refresh();
     await refreshBalances();
   };
@@ -148,6 +200,30 @@ export function HomeScreen({ navigation }: HomeTabScreenProps<"Home">) {
 
   return (
     <View style={styles.container}>
+      <AppDialog
+        visible={pendingUnavailableTokenContract != null}
+        title="Token unavailable"
+        message={`This token contract was not found on ${state.activeNetworkName ?? "the current network"}. Add it as an inactive token anyway?`}
+        onRequestClose={() => setPendingUnavailableTokenContract(null)}
+        actions={[
+          {
+            title: "Cancel",
+            variant: "secondary",
+            onPress: () => setPendingUnavailableTokenContract(null),
+          },
+          {
+            title: "Add Inactive",
+            onPress: () => {
+              const contract = pendingUnavailableTokenContract;
+              if (contract) void addToken(contract, { confirmedInactive: true });
+            },
+          },
+        ]}
+      >
+        <Text style={styles.unavailableTokenContract} numberOfLines={3}>
+          {pendingUnavailableTokenContract}
+        </Text>
+      </AppDialog>
       <ScrollView
         contentContainerStyle={[styles.scroll, prefs.quickActionsPosition === "bottom" && { paddingBottom: 80 }]}
         scrollEnabled={!managing}
@@ -162,7 +238,10 @@ export function HomeScreen({ navigation }: HomeTabScreenProps<"Home">) {
 
         <View style={styles.sectionHd}>
           <Text style={styles.sectionLabel}>Assets</Text>
-          <Text style={styles.badge}>{managing ? state.watchedAssets.length : visible.length}{hiddenN > 0 && !managing ? ` · ${hiddenN} hidden` : ""}</Text>
+          <Text style={styles.badge}>
+            {managing ? state.watchedAssets.length : visible.length}
+            {!managing && secondaryCount ? ` · ${secondaryCount}` : ""}
+          </Text>
         </View>
 
         {managing ? (
@@ -175,7 +254,11 @@ export function HomeScreen({ navigation }: HomeTabScreenProps<"Home">) {
               icon: asset.icon,
               iconLetter: (asset.symbol ?? asset.contract.slice(0, 6)).charAt(0).toUpperCase(),
               iconColor: asset.contract === "currency" ? colors.accentDim : assetHue(asset.contract),
-              hidden: asset.hidden,
+              hidden: isAssetHiddenOnActiveNetwork(state, asset),
+              unavailable: isAssetUnavailableOnActiveNetwork(state, asset),
+              statusLabel: isAssetUnavailableOnActiveNetwork(state, asset)
+                ? unavailableAssetLabel(state)
+                : undefined,
             }))}
             onReorder={reorderAsset}
             onToggleHide={toggleHide}
@@ -198,6 +281,10 @@ export function HomeScreen({ navigation }: HomeTabScreenProps<"Home">) {
             </TouchableOpacity>
           </View>
           </View>
+        ) : visible.length === 0 ? (
+          <Text style={styles.emptyAssets}>
+            {state.watchedAssets.length > 0 ? "No assets available on this network." : "No assets tracked yet."}
+          </Text>
         ) : (
           visible.map((asset) => {
             const sym = asset.symbol ?? asset.contract.slice(0, 6);
@@ -279,10 +366,12 @@ const styles = StyleSheet.create({
   sym: { fontSize: 14, fontWeight: "600", color: colors.fg },
   name: { fontSize: 12, color: colors.muted },
   bal: { fontSize: 14, fontWeight: "600", color: colors.fg },
+  emptyAssets: { color: colors.muted, fontSize: 13, textAlign: "center", paddingVertical: 24 },
   stickyActions: { borderTopWidth: 1, borderTopColor: colors.line, paddingVertical: 10, backgroundColor: colors.bg0 },
   addTokenRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8, paddingTop: 8 },
   addTokenInput: { flex: 1, fontSize: 13, fontFamily: "monospace", color: colors.fg, backgroundColor: colors.bg2, borderRadius: 8, borderWidth: 1, borderColor: colors.line, paddingVertical: 8, paddingHorizontal: 12 },
   addTokenBtn: { width: 36, height: 36, borderRadius: 8, backgroundColor: colors.bg2, alignItems: "center", justifyContent: "center" },
+  unavailableTokenContract: { fontSize: 12, fontFamily: "monospace", color: colors.fg, backgroundColor: colors.bg2, borderRadius: 10, padding: 10 },
   footer: { flexDirection: "row", justifyContent: "center", gap: 16, paddingVertical: 12 },
   fLink: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 },
   fText: { fontSize: 12, color: colors.muted },

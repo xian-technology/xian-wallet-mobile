@@ -15,6 +15,7 @@ import {
   type StoredWalletState,
   type StoredShieldedWalletSnapshot,
   type StoredUnlockedSession,
+  type AssetNetworkStates,
   createMobileStore
 } from "./storage";
 import {
@@ -56,6 +57,7 @@ interface WalletBackup {
     icon?: string;
     decimals?: number;
   }>;
+  assetNetworkStates?: AssetNetworkStates;
   shieldedStateSnapshots?: Array<{
     label: string;
     stateSnapshot: string;
@@ -538,6 +540,13 @@ export function createWalletController() {
         activeNetworkId: activePreset.id,
         networkPresets,
         watchedAssets: [{ contract: "currency", name: "Xian", symbol: "XIAN", decimals: 8 }],
+        assetNetworkStates: {
+          [activePreset.id]: {
+            currency: {
+              status: "available"
+            }
+          }
+        },
         shieldedWalletSnapshots: [],
         connectedOrigins: [],
         createdAt: new Date().toISOString()
@@ -744,7 +753,8 @@ export function createWalletController() {
         activeAccountIndex: state.activeAccountIndex ?? 0,
         activeNetworkId: state.activeNetworkId,
         networkPresets: state.networkPresets.filter((preset) => !preset.builtin),
-        watchedAssets: state.watchedAssets
+        watchedAssets: state.watchedAssets,
+        assetNetworkStates: state.assetNetworkStates
       };
 
       if (state.encryptedMnemonic) {
@@ -872,6 +882,7 @@ export function createWalletController() {
         activeNetworkId: activePreset.id,
         networkPresets,
         watchedAssets,
+        assetNetworkStates: backup.assetNetworkStates,
         shieldedWalletSnapshots,
         connectedOrigins: [],
         createdAt: nowIso,

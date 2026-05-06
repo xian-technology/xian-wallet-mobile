@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 
 const mockGetChainId = jest.fn() as jest.Mock;
 const mockGetTokenMetadata = jest.fn() as jest.Mock;
@@ -35,6 +35,8 @@ jest.mock("@xian-tech/client", () => ({
 import { XianRpcClient } from "../rpc-client";
 
 describe("XianRpcClient", () => {
+  const originalFetch = global.fetch;
+
   beforeEach(() => {
     mockGetChainId.mockReset();
     mockGetTokenMetadata.mockReset();
@@ -45,6 +47,10 @@ describe("XianRpcClient", () => {
     mockSignTx.mockReset();
     mockBroadcastTx.mockReset();
     mockWaitForTx.mockReset();
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
   });
 
   it("delegates canonical build/sign/broadcast flow to xian-js", async () => {
@@ -156,5 +162,25 @@ describe("XianRpcClient", () => {
       logoUrl: null,
       logoSvg: "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'></svg>"
     });
+  });
+
+  it("treats empty transaction-history RPC responses as empty activity", async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      text: async () => "",
+    })) as unknown as typeof fetch;
+
+    const client = new XianRpcClient("http://127.0.0.1:26657");
+    await expect(client.getTransactionHistory("addr")).resolves.toEqual([]);
+  });
+
+  it("treats malformed transaction-history RPC responses as empty activity", async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      text: async () => "not json",
+    })) as unknown as typeof fetch;
+
+    const client = new XianRpcClient("http://127.0.0.1:26657");
+    await expect(client.getTransactionHistory("addr")).resolves.toEqual([]);
   });
 });

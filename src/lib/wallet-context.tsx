@@ -19,6 +19,18 @@ import {
 } from "./storage";
 import { XianRpcClient } from "./rpc-client";
 import { loadPreferences, savePreferences, type Preferences } from "./preferences";
+import {
+  activityNetworkKey,
+  makeLocalActivityTx,
+  saveLocalActivityTx,
+  type SubmittedActivityTx,
+} from "./local-activity";
+import type { TxHistoryRecord } from "./rpc-client";
+import {
+  isMissingContractError,
+  messageFromUnknown,
+  updateAssetNetworkState,
+} from "./assets";
 
 export type { StoredWalletState, Contact };
 
@@ -42,10 +54,17 @@ export interface WalletState {
   activeNetworkName?: string;
   networkPresets: StoredWalletState["networkPresets"];
   watchedAssets: StoredWalletState["watchedAssets"];
+  assetNetworkStates: NonNullable<StoredWalletState["assetNetworkStates"]>;
   assetBalances: Record<string, string | null>;
   balancesLoading: boolean;
   contacts: Contact[];
   shieldedWalletSnapshots: ShieldedWalletSnapshotSummary[];
+}
+
+export interface ActivityRefreshRequest {
+  id: number;
+  txHash?: string;
+  localTx?: TxHistoryRecord;
 }
 
 type ToastMessage = { message: string; tone: "success" | "danger" | "warning" | "info" } | null;
@@ -62,6 +81,8 @@ interface WalletContextValue {
   clearToast: () => void;
   prefs: Preferences;
   updatePrefs: (update: Partial<Preferences>) => Promise<void>;
+  activityRefreshRequest: ActivityRefreshRequest;
+  notifyActivityChanged: (tx?: SubmittedActivityTx) => void;
 }
 
 const WalletContext = createContext<WalletContextValue | null>(null);
@@ -76,6 +97,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     rpcUrl: "http://127.0.0.1:26657",
     networkPresets: [],
     watchedAssets: [],
+    assetNetworkStates: {},
     assetBalances: {},
     balancesLoading: false,
     contacts: [],
@@ -85,6 +107,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [controller, setController] = useState<WalletContextValue["controller"]>(null);
   const [toast, setToast] = useState<ToastMessage>(null);
   const [prefs, setPrefs] = useState<Preferences>({ quickActionsPosition: "top", hideQuickActionLabels: false });
+  const [activityRefreshRequest, setActivityRefreshRequest] = useState<ActivityRefreshRequest>({ id: 0 });
   const rpcRef = useRef(new XianRpcClient("http://127.0.0.1:26657"));
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -108,6 +131,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     await savePreferences(next);
   }, [prefs]);
 
+  const notifyActivityChanged = useCallback((tx?: SubmittedActivityTx) => {
+    const normalizedHash = tx?.txHash?.trim();
+    const localTx = tx ? makeLocalActivityTx(tx) : null;
+    if (localTx) {
+      void saveLocalActivityTx(activityNetworkKey(state), localTx);
+    }
+    setActivityRefreshRequest((prev) => ({
+      id: prev.id + 1,
+      txHash: normalizedHash || undefined,
+      localTx: localTx ?? undefined,
+    }));
+  }, [state.activeNetworkId, state.publicKey, state.rpcUrl]);
+
   const hydrateWatchedAssetIcons = useCallback(
     async (walletState: StoredWalletState): Promise<StoredWalletState> => {
       const assetsMissingIcons = walletState.watchedAssets.some(
@@ -118,6 +154,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
 
       let changed = false;
+      let nextWalletState = walletState;
       const watchedAssets = await Promise.all(
         walletState.watchedAssets.map(async (asset) => {
           if (asset.icon?.trim()) {
@@ -134,7 +171,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
               ...asset,
               icon,
             };
-          } catch {
+          } catch (error) {
+            if (isMissingContractError(error)) {
+              nextWalletState = updateAssetNetworkState(nextWalletState, asset.contract, {
+                status: "not_found",
+                lastCheckedAt: new Date().toISOString(),
+                error: messageFromUnknown(error),
+              });
+              changed = true;
+            }
             return asset;
           }
         })
@@ -145,7 +190,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
 
       const nextState = {
-        ...walletState,
+        ...nextWalletState,
         watchedAssets,
       };
       await saveWalletState(nextState);
@@ -191,6 +236,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       activeNetworkName: activePreset?.name,
       networkPresets: walletState?.networkPresets ?? [],
       watchedAssets: walletState?.watchedAssets ?? [],
+      assetNetworkStates: walletState?.assetNetworkStates ?? {},
       contacts,
       shieldedWalletSnapshots: [...(walletState?.shieldedWalletSnapshots ?? [])].sort((left, right) =>
         right.updatedAt.localeCompare(left.updatedAt)
@@ -204,15 +250,45 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
     setState((prev) => ({ ...prev, balancesLoading: true }));
 
-    const contracts = walletState.watchedAssets.map((a) => a.contract);
-    const balances = await rpcRef.current.getMultipleBalances(
+    const balanceResults = await rpcRef.current.getMultipleBalanceResults(
       walletState.publicKey,
-      contracts
+      walletState.watchedAssets
     );
+    const balances = Object.fromEntries(
+      balanceResults.map((result) => [result.contract, result.balance])
+    );
+    let nextWalletState = walletState;
+    const checkedAt = new Date().toISOString();
+    for (const result of balanceResults) {
+      nextWalletState = updateAssetNetworkState(nextWalletState, result.contract, {
+        status: result.status,
+        lastCheckedAt: checkedAt,
+        error: result.error,
+      });
+    }
+    const latestState = await loadWalletState();
+    if (latestState?.publicKey === walletState.publicKey) {
+      const networkId = walletState.activeNetworkId;
+      const latestStates = latestState.assetNetworkStates ?? {};
+      const latestNetworkState = latestStates[networkId] ?? {};
+      const fetchedNetworkState = nextWalletState.assetNetworkStates?.[networkId] ?? {};
+      nextWalletState = {
+        ...latestState,
+        assetNetworkStates: {
+          ...latestStates,
+          [networkId]: {
+            ...latestNetworkState,
+            ...fetchedNetworkState,
+          },
+        },
+      };
+      await saveWalletState(nextWalletState);
+    }
 
     setState((prev) => ({
       ...prev,
       assetBalances: balances,
+      assetNetworkStates: nextWalletState.assetNetworkStates ?? {},
       balancesLoading: false,
     }));
   }, []);
@@ -251,6 +327,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         clearToast,
         prefs,
         updatePrefs,
+        activityRefreshRequest,
+        notifyActivityChanged,
       }}
     >
       {children}

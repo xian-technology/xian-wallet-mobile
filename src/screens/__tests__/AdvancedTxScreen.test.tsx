@@ -27,6 +27,7 @@ describe("AdvancedTxScreen", () => {
   const mockSendTransaction = jest.fn() as jest.Mock;
   const mockRefreshBalances = jest.fn(async () => undefined) as jest.Mock;
   const mockShowToast = jest.fn() as jest.Mock;
+  const mockNotifyActivityChanged = jest.fn() as jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -43,7 +44,8 @@ describe("AdvancedTxScreen", () => {
         sendTransaction: mockSendTransaction
       },
       refreshBalances: mockRefreshBalances,
-      showToast: mockShowToast
+      showToast: mockShowToast,
+      notifyActivityChanged: mockNotifyActivityChanged
     });
     mockLoadUnlockedSession.mockImplementation(async () => ({
       privateKey: "11".repeat(32),
@@ -128,6 +130,22 @@ describe("AdvancedTxScreen", () => {
       })
     );
     expect(mockShowToast).toHaveBeenCalledWith("Transaction finalized.", "success");
+    expect(mockNotifyActivityChanged).toHaveBeenCalledWith(
+      expect.objectContaining({
+        txHash: "XYZ789",
+        sender: "sender",
+        contract: "con_token",
+        function: "mint",
+        accepted: true,
+        finalized: true,
+        kwargs: {
+          count: 9007199254740993n,
+          amount: { __fixed__: "12.5" },
+          config: { mode: "fast" },
+          flag: true
+        }
+      })
+    );
   });
 
   it("uses the exact simulated chi when chi is auto-estimated", async () => {
