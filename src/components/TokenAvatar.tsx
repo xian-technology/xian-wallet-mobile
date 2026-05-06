@@ -34,6 +34,9 @@ export function TokenAvatar({
 }) {
   const trimmedIcon = icon?.trim();
   const letter = (symbol || contract.slice(0, 6)).charAt(0).toUpperCase();
+  const isNativeXianLogo = contract === "currency" && Boolean(trimmedIcon);
+  const iconSize = isNativeXianLogo ? Math.round(size * 0.7) : size;
+  const iconRadius = isNativeXianLogo ? 0 : size / 2;
   const containerStyle = [
     styles.container,
     {
@@ -48,14 +51,14 @@ export function TokenAvatar({
     if (isInlineSvg(trimmedIcon)) {
       return (
         <View style={containerStyle}>
-          <SvgXml xml={trimmedIcon} width={size} height={size} />
+          <SvgXml xml={trimmedIcon} width={iconSize} height={iconSize} />
         </View>
       );
     }
     if (isSvgUri(trimmedIcon)) {
       return (
         <View style={containerStyle}>
-          <SvgUri uri={trimmedIcon} width={size} height={size} />
+          <SvgUri uri={trimmedIcon} width={iconSize} height={iconSize} />
         </View>
       );
     }
@@ -63,7 +66,7 @@ export function TokenAvatar({
       <View style={containerStyle}>
         <Image
           source={{ uri: trimmedIcon }}
-          style={{ width: size, height: size, borderRadius: size / 2 }}
+          style={{ width: iconSize, height: iconSize, borderRadius: iconRadius }}
           resizeMode="contain"
         />
       </View>
