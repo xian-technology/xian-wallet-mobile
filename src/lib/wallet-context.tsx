@@ -55,6 +55,7 @@ export interface WalletState {
   networkPresets: StoredWalletState["networkPresets"];
   watchedAssets: StoredWalletState["watchedAssets"];
   assetNetworkStates: NonNullable<StoredWalletState["assetNetworkStates"]>;
+  trustedDappPolicies: NonNullable<StoredWalletState["trustedDappPolicies"]>;
   assetBalances: Record<string, string | null>;
   balancesLoading: boolean;
   contacts: Contact[];
@@ -98,6 +99,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     networkPresets: [],
     watchedAssets: [],
     assetNetworkStates: {},
+    trustedDappPolicies: [],
     assetBalances: {},
     balancesLoading: false,
     contacts: [],
@@ -237,6 +239,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       networkPresets: walletState?.networkPresets ?? [],
       watchedAssets: walletState?.watchedAssets ?? [],
       assetNetworkStates: walletState?.assetNetworkStates ?? {},
+      trustedDappPolicies: walletState?.trustedDappPolicies ?? [],
       contacts,
       shieldedWalletSnapshots: [...(walletState?.shieldedWalletSnapshots ?? [])].sort((left, right) =>
         right.updatedAt.localeCompare(left.updatedAt)

@@ -4,6 +4,7 @@
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
+import type { XianDappPolicy } from "@xian-tech/provider";
 
 const WALLET_STATE_KEY = "xian_wallet_state";
 const SESSION_KEY = "xian_unlocked_session";
@@ -81,6 +82,7 @@ export interface StoredWalletState {
     order?: number;
   }>;
   assetNetworkStates?: AssetNetworkStates;
+  trustedDappPolicies?: XianDappPolicy[];
   shieldedWalletSnapshots?: StoredShieldedWalletSnapshot[];
   connectedOrigins: string[];
   createdAt: string;
@@ -257,6 +259,87 @@ export async function loadContacts(): Promise<Contact[]> {
 
 export async function saveContacts(contacts: Contact[]): Promise<void> {
   await AsyncStorage.setItem(CONTACTS_KEY, JSON.stringify(contacts));
+}
+
+// Trusted dapp policies
+function currentTrustedPolicies(state: StoredWalletState): XianDappPolicy[] {
+  return Array.isArray(state.trustedDappPolicies)
+    ? state.trustedDappPolicies
+    : [];
+}
+
+function sameTrustedPolicyScope(
+  left: XianDappPolicy,
+  right: XianDappPolicy
+): boolean {
+  return (
+    left.origin === right.origin &&
+    left.account === right.account &&
+    left.chainId === right.chainId &&
+    left.contract === right.contract &&
+    left.function === right.function &&
+    left.methods.length === right.methods.length &&
+    left.methods.every((method) => right.methods.includes(method))
+  );
+}
+
+export async function loadTrustedDappPolicies(): Promise<XianDappPolicy[]> {
+  const state = await loadWalletState();
+  return state ? currentTrustedPolicies(state) : [];
+}
+
+export async function upsertTrustedDappPolicy(
+  policy: XianDappPolicy
+): Promise<void> {
+  const state = await loadWalletState();
+  if (!state) {
+    throw new Error("no wallet configured");
+  }
+  const policies = currentTrustedPolicies(state);
+  await saveWalletState({
+    ...state,
+    trustedDappPolicies: [
+      ...policies.filter((existing) => !sameTrustedPolicyScope(existing, policy)),
+      policy
+    ]
+  });
+}
+
+export async function touchTrustedDappPolicy(policyId: string): Promise<void> {
+  const state = await loadWalletState();
+  if (!state) {
+    return;
+  }
+  const policies = currentTrustedPolicies(state);
+  if (!policies.some((policy) => policy.id === policyId)) {
+    return;
+  }
+  const now = Date.now();
+  await saveWalletState({
+    ...state,
+    trustedDappPolicies: policies.map((policy) =>
+      policy.id === policyId
+        ? {
+            ...policy,
+            lastUsedAt: now,
+            useCount: (policy.useCount ?? 0) + 1
+          }
+        : policy
+    )
+  });
+}
+
+export async function removeTrustedDappPolicy(policyId: string): Promise<void> {
+  const state = await loadWalletState();
+  if (!state) {
+    return;
+  }
+  await saveWalletState({
+    ...state,
+    trustedDappPolicies: currentTrustedPolicies(state).filter(
+      (policy) => policy.id !== policyId
+    )
+  });
 }
 
 // Build the store object matching WalletControllerStore interface

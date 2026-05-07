@@ -2,6 +2,7 @@
   "expo": {
     "name": "Xian Wallet",
     "slug": "xian-wallet-mobile",
+    "scheme": "xianwallet",
     "version": "0.3.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -14,7 +15,10 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "org.xian.wallet.mobile"
+      "bundleIdentifier": "org.xian.wallet.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow Xian Wallet to scan WalletConnect QR codes."
+      }
     },
     "android": {
       "package": "org.xian.wallet.mobile",
@@ -28,7 +32,13 @@
     "plugins": [
       "expo-secure-store",
       "expo-router",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Xian Wallet to scan WalletConnect QR codes."
+        }
+      ]
     ]
   }
 }

@@ -8,6 +8,12 @@ import {
   type XianShieldedWalletHistoryResult,
   XianClient
 } from "@xian-tech/client";
+import type {
+  BroadcastMode,
+  TransactionSubmission,
+  XianSignedTransaction,
+  XianUnsignedTransaction
+} from "@xian-tech/provider";
 import {
   isMissingContractError,
   messageFromUnknown,
@@ -268,6 +274,45 @@ export class XianRpcClient {
     return {
       estimated: result.estimated
     };
+  }
+
+  async buildTransaction(opts: {
+    sender: string;
+    contract: string;
+    function: string;
+    kwargs: Record<string, unknown>;
+    chainId?: string;
+    chi?: number | bigint;
+    chiSupplied?: number | bigint;
+  }): Promise<XianUnsignedTransaction> {
+    return this.client.buildTx({
+      sender: opts.sender,
+      contract: opts.contract,
+      function: opts.function,
+      kwargs: opts.kwargs,
+      chainId: opts.chainId,
+      chi: opts.chi,
+      chiSupplied: opts.chiSupplied
+    });
+  }
+
+  async signTransaction(
+    privateKey: string,
+    tx: XianUnsignedTransaction
+  ): Promise<XianSignedTransaction> {
+    return this.client.signTx(tx, new Ed25519Signer(privateKey));
+  }
+
+  async broadcastSignedTransaction(
+    tx: XianSignedTransaction,
+    options?: {
+      mode?: BroadcastMode;
+      waitForTx?: boolean;
+      timeoutMs?: number;
+      pollIntervalMs?: number;
+    }
+  ): Promise<TransactionSubmission> {
+    return this.client.broadcastTx(tx, options);
   }
 
   async sendTransaction(opts: {

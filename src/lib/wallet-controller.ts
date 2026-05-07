@@ -547,6 +547,7 @@ export function createWalletController() {
             }
           }
         },
+        trustedDappPolicies: [],
         shieldedWalletSnapshots: [],
         connectedOrigins: [],
         createdAt: new Date().toISOString()
@@ -883,6 +884,7 @@ export function createWalletController() {
         networkPresets,
         watchedAssets,
         assetNetworkStates: backup.assetNetworkStates,
+        trustedDappPolicies: [],
         shieldedWalletSnapshots,
         connectedOrigins: [],
         createdAt: nowIso,
