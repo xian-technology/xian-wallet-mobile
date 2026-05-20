@@ -28,20 +28,41 @@ function truncHash(h: string, head = 8, tail = 6): string {
   return h.length > head + tail + 3 ? `${h.slice(0, head)}...${h.slice(-tail)}` : h;
 }
 
-function timeAgo(dateStr: string | null | undefined): string {
-  if (!dateStr) return "";
-  try {
-    const d = new Date(dateStr);
-    const now = Date.now();
-    const diff = now - d.getTime();
-    if (Number.isNaN(diff)) return dateStr;
-    if (diff < 60000) return "just now";
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    return `${Math.floor(diff / 86400000)}d ago`;
-  } catch {
-    return dateStr;
+function txTimeRaw(tx: TxHistoryRecord): string | number | null | undefined {
+  return tx.created_at ?? tx.block_time;
+}
+
+function parseTimestamp(raw: unknown): number | null {
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw > 1e12 ? raw : raw * 1000;
   }
+  if (typeof raw === "string") {
+    const parsed = Date.parse(raw);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  return null;
+}
+
+function formatExactTime(raw: unknown): string | null {
+  const parsed = parseTimestamp(raw);
+  if (parsed != null) {
+    return new Date(parsed).toLocaleString();
+  }
+  return typeof raw === "string" && raw.trim() ? raw : null;
+}
+
+function timeAgo(raw: unknown): string {
+  const parsed = parseTimestamp(raw);
+  if (parsed == null) {
+    return typeof raw === "string" ? raw : "";
+  }
+  const diff = Date.now() - parsed;
+  if (diff < 0) return formatExactTime(raw) ?? "";
+  if (diff < 60000) return "just now";
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  if (diff < 7 * 86400000) return `${Math.floor(diff / 86400000)}d ago`;
+  return new Date(parsed).toLocaleDateString();
 }
 
 function formatAmount(value: unknown): string | null {
@@ -104,11 +125,18 @@ function accentColors(accent: TxClassification["accent"]): { bg: string; fg: str
 
 function subtitleFor(cls: TxClassification, tx: TxHistoryRecord): string {
   const kw = kwargsOf(tx);
+  const to = typeof kw.to === "string" ? kw.to : "";
   switch (cls.category) {
     case "send":
-    case "receive":
+    case "receive": {
+      const amount = formatAmount(kw.amount);
+      if (amount && to) return `${amount} ${tx.contract} to ${truncHash(to, 6, 4)}`;
+      if (amount) return `${amount} ${tx.contract}`;
+      break;
+    }
     case "approve": {
       const amount = formatAmount(kw.amount);
+      if (amount && to) return `${amount} ${tx.contract} for ${truncHash(to, 6, 4)}`;
       if (amount) return `${amount} ${tx.contract}`;
       break;
     }
@@ -154,6 +182,7 @@ export function ActivityScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadNotice, setLoadNotice] = useState<string | null>(null);
   const [selectedTx, setSelectedTx] = useState<TxHistoryRecord | null>(null);
 
   const address = state.publicKey ?? "";
@@ -179,10 +208,19 @@ export function ActivityScreen() {
       const merged = mergeActivityTxs(results, localTxs);
       setTxs(merged);
       setLoadError(null);
+      setLoadNotice(merged.some(isLocalUnindexed)
+        ? "Recent submissions are shown from this device until indexed history catches up."
+        : null);
       return merged;
     } catch {
       setTxs(localTxs);
-      setLoadError(localTxs.length > 0 ? null : "Activity is unavailable on this network.");
+      if (localTxs.length > 0) {
+        setLoadError(null);
+        setLoadNotice("Showing saved submissions only. Indexed history is unavailable on this network.");
+      } else {
+        setLoadError("Activity is unavailable on this network.");
+        setLoadNotice(null);
+      }
       return localTxs;
     }
   }, [address, networkKey, rpc]);
@@ -193,6 +231,7 @@ export function ActivityScreen() {
     setRefreshing(false);
     setTxs([]);
     setLoadError(null);
+    setLoadNotice(null);
     setSelectedTx(null);
     fetchTxs().finally(() => {
       if (!cancelled) {
@@ -345,8 +384,9 @@ export function ActivityScreen() {
       const n = Number(selectedTx.chi_used);
       rows.push({ label: "Chi used", value: Number.isFinite(n) ? n.toLocaleString() : String(selectedTx.chi_used) });
     }
-    if (selectedTx.created_at) {
-      rows.push({ label: "Time", value: selectedTx.created_at });
+    const exactTime = formatExactTime(txTimeRaw(selectedTx));
+    if (exactTime) {
+      rows.push({ label: "Time", value: exactTime });
     }
 
     const knownKeys: Record<TxClassification["category"], readonly string[]> = {
@@ -479,6 +519,17 @@ export function ActivityScreen() {
             </View>
           )
         }
+        ListHeaderComponent={
+          loadNotice && txs.length > 0 ? (
+            <View style={styles.noticeBanner}>
+              <Feather name="alert-triangle" size={14} color={colors.warning} />
+              <Text style={styles.noticeBannerText}>{loadNotice}</Text>
+              <TouchableOpacity onPress={handleRefresh} disabled={refreshing}>
+                <Text style={styles.noticeRetryText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null
+        }
         renderItem={({ item }) => {
           const cls = classifyTx(item);
           const accent = accentColors(cls.accent);
@@ -503,7 +554,7 @@ export function ActivityScreen() {
                 <Text style={styles.txTime} numberOfLines={1} ellipsizeMode="tail">{subtitle}</Text>
               </View>
               <View style={styles.txEnd}>
-                <Text style={styles.txTimeAgo}>{timeAgo(item.created_at)}</Text>
+                <Text style={styles.txTimeAgo}>{timeAgo(txTimeRaw(item))}</Text>
               </View>
             </TouchableOpacity>
           );
@@ -543,6 +594,9 @@ const styles = StyleSheet.create({
   emptyErrorText: { color: colors.danger },
   errorBanner: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 10, paddingHorizontal: 16, backgroundColor: colors.dangerSoft, borderBottomWidth: 1, borderBottomColor: colors.line },
   errorBannerText: { fontSize: 12, color: colors.danger, flex: 1 },
+  noticeBanner: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 16, marginTop: 12, marginBottom: 4, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, backgroundColor: colors.warningSoft, borderWidth: 1, borderColor: colors.line },
+  noticeBannerText: { fontSize: 12, color: colors.warning, flex: 1, lineHeight: 16 },
+  noticeRetryText: { fontSize: 12, fontWeight: "700", color: colors.warning },
   // Detail
   detailHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16, borderBottomWidth: 1, borderBottomColor: colors.line },
   detailTitle: { fontSize: 16, fontWeight: "700", color: colors.fg },
