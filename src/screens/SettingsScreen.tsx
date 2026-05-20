@@ -380,7 +380,7 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
       const json = JSON.stringify(backup, null, 2);
       setExportDialog({
         title: "Wallet Backup",
-        message: "Copy this encrypted backup JSON and store it somewhere safe.",
+        message: "This backup JSON contains recovery secrets. Store it somewhere private and safe.",
         value: json,
         filename: `xian-wallet-backup-${new Date().toISOString().slice(0, 10)}.json`,
       });

@@ -38,5 +38,20 @@ yarn-error.*
 
 # generated native folders
 /ios
-/android
+
+# Android local/build artifacts
+/android/.gradle/
+/android/.idea/
+/android/**/build/
+/android/**/.cxx/
+/android/**/*.iml
+/android/**/*.hprof
+/android/**/*.jsbundle
+/android/local.properties
+/android/app/debug.keystore
+/android/app/*.jks
+/android/app/*.p8
+/android/app/*.p12
+/android/app/*.key
+/android/app/*.pem
 xian-wallet-mobile-v*.apk

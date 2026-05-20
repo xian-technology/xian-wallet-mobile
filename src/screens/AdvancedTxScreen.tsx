@@ -96,6 +96,20 @@ export function AdvancedTxScreen() {
 
   const handleReview = async () => {
     if (!contract.trim() || !func.trim()) { setError("Contract and function are required."); return; }
+    const manualChi = chi.trim();
+    if (manualChi) {
+      const parsedChi = parsePositiveIntegerInput(manualChi);
+      if (parsedChi == null) {
+        setError("Chi must be a positive integer.");
+        return;
+      }
+      setError(null);
+      setEstimate(null);
+      lightTap();
+      setStep("review");
+      return;
+    }
+
     setError(null); setEstimating(true);
     try {
       const kw = parseKwargs(args);
@@ -131,7 +145,7 @@ export function AdvancedTxScreen() {
           <Card title="Transaction Summary">
             <Row label="Contract" value={contract} mono />
             <Row label="Function" value={func} />
-            <Row label="Chi" value={estimate ? `${estimate.estimated.toLocaleString()}` : chi || "auto"} />
+            <Row label="Chi" value={chi.trim() || (estimate ? `${estimate.estimated.toLocaleString()}` : "auto")} />
             {Object.entries(kw).map(([k, v]) => <Row key={k} label={k} value={String(v)} mono />)}
           </Card>
         </ScrollView>

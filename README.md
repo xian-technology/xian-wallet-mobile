@@ -15,7 +15,8 @@ sibling [`xian-wallet-browser`](../xian-wallet-browser) repo.
 flowchart LR
   App["Expo app"] --> Screens["Wallet screens"]
   Screens --> Controller["Wallet controller"]
-  Controller --> SecureStore["Platform secure store"]
+  Controller --> AsyncStorage["Encrypted wallet state"]
+  Controller --> SecureStore["Unlocked session"]
   Controller --> Client["@xian-tech/client"]
   Client --> Node["Xian node"]
   Controller --> NetworkPresets["Network presets"]
@@ -95,8 +96,10 @@ npm run test
 
 - **Mobile-first product code.** The repo is a wallet app, not an SDK
   example. UX, recovery, secure storage, and approval flows live here.
-- **Secrets stay on-device.** Mnemonics and private keys are stored via
-  `expo-secure-store`. Networking and signing happen in the app process.
+- **Secrets stay encrypted on-device.** Mnemonics and private keys are
+  encrypted before being stored in AsyncStorage. Short-lived unlocked session
+  material is stored via `expo-secure-store`. Networking and signing happen in
+  the app process.
 - **SDK lives elsewhere.** Wire formats, RPC contracts, and signing
   primitives live in `xian-js` and are consumed from
   `@xian-tech/client`. Changes to that contract land in `xian-js` first.
@@ -152,6 +155,11 @@ npm run ios
   (e.g. `xian-wallet-mobile-v0.1.0.apk`).
 - Production releases follow Expo's standard build flow against the
   configuration in `app.json`.
+- Android release builds must be signed with a real upload key. The native
+  Gradle project reads `XIAN_WALLET_UPLOAD_STORE_FILE`,
+  `XIAN_WALLET_UPLOAD_STORE_PASSWORD`, `XIAN_WALLET_UPLOAD_KEY_ALIAS`, and
+  `XIAN_WALLET_UPLOAD_KEY_PASSWORD`; release builds are not signed with the
+  debug keystore.
 
 ## Related Repos
 

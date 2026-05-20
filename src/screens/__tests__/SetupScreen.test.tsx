@@ -45,9 +45,13 @@ describe("SetupScreen", () => {
     fireEvent.press(screen.getByText("Create Wallet"));
 
     await waitFor(() => expect(screen.getByText("Recovery Seed")).toBeTruthy());
+    expect(mockRefresh).not.toHaveBeenCalled();
     fireEvent.press(screen.getByText(mnemonic));
 
     expect(Clipboard.setStringAsync).toHaveBeenCalledWith(mnemonic);
+
+    fireEvent.press(screen.getByText("I've saved my seed"));
+    await waitFor(() => expect(mockRefresh).toHaveBeenCalled());
   });
 
   it("passes key imports through to the controller", async () => {

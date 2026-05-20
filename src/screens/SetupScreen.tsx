@@ -66,8 +66,9 @@ export function SetupScreen() {
       const result = await controller.createWallet(opts);
       if (result.mnemonic) {
         setGeneratedMnemonic(result.mnemonic);
+      } else {
+        await refresh();
       }
-      await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create wallet");
     } finally {

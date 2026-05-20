@@ -58,7 +58,7 @@ describe("AdvancedTxScreen", () => {
     jest.useRealTimers();
   });
 
-  it("loads contract methods and preserves typed kwargs and bigint chi", async () => {
+  it("loads contract methods and preserves typed kwargs with manual bigint chi", async () => {
     mockGetContractMethods.mockImplementation(async () => [
       {
         name: "mint",
@@ -99,19 +99,8 @@ describe("AdvancedTxScreen", () => {
     fireEvent.changeText(screen.getByPlaceholderText("Auto-estimate"), "9007199254740995");
     fireEvent.press(screen.getByText("Review Transaction"));
 
-    await waitFor(() =>
-      expect(mockEstimateChi).toHaveBeenCalledWith({
-        sender: "sender",
-        contract: "con_token",
-        function: "mint",
-        kwargs: {
-          count: 9007199254740993n,
-          amount: { __fixed__: "12.5" },
-          config: { mode: "fast" },
-          flag: true
-        }
-      })
-    );
+    expect(mockEstimateChi).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText("Send Transaction")).toBeTruthy());
 
     fireEvent.press(screen.getByText("Send Transaction"));
 
