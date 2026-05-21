@@ -79,8 +79,8 @@ wallet network preset to the RPC URL reachable from the simulator or device:
 
 ```bash
 cd ../xian-stack
-python3 ./scripts/backend.py start --no-service-node --dashboard
-python3 ./scripts/backend.py endpoints --no-service-node --dashboard
+python3 ./scripts/backend.py start --no-bds-enabled --dashboard
+python3 ./scripts/backend.py endpoints --no-bds-enabled --dashboard
 ```
 
 For local development, keep Metro running in one terminal and use a second
