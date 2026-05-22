@@ -10,6 +10,7 @@ import {
   Platform,
   Image,
 } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
@@ -34,6 +35,7 @@ export function SetupScreen() {
   const [networkChainId, setNetworkChainId] = useState("");
   const [networkRpcUrl, setNetworkRpcUrl] = useState("http://127.0.0.1:26657");
   const [networkDashboardUrl, setNetworkDashboardUrl] = useState("http://127.0.0.1:8080");
+  const [networkAllowInsecureHttp, setNetworkAllowInsecureHttp] = useState(false);
 
   const handleCreate = async () => {
     if (!controller) return;
@@ -56,6 +58,7 @@ export function SetupScreen() {
         chainId: networkChainId.trim() || undefined,
         rpcUrl: networkRpcUrl.trim() || undefined,
         dashboardUrl: networkDashboardUrl.trim() || undefined,
+        allowInsecureHttp: networkAllowInsecureHttp,
       };
       if (mode === "seed") {
         opts.mnemonic = mnemonic.trim();
@@ -218,6 +221,19 @@ export function SetupScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
               />
+              <TouchableOpacity
+                style={styles.optionRow}
+                onPress={() => {
+                  lightTap();
+                  setNetworkAllowInsecureHttp((value) => !value);
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.optionLabel}>Allow HTTP data transfers</Text>
+                  <Text style={styles.optionHint}>Use only for trusted local or private endpoints.</Text>
+                </View>
+                <Feather name={networkAllowInsecureHttp ? "check-square" : "square"} size={18} color={networkAllowInsecureHttp ? colors.warning : colors.muted} />
+              </TouchableOpacity>
             </Card>
           )}
 
@@ -319,6 +335,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: colors.muted,
+  },
+  optionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 8,
+  },
+  optionLabel: {
+    fontSize: 14,
+    color: colors.fg,
+  },
+  optionHint: {
+    fontSize: 11,
+    color: colors.muted,
+    marginTop: 3,
   },
   errorBanner: {
     backgroundColor: colors.dangerSoft,

@@ -74,6 +74,7 @@ describe("SetupScreen", () => {
         chainId: undefined,
         rpcUrl: "http://127.0.0.1:26657",
         dashboardUrl: "http://127.0.0.1:8080",
+        allowInsecureHttp: false,
       })
     );
   });

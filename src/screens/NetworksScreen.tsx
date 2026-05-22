@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
@@ -7,6 +8,7 @@ import { Card } from "../components/Card";
 import { ConfirmDialog } from "../components/AppDialog";
 import { useWallet } from "../lib/wallet-context";
 import { loadWalletState, saveWalletState } from "../lib/storage";
+import { assertRpcTransportAllowed } from "../lib/network-security";
 
 export function NetworksScreen() {
   const { state, refresh, showToast } = useWallet();
@@ -15,6 +17,7 @@ export function NetworksScreen() {
   const [rpcUrl, setRpcUrl] = useState("");
   const [dashboardUrl, setDashboardUrl] = useState("");
   const [chainId, setChainId] = useState("");
+  const [allowInsecureHttp, setAllowInsecureHttp] = useState(false);
   const [deleteNetworkId, setDeleteNetworkId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -24,6 +27,7 @@ export function NetworksScreen() {
     setRpcUrl(preset.rpcUrl);
     setDashboardUrl(preset.dashboardUrl ?? "");
     setChainId(preset.chainId ?? "");
+    setAllowInsecureHttp(preset.allowInsecureHttp === true);
   };
 
   const startNew = () => {
@@ -32,11 +36,18 @@ export function NetworksScreen() {
     setRpcUrl("");
     setDashboardUrl("");
     setChainId("");
+    setAllowInsecureHttp(false);
   };
 
   const handleSave = async () => {
     if (!name.trim() || !rpcUrl.trim()) {
       showToast("Name and RPC URL are required.", "warning");
+      return;
+    }
+    try {
+      assertRpcTransportAllowed(rpcUrl.trim(), allowInsecureHttp);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Invalid network settings.", "danger");
       return;
     }
 
@@ -51,6 +62,7 @@ export function NetworksScreen() {
         rpcUrl: rpcUrl.trim(),
         dashboardUrl: dashboardUrl.trim() || undefined,
         chainId: chainId.trim() || undefined,
+        allowInsecureHttp,
       });
     } else {
       const preset = ws.networkPresets.find((p) => p.id === editing);
@@ -59,6 +71,7 @@ export function NetworksScreen() {
         preset.rpcUrl = rpcUrl.trim();
         preset.dashboardUrl = dashboardUrl.trim() || undefined;
         preset.chainId = chainId.trim() || undefined;
+        preset.allowInsecureHttp = allowInsecureHttp;
       }
     }
 
@@ -116,6 +129,16 @@ export function NetworksScreen() {
             <Input label="RPC URL" value={rpcUrl} onChangeText={setRpcUrl} placeholder="http://..." autoCapitalize="none" />
             <Input label="Dashboard URL" value={dashboardUrl} onChangeText={setDashboardUrl} placeholder="http://... (optional)" autoCapitalize="none" />
             <Input label="Chain ID" value={chainId} onChangeText={setChainId} placeholder="(optional)" autoCapitalize="none" />
+            <TouchableOpacity
+              style={styles.optionRow}
+              onPress={() => setAllowInsecureHttp((value) => !value)}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.optionLabel}>Allow HTTP data transfers</Text>
+                <Text style={styles.optionHint}>Use only for trusted local or private endpoints.</Text>
+              </View>
+              <Feather name={allowInsecureHttp ? "check-square" : "square"} size={18} color={allowInsecureHttp ? colors.warning : colors.muted} />
+            </TouchableOpacity>
           </Card>
           <Button title="Save" onPress={handleSave} />
           <Button title="Cancel" variant="ghost" onPress={() => setEditing(null)} />
@@ -142,6 +165,9 @@ export function NetworksScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.networkName}>{p.name}</Text>
                 <Text style={styles.networkUrl} numberOfLines={1}>{p.rpcUrl}</Text>
+                {p.allowInsecureHttp && (
+                  <Text style={styles.httpWarning}>HTTP data transfers allowed</Text>
+                )}
               </View>
               {p.id === state.activeNetworkId && (
                 <Text style={styles.activePill}>Active</Text>
@@ -182,6 +208,10 @@ const styles = StyleSheet.create({
   networkActive: { backgroundColor: colors.accentSoft },
   networkName: { fontSize: 14, fontWeight: "600", color: colors.fg },
   networkUrl: { fontSize: 11, fontFamily: "monospace", color: colors.muted, marginTop: 2 },
+  httpWarning: { fontSize: 11, color: colors.warning, marginTop: 2 },
+  optionRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8 },
+  optionLabel: { fontSize: 14, color: colors.fg },
+  optionHint: { fontSize: 11, color: colors.muted, marginTop: 3 },
   activePill: { fontSize: 11, fontWeight: "600", color: colors.accent },
   deleteBtn: { padding: 8 },
   deleteText: { fontSize: 18, color: colors.danger, fontWeight: "700" },

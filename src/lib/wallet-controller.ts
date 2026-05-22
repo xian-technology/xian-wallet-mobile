@@ -15,7 +15,6 @@ import {
   type StoredWalletState,
   type StoredShieldedWalletSnapshot,
   type StoredUnlockedSession,
-  type AssetNetworkStates,
   createMobileStore
 } from "./storage";
 import {
@@ -24,45 +23,21 @@ import {
   aesGcmEncrypt,
   aesGcmDecrypt
 } from "./crypto-polyfill";
+import {
+  decryptWalletBackup,
+  encryptWalletBackupPayload,
+  type WalletBackup,
+  type WalletBackupPayload
+} from "./wallet-backup";
+import { assertRpcTransportAllowed } from "./network-security";
 
 const ENCODER = new TextEncoder();
-// Lower than browser (250k) because each HMAC iteration crosses the
-// JS↔native bridge. Wallets exported from mobile therefore remain
-// mobile-specific and should not be treated as browser-compatible blobs.
+// Lower than browser (250k) to keep mobile unlock responsive on-device.
+// Backup files carry their own KDF parameters for cross-wallet import.
 const ITERATIONS = 10_000;
 const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
 
 const store = createMobileStore();
-
-interface WalletBackup {
-  version: 1;
-  type: "privateKey" | "mnemonic";
-  mnemonic?: string;
-  privateKey?: string;
-  accounts?: Array<{ index: number; name: string }>;
-  activeAccountIndex?: number;
-  activeNetworkId?: string;
-  networkPresets?: Array<{
-    id: string;
-    name: string;
-    chainId?: string;
-    rpcUrl: string;
-    dashboardUrl?: string;
-    builtin?: boolean;
-  }>;
-  watchedAssets?: Array<{
-    contract: string;
-    name?: string;
-    symbol?: string;
-    icon?: string;
-    decimals?: number;
-  }>;
-  assetNetworkStates?: AssetNetworkStates;
-  shieldedStateSnapshots?: Array<{
-    label: string;
-    stateSnapshot: string;
-  }>;
-}
 
 interface ParsedShieldedWalletSnapshot {
   normalizedSnapshot: string;
@@ -398,8 +373,8 @@ export function createWalletController() {
   async function exportShieldedWalletSnapshots(
     state: StoredWalletState,
     sessionKey: string
-  ): Promise<NonNullable<WalletBackup["shieldedStateSnapshots"]>> {
-    const exported: NonNullable<WalletBackup["shieldedStateSnapshots"]> = [];
+  ): Promise<NonNullable<WalletBackupPayload["shieldedStateSnapshots"]>> {
+    const exported: NonNullable<WalletBackupPayload["shieldedStateSnapshots"]> = [];
     for (const record of storedShieldedWalletSnapshots(state)) {
       exported.push({
         label: record.label,
@@ -413,7 +388,7 @@ export function createWalletController() {
   }
 
   async function importShieldedWalletSnapshots(
-    snapshots: WalletBackup["shieldedStateSnapshots"] | undefined,
+    snapshots: WalletBackupPayload["shieldedStateSnapshots"] | undefined,
     sessionKey: string,
     nowIso: string
   ): Promise<StoredShieldedWalletSnapshot[]> {
@@ -457,6 +432,7 @@ export function createWalletController() {
       chainId?: string;
       rpcUrl?: string;
       dashboardUrl?: string;
+      allowInsecureHttp?: boolean;
     }): Promise<{ mnemonic?: string }> {
       let mnemonic: string | undefined;
       let privateKey: string;
@@ -498,12 +474,15 @@ export function createWalletController() {
 
       const setupRpcUrl = opts.rpcUrl?.trim() || DEFAULT_RPC_URL;
       const setupDashboardUrl = opts.dashboardUrl?.trim() || DEFAULT_DASHBOARD_URL;
+      const setupAllowInsecureHttp = opts.allowInsecureHttp === true;
+      assertRpcTransportAllowed(setupRpcUrl, setupAllowInsecureHttp);
 
       const localPreset = {
         id: "xian-local",
         name: "Local node",
         rpcUrl: DEFAULT_RPC_URL,
         dashboardUrl: DEFAULT_DASHBOARD_URL,
+        allowInsecureHttp: false,
         builtin: true
       };
 
@@ -519,6 +498,7 @@ export function createWalletController() {
             rpcUrl: setupRpcUrl,
             dashboardUrl: setupDashboardUrl,
             chainId: opts.chainId?.trim() || undefined,
+            allowInsecureHttp: setupAllowInsecureHttp,
           };
 
       const activePreset = customPreset ?? localPreset;
@@ -742,9 +722,13 @@ export function createWalletController() {
       if (!state) {
         throw new Error("no wallet");
       }
-      const sessionKey = await sessionKeyForState(state, password);
+      await restoreSession();
+      const sessionKey = unlockedSessionKey;
+      if (!sessionKey) {
+        throw new Error("wallet is locked");
+      }
 
-      const backup: WalletBackup = {
+      const backup: WalletBackupPayload = {
         version: 1,
         type: state.seedSource,
         accounts: (state.accounts ?? []).map((account) => ({
@@ -778,21 +762,22 @@ export function createWalletController() {
         backup.shieldedStateSnapshots = shieldedStateSnapshots;
       }
 
-      return backup;
+      return encryptWalletBackupPayload(backup, password);
     },
 
     async importWalletBackup(backup: WalletBackup, password: string): Promise<void> {
+      const decryptedBackup = await decryptWalletBackup(backup, password);
       let mnemonic: string | undefined;
       let primaryKey: string;
 
-      if (backup.type === "mnemonic" && backup.mnemonic) {
-        mnemonic = normalizeMnemonic(backup.mnemonic) ?? undefined;
+      if (decryptedBackup.type === "mnemonic" && decryptedBackup.mnemonic) {
+        mnemonic = normalizeMnemonic(decryptedBackup.mnemonic) ?? undefined;
         if (!mnemonic) {
           throw new Error("invalid BIP39 mnemonic");
         }
         primaryKey = await derivePrivateKeyFromMnemonic(mnemonic, 0);
-      } else if (backup.privateKey) {
-        primaryKey = normalizePrivateKeyInput(backup.privateKey) as string;
+      } else if (decryptedBackup.privateKey) {
+        primaryKey = normalizePrivateKeyInput(decryptedBackup.privateKey) as string;
       } else {
         throw new Error("backup must contain a mnemonic or private key");
       }
@@ -805,7 +790,7 @@ export function createWalletController() {
         ? await encryptMnemonicWithSessionKey(mnemonic, sessionKey)
         : undefined;
 
-      const accountEntries = backup.accounts;
+      const accountEntries = decryptedBackup.accounts;
       if (!accountEntries || accountEntries.length === 0) {
         throw new Error("backup must contain at least one account");
       }
@@ -829,7 +814,7 @@ export function createWalletController() {
       }
 
       const activeAccount =
-        accounts.find((account) => account.index === backup.activeAccountIndex) ??
+        accounts.find((account) => account.index === decryptedBackup.activeAccountIndex) ??
         accounts[0];
       if (!activeAccount) {
         throw new Error("backup must contain at least one account");
@@ -843,27 +828,32 @@ export function createWalletController() {
         name: "Local node",
         rpcUrl: "http://127.0.0.1:26657",
         dashboardUrl: "http://127.0.0.1:8080",
+        allowInsecureHttp: false,
         builtin: true,
       };
       const networkPresets: StoredWalletState["networkPresets"] = [localPreset];
-      for (const preset of backup.networkPresets ?? []) {
+      for (const preset of decryptedBackup.networkPresets ?? []) {
         if (!networkPresets.some((existing) => existing.id === preset.id)) {
-          networkPresets.push(preset);
+          assertRpcTransportAllowed(preset.rpcUrl, preset.allowInsecureHttp);
+          networkPresets.push({
+            ...preset,
+            allowInsecureHttp: preset.allowInsecureHttp === true,
+          });
         }
       }
       const activePreset =
-        networkPresets.find((preset) => preset.id === backup.activeNetworkId) ??
+        networkPresets.find((preset) => preset.id === decryptedBackup.activeNetworkId) ??
         networkPresets[0];
       if (!activePreset) {
         throw new Error("backup must contain at least one network preset");
       }
 
       const watchedAssets =
-        backup.watchedAssets && backup.watchedAssets.length > 0
-          ? backup.watchedAssets
+        decryptedBackup.watchedAssets && decryptedBackup.watchedAssets.length > 0
+          ? decryptedBackup.watchedAssets
           : [{ contract: "currency", name: "Xian", symbol: "XIAN", decimals: 8 }];
       const shieldedWalletSnapshots = await importShieldedWalletSnapshots(
-        backup.shieldedStateSnapshots,
+        decryptedBackup.shieldedStateSnapshots,
         sessionKey,
         nowIso
       );
@@ -874,7 +864,7 @@ export function createWalletController() {
         encryptedPrivateKey: activeAccount.encryptedPrivateKey,
         encryptedMnemonic,
         walletEncryptionSalt,
-        seedSource: backup.type,
+        seedSource: decryptedBackup.type,
         mnemonicWordCount: mnemonic ? mnemonic.split(" ").length : undefined,
         accounts,
         activeAccountIndex: activeAccount.index,
@@ -883,7 +873,7 @@ export function createWalletController() {
         activeNetworkId: activePreset.id,
         networkPresets,
         watchedAssets,
-        assetNetworkStates: backup.assetNetworkStates,
+        assetNetworkStates: decryptedBackup.assetNetworkStates,
         trustedDappPolicies: [],
         shieldedWalletSnapshots,
         connectedOrigins: [],
@@ -951,7 +941,12 @@ export function createWalletController() {
       if (!record) {
         throw new Error("shielded wallet snapshot not found");
       }
-      const sessionKey = await sessionKeyForState(state, password);
+      void password;
+      await restoreSession();
+      const sessionKey = unlockedSessionKey;
+      if (!sessionKey) {
+        throw new Error("wallet is locked");
+      }
       return {
         label: record.label,
         stateSnapshot: decryptWithKey(

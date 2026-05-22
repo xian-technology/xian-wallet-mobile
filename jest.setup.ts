@@ -47,14 +47,3 @@ jest.mock("@expo/vector-icons", () => {
       React.createElement("Feather", props, children)
   };
 });
-
-jest.mock("expo-crypto", () => ({
-  CryptoDigestAlgorithm: {
-    SHA256: "SHA256"
-  },
-  digest: jest.fn(async (_algorithm: string, data: Uint8Array) => {
-    const { createHash } = require("node:crypto");
-    const digest = createHash("sha256").update(Buffer.from(data)).digest();
-    return digest.buffer.slice(digest.byteOffset, digest.byteOffset + digest.byteLength);
-  })
-}));

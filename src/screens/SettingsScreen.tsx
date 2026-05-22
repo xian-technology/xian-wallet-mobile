@@ -22,6 +22,7 @@ import { Input } from "../components/Input";
 import { Card } from "../components/Card";
 import { useWallet } from "../lib/wallet-context";
 import { saveWalletState, loadWalletState } from "../lib/storage";
+import { assertRpcTransportAllowed } from "../lib/network-security";
 import { lightTap } from "../lib/haptics";
 import type { HomeTabScreenProps } from "../navigation/types";
 
@@ -94,6 +95,7 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
   const [netRpcUrl, setNetRpcUrl] = useState("");
   const [netDashboardUrl, setNetDashboardUrl] = useState("");
   const [netChainId, setNetChainId] = useState("");
+  const [netAllowInsecureHttp, setNetAllowInsecureHttp] = useState(false);
   const [shieldedHistory, setShieldedHistory] = useState<Record<string, ShieldedHistoryViewState>>({});
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
@@ -125,7 +127,7 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
   const importWalletBackupJson = async (json: string) => {
     if (!controller) return;
     const backup = JSON.parse(json);
-    if (!backup?.version || !backup?.type) {
+    if (!backup?.version || (backup.version !== 2 && !backup.type)) {
       throw new Error("Invalid backup.");
     }
     await controller.importWalletBackup(backup, backupPassword);
@@ -242,6 +244,7 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
     setNetRpcUrl(activePreset.rpcUrl);
     setNetDashboardUrl(activePreset.dashboardUrl ?? "");
     setNetChainId(activePreset.chainId ?? "");
+    setNetAllowInsecureHttp(activePreset.allowInsecureHttp === true);
     setEditingNetwork(true);
   };
 
@@ -254,10 +257,17 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
     if (!ws) return;
     const preset = ws.networkPresets.find((p) => p.id === state.activeNetworkId);
     if (!preset) return;
+    try {
+      assertRpcTransportAllowed(netRpcUrl.trim(), netAllowInsecureHttp);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Invalid network settings.", "danger");
+      return;
+    }
     preset.name = netName.trim();
     preset.rpcUrl = netRpcUrl.trim();
     preset.dashboardUrl = netDashboardUrl.trim() || undefined;
     preset.chainId = netChainId.trim() || undefined;
+    preset.allowInsecureHttp = netAllowInsecureHttp;
     ws.rpcUrl = preset.rpcUrl;
     ws.dashboardUrl = preset.dashboardUrl;
     await saveWalletState(ws);
@@ -380,7 +390,7 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
       const json = JSON.stringify(backup, null, 2);
       setExportDialog({
         title: "Wallet Backup",
-        message: "This backup JSON contains recovery secrets. Store it somewhere private and safe.",
+        message: "This backup JSON is encrypted with the backup password.",
         value: json,
         filename: `xian-wallet-backup-${new Date().toISOString().slice(0, 10)}.json`,
       });
@@ -397,7 +407,7 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
     setTextDialog({
       kind: "walletImport",
       title: "Import Backup",
-      message: "Paste the exported wallet backup JSON.",
+      message: "Paste the encrypted wallet backup JSON.",
       placeholder: "Paste backup JSON",
       value: "",
     });
@@ -607,6 +617,19 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
               <Input label="RPC URL" value={netRpcUrl} onChangeText={setNetRpcUrl} placeholder="http://..." autoCapitalize="none" autoCorrect={false} />
               <Input label="Dashboard URL" value={netDashboardUrl} onChangeText={setNetDashboardUrl} placeholder="http://... (optional)" autoCapitalize="none" autoCorrect={false} />
               <Input label="Chain ID" value={netChainId} onChangeText={setNetChainId} placeholder="Optional, e.g. xian-1" autoCapitalize="none" />
+              <TouchableOpacity
+                style={styles.prefRow}
+                onPress={() => {
+                  lightTap();
+                  setNetAllowInsecureHttp((value) => !value);
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.prefLabel}>Allow HTTP data transfers</Text>
+                  <Text style={styles.prefHint}>Use only for trusted local or private endpoints.</Text>
+                </View>
+                <Feather name={netAllowInsecureHttp ? "check-square" : "square"} size={18} color={netAllowInsecureHttp ? colors.warning : colors.muted} />
+              </TouchableOpacity>
               <View style={styles.btnRow}>
                 <Button title="Save" variant="secondary" onPress={handleSaveNetwork} style={{ flex: 1 }} />
                 <Button title="Cancel" variant="ghost" onPress={() => setEditingNetwork(false)} style={{ flex: 1 }} />
@@ -619,6 +642,7 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
                   <DetailRow label="RPC URL" value={activePreset.rpcUrl} />
                   <DetailRow label="Dashboard" value={activePreset.dashboardUrl ?? "-"} />
                   <DetailRow label="Chain ID" value={activePreset.chainId ?? "-"} />
+                  <DetailRow label="Remote HTTP" value={activePreset.allowInsecureHttp ? "Allowed" : "Blocked"} />
                 </>
               )}
               <View style={styles.btnRow}>
@@ -726,14 +750,14 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
 
         {/* Backup */}
         <Card title="Backup" subtitle="Export or import wallet data.">
-          <Input label="Password" secureTextEntry value={backupPassword} onChangeText={setBackupPassword} placeholder="Wallet password" />
+          <Input label="Backup password" secureTextEntry value={backupPassword} onChangeText={setBackupPassword} placeholder="Backup password" />
           <Button title="Export" variant="secondary" onPress={handleExport} />
           <View style={styles.btnRow}>
             <Button title="Import File" variant="secondary" onPress={() => importJsonFromFile("walletImport")} style={{ flex: 1 }} />
             <Button title="Paste JSON" variant="secondary" onPress={handleImport} style={{ flex: 1 }} />
           </View>
           <Text style={styles.backupHint}>
-            Full wallet backups now include any stored shielded state_snapshot records.
+            Full wallet backups are encrypted and include any stored shielded state_snapshot records.
           </Text>
         </Card>
 
@@ -1046,6 +1070,7 @@ const styles = StyleSheet.create({
   contactAddr: { fontFamily: "monospace", fontSize: 11, color: colors.muted },
   prefRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8 },
   prefLabel: { fontSize: 14, color: colors.fg },
+  prefHint: { fontSize: 11, color: colors.muted, marginTop: 3 },
   prefToggle: { flexDirection: "row", backgroundColor: colors.bg2, borderRadius: 10, padding: 2 },
   prefOption: { paddingVertical: 6, paddingHorizontal: 14, borderRadius: 8 },
   prefOptionActive: { backgroundColor: colors.bg1 },
