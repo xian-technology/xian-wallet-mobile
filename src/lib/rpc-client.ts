@@ -19,6 +19,7 @@ import {
   messageFromUnknown,
   type WalletAsset,
 } from "./assets";
+import { assertRpcTransportAllowed } from "./network-security";
 
 export interface BalanceResult {
   contract: string;
@@ -82,17 +83,25 @@ export interface TxHistoryRecord {
 
 export class XianRpcClient {
   private client: XianClient;
+  private allowInsecureHttp: boolean;
 
-  constructor(private rpcUrl: string) {
+  constructor(private rpcUrl: string, options: { allowInsecureHttp?: boolean } = {}) {
+    this.allowInsecureHttp = options.allowInsecureHttp === true;
     this.client = new XianClient({ rpcUrl });
   }
 
-  setRpcUrl(url: string): void {
+  setRpcUrl(url: string, options: { allowInsecureHttp?: boolean } = {}): void {
+    this.allowInsecureHttp = options.allowInsecureHttp === true;
     this.rpcUrl = url;
     this.client = new XianClient({ rpcUrl: url });
   }
 
+  private assertTransportAllowed(): void {
+    assertRpcTransportAllowed(this.rpcUrl, this.allowInsecureHttp);
+  }
+
   private async abciQuery(path: string): Promise<unknown> {
+    this.assertTransportAllowed();
     const url = new URL(`${this.rpcUrl.replace(/\/+$/, "")}/abci_query`);
     url.searchParams.set("path", `"${path}"`);
     const response = await fetch(url.toString(), { method: "POST" });
@@ -152,11 +161,13 @@ export class XianRpcClient {
   }
 
   async getChainId(): Promise<string> {
+    this.assertTransportAllowed();
     return this.client.getChainId();
   }
 
   async getChiRate(): Promise<number | null> {
     try {
+      this.assertTransportAllowed();
       const rate = await this.client.getChiRate();
       return rate != null ? Number(rate) : null;
     } catch {
@@ -170,6 +181,7 @@ export class XianRpcClient {
     logoUrl: string | null;
     logoSvg: string | null;
   }> {
+    this.assertTransportAllowed();
     return this.client.getTokenMetadata(contract);
   }
 
@@ -180,6 +192,7 @@ export class XianRpcClient {
       afterNoteIndex?: number;
     }
   ): Promise<XianShieldedWalletHistoryResult> {
+    this.assertTransportAllowed();
     return this.client.getShieldedWalletHistory(syncHint, {
       kind: "sync_hint",
       limit: options?.limit,
@@ -199,6 +212,7 @@ export class XianRpcClient {
     contract: string = "currency"
   ): Promise<BalanceResult> {
     try {
+      this.assertTransportAllowed();
       const result = await this.client.getBalance(address, { contract });
       if (isMissingContractError(result)) {
         return {
@@ -256,6 +270,7 @@ export class XianRpcClient {
   async getContractMethods(
     contract: string
   ): Promise<{ name: string; arguments: { name: string; type: string }[] }[]> {
+    this.assertTransportAllowed();
     return this.client.getContractMethods(contract);
   }
 
@@ -265,6 +280,7 @@ export class XianRpcClient {
     function: string;
     kwargs: Record<string, unknown>;
   }): Promise<{ estimated: number }> {
+    this.assertTransportAllowed();
     const result = await this.client.estimateChi({
       sender: opts.sender,
       contract: opts.contract,
@@ -285,6 +301,7 @@ export class XianRpcClient {
     chi?: number | bigint;
     chiSupplied?: number | bigint;
   }): Promise<XianUnsignedTransaction> {
+    this.assertTransportAllowed();
     return this.client.buildTx({
       sender: opts.sender,
       contract: opts.contract,
@@ -312,6 +329,7 @@ export class XianRpcClient {
       pollIntervalMs?: number;
     }
   ): Promise<TransactionSubmission> {
+    this.assertTransportAllowed();
     return this.client.broadcastTx(tx, options);
   }
 
@@ -328,6 +346,7 @@ export class XianRpcClient {
     txHash?: string;
     message?: string;
   }> {
+    this.assertTransportAllowed();
     const signer = new Ed25519Signer(opts.privateKey);
     const tx = await this.client.buildTx({
       sender: signer.address,

@@ -70,6 +70,7 @@ export interface StoredWalletState {
     chainId?: string;
     rpcUrl: string;
     dashboardUrl?: string;
+    allowInsecureHttp?: boolean;
     builtin?: boolean;
   }>;
   watchedAssets: Array<{

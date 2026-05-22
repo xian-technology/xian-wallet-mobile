@@ -132,6 +132,7 @@ const { __mockStore: mockStore } = jest.requireMock("../storage") as {
 };
 
 import { createWalletController } from "../wallet-controller";
+import { decryptWalletBackup } from "../wallet-backup";
 
 describe("wallet-controller", () => {
   beforeEach(() => {
@@ -253,8 +254,16 @@ describe("wallet-controller", () => {
       })
     ]);
 
-    const backup = await controller.exportWallet("secret123");
-    expect(backup.shieldedStateSnapshots).toEqual([
+    const backup = await controller.exportWallet("backup-pass");
+    expect(backup.version).toBe(2);
+    expect(JSON.stringify(backup)).not.toContain(VALID_PRIVATE_KEY);
+    expect(JSON.stringify(backup)).not.toContain(SHIELDED_STATE_SNAPSHOT);
+    await expect(decryptWalletBackup(backup, "wrong-pass")).rejects.toThrow(
+      "invalid password"
+    );
+
+    const decryptedBackup = await decryptWalletBackup(backup, "backup-pass");
+    expect(decryptedBackup.shieldedStateSnapshots).toEqual([
       {
         label: "Treasury shielded",
         stateSnapshot: JSON.stringify(JSON.parse(SHIELDED_STATE_SNAPSHOT))
@@ -264,7 +273,7 @@ describe("wallet-controller", () => {
     mockStoredState = null;
     mockStoredSession = null;
 
-    await controller.importWalletBackup(backup, "restored123");
+    await controller.importWalletBackup(backup, "backup-pass");
 
     expect((mockStoredState as StoredWalletState | null)?.shieldedWalletSnapshots).toEqual([
       expect.objectContaining({
@@ -287,5 +296,35 @@ describe("wallet-controller", () => {
 
     await controller.removeShieldedWalletSnapshot(snapshotId as string);
     expect((mockStoredState as StoredWalletState | null)?.shieldedWalletSnapshots).toEqual([]);
+  });
+
+  it("requires explicit opt-in for remote HTTP RPC URLs", async () => {
+    const controller = createWalletController();
+
+    await expect(
+      controller.createWallet({
+        password: "secret123",
+        privateKey: VALID_PRIVATE_KEY,
+        rpcUrl: "http://192.168.1.10:26657"
+      })
+    ).rejects.toThrow("HTTP RPC URLs are disabled");
+
+    await controller.createWallet({
+      password: "secret123",
+      privateKey: VALID_PRIVATE_KEY,
+      networkName: "LAN node",
+      rpcUrl: "http://192.168.1.10:26657",
+      allowInsecureHttp: true
+    });
+
+    expect(mockStoredState?.networkPresets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "LAN node",
+          rpcUrl: "http://192.168.1.10:26657",
+          allowInsecureHttp: true
+        })
+      ])
+    );
   });
 });

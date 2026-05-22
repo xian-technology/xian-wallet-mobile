@@ -38,11 +38,13 @@ import {
   type StoredWalletState,
 } from "./storage";
 import { XianRpcClient } from "./rpc-client";
+import { activeNetworkAllowsInsecureHttp } from "./network-security";
 import {
   activityNetworkKey,
   makeLocalActivityTx,
   saveLocalActivityTx,
 } from "./local-activity";
+import { isUnsafeMessageToSign } from "./signing-policy";
 
 const WALLETCONNECT_NATIVE_REDIRECT = "xianwallet://";
 const WALLETCONNECT_ORIGIN_PREFIX = "wc:";
@@ -50,6 +52,12 @@ const TRUSTED_DAPP_POLICY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 type WalletKitClient = Awaited<ReturnType<typeof WalletKit.init>>;
 type BuildApprovedNamespacesParams = Parameters<typeof buildApprovedNamespaces>[0];
+
+function rpcClientForState(state: StoredWalletState): XianRpcClient {
+  return new XianRpcClient(state.rpcUrl, {
+    allowInsecureHttp: activeNetworkAllowsInsecureHttp(state),
+  });
+}
 
 interface WalletConnectMetadata {
   name?: string;
@@ -293,7 +301,7 @@ async function executionContext(expectedChainId?: string): Promise<{
   if (!session) {
     throw new Error("wallet is locked");
   }
-  const rpc = new XianRpcClient(state.rpcUrl);
+  const rpc = rpcClientForState(state);
   const chainId = await activeChainIdForState(state, rpc);
   if (expectedChainId && expectedChainId !== chainId) {
     throw new Error("wallet is connected to a different chain");
@@ -359,6 +367,9 @@ async function executeXianRequest(
       const { message } = firstParamObject(request.params);
       if (typeof message !== "string") {
         throw new TypeError("xian_signMessage requires a message string");
+      }
+      if (isUnsafeMessageToSign(message)) {
+        throw new Error("refusing to sign a transaction-like payload as a plain message");
       }
       return signer.signMessage(message);
     }
@@ -531,7 +542,7 @@ async function createPolicyForRequest(
   if (!state) {
     return null;
   }
-  const rpc = new XianRpcClient(state.rpcUrl);
+  const rpc = rpcClientForState(state);
   const chainId = await activeChainIdForState(state, rpc);
   return createXianDappPolicyForRequest({
     id: globalThis.crypto.randomUUID(),
@@ -553,7 +564,7 @@ async function tryAutoApproveRequest(
   if (!state || !session) {
     return false;
   }
-  const rpc = new XianRpcClient(state.rpcUrl);
+  const rpc = rpcClientForState(state);
   const chainId = await activeChainIdForState(state, rpc);
   const match = findMatchingXianDappPolicy(
     state.trustedDappPolicies ?? [],
@@ -786,7 +797,7 @@ export async function approveWalletConnectProposal(id: number): Promise<void> {
   if (!state) {
     throw new Error("wallet is not configured");
   }
-  const rpc = new XianRpcClient(state.rpcUrl);
+  const rpc = rpcClientForState(state);
   const chainId = await activeChainIdForState(state, rpc);
   const caipChainId = xianChainIdToCaip2(chainId);
   const approvedNamespaces = buildApprovedNamespaces({

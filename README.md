@@ -79,8 +79,8 @@ wallet network preset to the RPC URL reachable from the simulator or device:
 
 ```bash
 cd ../xian-stack
-python3 ./scripts/backend.py start --no-service-node --dashboard
-python3 ./scripts/backend.py endpoints --no-service-node --dashboard
+python3 ./scripts/backend.py start --no-bds-enabled --dashboard
+python3 ./scripts/backend.py endpoints --no-bds-enabled --dashboard
 ```
 
 For local development, keep Metro running in one terminal and use a second
@@ -103,9 +103,9 @@ npm run test
 - **SDK lives elsewhere.** Wire formats, RPC contracts, and signing
   primitives live in `xian-js` and are consumed from
   `@xian-tech/client`. Changes to that contract land in `xian-js` first.
-- **Expo + React Native.** The app uses Expo Router for navigation and
-  `react-native-get-random-values` plus `expo-crypto` to provide secure
-  random material on platforms that lack `crypto.getRandomValues`.
+- **Expo + React Native.** The app uses Expo Router for navigation,
+  `react-native-get-random-values` for native random bytes, and Noble crypto
+  libraries for wallet encryption primitives.
 - **Independent release cadence.** Mobile releases are shipped
   independently from `xian-js` and `xian-wallet-browser`.
 
