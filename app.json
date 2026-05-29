@@ -17,7 +17,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "org.xian.wallet.mobile",
       "infoPlist": {
-        "NSCameraUsageDescription": "Allow Xian Wallet to scan WalletConnect QR codes."
+        "NSCameraUsageDescription": "Allow Xian Wallet to scan WalletConnect QR codes.",
+        "NSFaceIDUsageDescription": "Allow Xian Wallet to use Face ID for wallet unlock."
       }
     },
     "android": {
@@ -36,6 +37,12 @@
     },
     "plugins": [
       "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow Xian Wallet to use Face ID for wallet unlock."
+        }
+      ],
       "expo-router",
       "expo-sharing",
       [

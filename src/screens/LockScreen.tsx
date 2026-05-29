@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -14,14 +14,42 @@ import { Input } from "../components/Input";
 import { ConfirmDialog } from "../components/AppDialog";
 import { useWallet } from "../lib/wallet-context";
 import { errorTap, successTap } from "../lib/haptics";
+import { getBiometricStatus } from "../lib/biometrics";
 
 export function LockScreen() {
   const { refresh, controller } = useWallet();
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [biometricLoading, setBiometricLoading] = useState(false);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricLabel, setBiometricLabel] = useState("Biometric");
   const [error, setError] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const loadBiometricState = async () => {
+      if (!controller) return;
+      try {
+        const [status, enabled] = await Promise.all([
+          getBiometricStatus(),
+          controller.isBiometricUnlockEnabled(),
+        ]);
+        if (!active) return;
+        setBiometricLabel(status.label);
+        setBiometricAvailable(status.available && enabled);
+      } catch {
+        if (active) {
+          setBiometricAvailable(false);
+        }
+      }
+    };
+    void loadBiometricState();
+    return () => {
+      active = false;
+    };
+  }, [controller]);
 
   const handleUnlock = async () => {
     if (!controller || !password) return;
@@ -36,6 +64,22 @@ export function LockScreen() {
       setError("Invalid password.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleBiometricUnlock = async () => {
+    if (!controller) return;
+    setBiometricLoading(true);
+    setError(null);
+    try {
+      await controller.unlockWithBiometrics();
+      successTap();
+      await refresh();
+    } catch {
+      errorTap();
+      setError(`${biometricLabel} unlock failed.`);
+    } finally {
+      setBiometricLoading(false);
     }
   };
 
@@ -69,6 +113,17 @@ export function LockScreen() {
         <View style={styles.inputWrap}>
           <Button title="Unlock" onPress={handleUnlock} loading={loading} />
         </View>
+
+        {biometricAvailable && (
+          <View style={styles.inputWrap}>
+            <Button
+              title={`Unlock with ${biometricLabel}`}
+              variant="secondary"
+              onPress={handleBiometricUnlock}
+              loading={biometricLoading}
+            />
+          </View>
+        )}
 
         <TouchableOpacity
           style={styles.forgotLink}

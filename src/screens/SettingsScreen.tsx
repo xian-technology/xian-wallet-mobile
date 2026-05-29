@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -24,6 +24,7 @@ import { useWallet } from "../lib/wallet-context";
 import { saveWalletState, loadWalletState } from "../lib/storage";
 import { assertRpcTransportAllowed } from "../lib/network-security";
 import { lightTap } from "../lib/haptics";
+import { getBiometricStatus, type BiometricStatus } from "../lib/biometrics";
 import type { HomeTabScreenProps } from "../navigation/types";
 
 function formatJsonText(value: string): string {
@@ -104,9 +105,41 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
   const [exportDialog, setExportDialog] = useState<ExportDialogState | null>(null);
 
   const [accountLoading, setAccountLoading] = useState(false);
+  const [biometricStatus, setBiometricStatus] = useState<BiometricStatus | null>(null);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [biometricLoading, setBiometricLoading] = useState(false);
   const isMnemonic = state.seedSource === "mnemonic";
   const activeAccount = state.accounts.find((a) => a.index === state.activeAccountIndex);
   const activePreset = state.networkPresets.find((p) => p.id === state.activeNetworkId);
+
+  useEffect(() => {
+    let active = true;
+    const loadBiometricState = async () => {
+      if (!controller) return;
+      try {
+        const [status, enabled] = await Promise.all([
+          getBiometricStatus(),
+          controller.isBiometricUnlockEnabled(),
+        ]);
+        if (!active) return;
+        setBiometricStatus(status);
+        setBiometricEnabled(enabled);
+      } catch {
+        if (!active) return;
+        setBiometricStatus({
+          available: false,
+          enrolled: false,
+          label: "Biometric",
+          reason: "Biometric status could not be checked.",
+        });
+        setBiometricEnabled(false);
+      }
+    };
+    void loadBiometricState();
+    return () => {
+      active = false;
+    };
+  }, [controller]);
 
   const runConfirmDialogAction = async () => {
     if (!confirmDialog) return;
@@ -305,6 +338,35 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
     setRevealedKey(null);
     setSecretPassword("");
     setError(null);
+  };
+
+  const handleToggleBiometricUnlock = async () => {
+    if (!controller || biometricLoading) return;
+    setBiometricLoading(true);
+    try {
+      const status = biometricStatus ?? await getBiometricStatus();
+      setBiometricStatus(status);
+      if (!biometricEnabled && !status.available) {
+        showToast(status.reason ?? "Biometric unlock is not available.", "warning");
+        return;
+      }
+      if (biometricEnabled) {
+        await controller.disableBiometricUnlock();
+        setBiometricEnabled(false);
+        showToast("Biometric unlock disabled.", "success");
+      } else {
+        await controller.enableBiometricUnlock();
+        setBiometricEnabled(true);
+        showToast("Biometric unlock enabled.", "success");
+      }
+    } catch (e) {
+      showToast(
+        e instanceof Error ? e.message : "Biometric setting could not be changed.",
+        "danger"
+      );
+    } finally {
+      setBiometricLoading(false);
+    }
   };
 
   const handleLock = async () => {
@@ -655,6 +717,31 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
 
         {/* Security */}
         <Card title="Security" subtitle={isMnemonic ? "Seed-backed wallet." : "Private key wallet."}>
+          <TouchableOpacity
+            style={styles.prefRow}
+            onPress={handleToggleBiometricUnlock}
+            disabled={biometricLoading}
+          >
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={styles.prefLabel}>
+                {(biometricStatus?.label ?? "Biometric")} unlock
+              </Text>
+              <Text style={styles.prefHint}>
+                {biometricStatus?.available
+                  ? "Available on the lock screen."
+                  : biometricStatus?.reason ?? "Checking device support."}
+              </Text>
+            </View>
+            {biometricLoading ? (
+              <ActivityIndicator color={colors.accent} />
+            ) : (
+              <Feather
+                name={biometricEnabled ? "check-square" : "square"}
+                size={18}
+                color={biometricEnabled ? colors.accent : colors.muted}
+              />
+            )}
+          </TouchableOpacity>
           {revealedSeed || revealedKey ? (
             <>
               {revealedSeed && (

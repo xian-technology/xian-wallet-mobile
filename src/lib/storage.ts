@@ -8,6 +8,8 @@ import type { XianDappPolicy } from "@xian-tech/provider";
 
 const WALLET_STATE_KEY = "xian_wallet_state";
 const SESSION_KEY = "xian_unlocked_session";
+const BIOMETRIC_SESSION_KEY = "xian_biometric_session_key";
+const BIOMETRIC_ENABLED_KEY = "xian_biometric_enabled";
 const CONTACTS_KEY = "xian_contacts";
 const REQUEST_PREFIX = "xian_req_";
 const APPROVAL_PREFIX = "xian_approval_";
@@ -96,6 +98,12 @@ export interface StoredUnlockedSession {
   expiresAt: number;
 }
 
+export interface StoredBiometricSessionKey {
+  publicKey: string;
+  sessionKey: string;
+  enabledAt: number;
+}
+
 export interface StoredProviderRequest {
   requestId: string;
   origin: string;
@@ -165,6 +173,52 @@ export async function saveUnlockedSession(
 
 export async function clearUnlockedSession(): Promise<void> {
   await SecureStore.deleteItemAsync(SESSION_KEY);
+}
+
+function biometricSecureStoreOptions(): SecureStore.SecureStoreOptions {
+  return {
+    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    requireAuthentication: true,
+    authenticationPrompt: "Unlock Xian Wallet",
+    keychainService: BIOMETRIC_SESSION_KEY,
+  };
+}
+
+export async function isBiometricUnlockEnabled(): Promise<boolean> {
+  return (await AsyncStorage.getItem(BIOMETRIC_ENABLED_KEY)) === "true";
+}
+
+export async function loadBiometricSessionKey(): Promise<StoredBiometricSessionKey | null> {
+  const raw = await SecureStore.getItemAsync(
+    BIOMETRIC_SESSION_KEY,
+    biometricSecureStoreOptions()
+  );
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    await clearBiometricSessionKey();
+    return null;
+  }
+}
+
+export async function saveBiometricSessionKey(
+  session: StoredBiometricSessionKey
+): Promise<void> {
+  await SecureStore.setItemAsync(
+    BIOMETRIC_SESSION_KEY,
+    JSON.stringify(session),
+    biometricSecureStoreOptions()
+  );
+  await AsyncStorage.setItem(BIOMETRIC_ENABLED_KEY, "true");
+}
+
+export async function clearBiometricSessionKey(): Promise<void> {
+  await SecureStore.deleteItemAsync(
+    BIOMETRIC_SESSION_KEY,
+    biometricSecureStoreOptions()
+  );
+  await AsyncStorage.removeItem(BIOMETRIC_ENABLED_KEY);
 }
 
 // Provider requests
@@ -352,6 +406,10 @@ export function createMobileStore() {
     loadUnlockedSession,
     saveUnlockedSession,
     clearUnlockedSession,
+    isBiometricUnlockEnabled,
+    loadBiometricSessionKey,
+    saveBiometricSessionKey,
+    clearBiometricSessionKey,
     loadRequestState,
     saveRequestState,
     deleteRequestState,

@@ -362,6 +362,39 @@ export function createWalletController() {
     );
   }
 
+  async function unlockWithSessionKeyForState(
+    state: StoredWalletState,
+    sessionKey: string
+  ): Promise<void> {
+    const privateKey = await decryptPrivateKeyWithSessionKey(
+      state.encryptedPrivateKey,
+      sessionKey
+    );
+
+    const pubKey = getPublicKey(privateKey);
+    if (pubKey !== state.publicKey) {
+      throw new Error("decrypted key does not match stored wallet");
+    }
+
+    unlockedPrivateKey = privateKey;
+    unlockedSessionKey = sessionKey;
+
+    if (state.encryptedMnemonic) {
+      try {
+        unlockedMnemonic = await decryptMnemonicWithSessionKey(
+          state.encryptedMnemonic,
+          sessionKey
+        );
+      } catch {
+        unlockedMnemonic = null;
+      }
+    } else {
+      unlockedMnemonic = null;
+    }
+
+    await persistSession(privateKey);
+  }
+
   function storedShieldedWalletSnapshots(
     state: StoredWalletState
   ): StoredShieldedWalletSnapshot[] {
@@ -533,6 +566,7 @@ export function createWalletController() {
         createdAt: new Date().toISOString()
       };
 
+      await store.clearBiometricSessionKey();
       await store.saveState(state);
 
       unlockedPrivateKey = privateKey;
@@ -550,31 +584,42 @@ export function createWalletController() {
       }
 
       const sessionKey = await sessionKeyForState(state, password);
-      const privateKey = await decryptPrivateKeyWithSessionKey(
-        state.encryptedPrivateKey,
-        sessionKey
-      );
+      await unlockWithSessionKeyForState(state, sessionKey);
+    },
 
-      const pubKey = getPublicKey(privateKey);
-      if (pubKey !== state.publicKey) {
-        throw new Error("decrypted key does not match stored wallet");
+    async unlockWithBiometrics(): Promise<void> {
+      const state = await store.loadState();
+      if (!state) {
+        throw new Error("no wallet configured");
       }
-
-      unlockedPrivateKey = privateKey;
-      unlockedSessionKey = sessionKey;
-
-      if (state.encryptedMnemonic) {
-        try {
-          unlockedMnemonic = await decryptMnemonicWithSessionKey(
-            state.encryptedMnemonic,
-            sessionKey
-          );
-        } catch {
-          unlockedMnemonic = null;
-        }
+      const biometricSession = await store.loadBiometricSessionKey();
+      if (!biometricSession || biometricSession.publicKey !== state.publicKey) {
+        throw new Error("biometric unlock is not enabled");
       }
+      await unlockWithSessionKeyForState(state, biometricSession.sessionKey);
+    },
 
-      await persistSession(privateKey);
+    async isBiometricUnlockEnabled(): Promise<boolean> {
+      return store.isBiometricUnlockEnabled();
+    },
+
+    async enableBiometricUnlock(): Promise<void> {
+      const state = await store.loadState();
+      if (!state) {
+        throw new Error("no wallet configured");
+      }
+      if (!(await restoreSession()) || !unlockedSessionKey) {
+        throw new Error("wallet must be unlocked");
+      }
+      await store.saveBiometricSessionKey({
+        publicKey: state.publicKey,
+        sessionKey: unlockedSessionKey,
+        enabledAt: Date.now(),
+      });
+    },
+
+    async disableBiometricUnlock(): Promise<void> {
+      await store.clearBiometricSessionKey();
     },
 
     async lock(): Promise<void> {
@@ -859,6 +904,7 @@ export function createWalletController() {
       );
 
       await clearSession();
+      await store.clearBiometricSessionKey();
       await store.saveState({
         publicKey: activeAccount.publicKey,
         encryptedPrivateKey: activeAccount.encryptedPrivateKey,
@@ -973,6 +1019,7 @@ export function createWalletController() {
 
     async removeWallet(): Promise<void> {
       await clearSession();
+      await store.clearBiometricSessionKey();
       await store.clearState();
     },
 

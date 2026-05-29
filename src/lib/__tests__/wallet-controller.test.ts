@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 
-import type { StoredUnlockedSession, StoredWalletState } from "../storage";
+import type {
+  StoredBiometricSessionKey,
+  StoredUnlockedSession,
+  StoredWalletState,
+} from "../storage";
 
 const VALID_PRIVATE_KEY = "11".repeat(32);
 const VALID_MNEMONIC = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -15,6 +19,7 @@ const SHIELDED_STATE_SNAPSHOT = JSON.stringify({
 
 let mockStoredState: StoredWalletState | null = null;
 let mockStoredSession: StoredUnlockedSession | null = null;
+let mockStoredBiometricSession: StoredBiometricSessionKey | null = null;
 
 jest.mock("../storage", () => {
   const mockStore = {
@@ -31,6 +36,16 @@ jest.mock("../storage", () => {
     }),
     clearUnlockedSession: jest.fn(async () => {
       mockStoredSession = null;
+    }),
+    isBiometricUnlockEnabled: jest.fn(async () => mockStoredBiometricSession != null),
+    loadBiometricSessionKey: jest.fn(async () => mockStoredBiometricSession),
+    saveBiometricSessionKey: jest.fn(
+      async (session: StoredBiometricSessionKey) => {
+        mockStoredBiometricSession = session;
+      }
+    ),
+    clearBiometricSessionKey: jest.fn(async () => {
+      mockStoredBiometricSession = null;
     }),
     loadRequestState: jest.fn(async () => null),
     saveRequestState: jest.fn(async () => undefined),
@@ -128,6 +143,10 @@ const { __mockStore: mockStore } = jest.requireMock("../storage") as {
     loadUnlockedSession: jest.Mock;
     saveUnlockedSession: jest.Mock;
     clearUnlockedSession: jest.Mock;
+    isBiometricUnlockEnabled: jest.Mock;
+    loadBiometricSessionKey: jest.Mock;
+    saveBiometricSessionKey: jest.Mock;
+    clearBiometricSessionKey: jest.Mock;
   };
 };
 
@@ -138,6 +157,7 @@ describe("wallet-controller", () => {
   beforeEach(() => {
     mockStoredState = null;
     mockStoredSession = null;
+    mockStoredBiometricSession = null;
     jest.clearAllMocks();
 
     mockStore.loadState.mockImplementation(async () => mockStoredState);
@@ -155,6 +175,19 @@ describe("wallet-controller", () => {
     });
     mockStore.clearUnlockedSession.mockImplementation(async () => {
       mockStoredSession = null;
+    });
+    mockStore.isBiometricUnlockEnabled.mockImplementation(
+      async () => mockStoredBiometricSession != null
+    );
+    mockStore.loadBiometricSessionKey.mockImplementation(
+      async () => mockStoredBiometricSession
+    );
+    mockStore.saveBiometricSessionKey.mockImplementation(async (...args: unknown[]) => {
+      const [session] = args as [StoredBiometricSessionKey];
+      mockStoredBiometricSession = session;
+    });
+    mockStore.clearBiometricSessionKey.mockImplementation(async () => {
+      mockStoredBiometricSession = null;
     });
   });
 
@@ -231,6 +264,48 @@ describe("wallet-controller", () => {
     await controller.lock();
 
     await expect(controller.unlock("wrong-password")).rejects.toThrow();
+  });
+
+  it("supports opt-in biometric unlock without storing the password", async () => {
+    const controller = createWalletController();
+
+    await controller.createWallet({
+      password: "secret123",
+      privateKey: VALID_PRIVATE_KEY
+    });
+    await controller.enableBiometricUnlock();
+
+    expect(mockStoredBiometricSession).toMatchObject({
+      publicKey: mockStoredState?.publicKey,
+      sessionKey: mockStoredSession?.sessionKey
+    });
+    expect(JSON.stringify(mockStoredBiometricSession)).not.toContain("secret123");
+
+    await controller.lock();
+    expect(mockStoredSession).toBeNull();
+
+    const resumedController = createWalletController();
+    await resumedController.unlockWithBiometrics();
+
+    expect(mockStoredSession?.privateKey).toBe(VALID_PRIVATE_KEY);
+    expect(await resumedController.isBiometricUnlockEnabled()).toBe(true);
+
+    await resumedController.disableBiometricUnlock();
+    expect(mockStoredBiometricSession).toBeNull();
+  });
+
+  it("clears biometric unlock material when removing a wallet", async () => {
+    const controller = createWalletController();
+
+    await controller.createWallet({
+      password: "secret123",
+      privateKey: VALID_PRIVATE_KEY
+    });
+    await controller.enableBiometricUnlock();
+    await controller.removeWallet();
+
+    expect(mockStoredState).toBeNull();
+    expect(mockStoredBiometricSession).toBeNull();
   });
 
   it("stores shielded snapshots, includes them in wallet backups, and restores them on import", async () => {

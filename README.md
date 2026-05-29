@@ -151,8 +151,8 @@ npm run ios
 
 ## Release Artifacts
 
-- Android APKs are checked in alongside the source for convenience
-  (e.g. `xian-wallet-mobile-v0.1.0.apk`).
+- Build outputs are not committed. APK, AAB, IPA, and other platform artifacts
+  are local or CI release outputs only.
 - Production releases follow Expo's standard build flow against the
   configuration in `app.json`.
 - Android release builds must be signed with a real upload key. The native
@@ -160,6 +160,15 @@ npm run ios
   `XIAN_WALLET_UPLOAD_STORE_PASSWORD`, `XIAN_WALLET_UPLOAD_KEY_ALIAS`, and
   `XIAN_WALLET_UPLOAD_KEY_PASSWORD`; release builds are not signed with the
   debug keystore.
+
+Local Android build:
+
+```bash
+npm install
+npm run typecheck
+npm run test
+npx expo run:android --variant release
+```
 
 ## Related Repos
 
