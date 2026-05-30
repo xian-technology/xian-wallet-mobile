@@ -15,8 +15,18 @@
     },
     "ios": {
       "supportsTablet": false,
+      "buildNumber": "2",
       "bundleIdentifier": "org.xian.wallet.mobile",
+      "entitlements": {
+        "keychain-access-groups": [
+          "$(TeamIdentifierPrefix)org.xian.wallet.mobile"
+        ]
+      },
       "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSAllowsLocalNetworking": true
+        },
         "NSCameraUsageDescription": "Allow Xian Wallet to scan WalletConnect QR codes.",
         "NSFaceIDUsageDescription": "Allow Xian Wallet to use Face ID for wallet unlock."
       }

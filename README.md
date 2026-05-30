@@ -129,6 +129,7 @@ npm run test
     helpers.
 - `src/theme/` — theme tokens and styling primitives.
 - `android/` — native Android project produced by Expo prebuild.
+- `ios/` — native iOS project produced by Expo prebuild.
 - `assets/` — app icons, splash images, fonts.
 - `app.json` — Expo configuration.
 
@@ -168,6 +169,14 @@ npm install
 npm run typecheck
 npm run test
 npx expo run:android --variant release
+```
+
+Local iOS build:
+
+```bash
+npm install
+npx pod-install ios
+npm run ios
 ```
 
 ## Related Repos

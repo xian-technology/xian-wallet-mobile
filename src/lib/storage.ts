@@ -14,6 +14,28 @@ const CONTACTS_KEY = "xian_contacts";
 const REQUEST_PREFIX = "xian_req_";
 const APPROVAL_PREFIX = "xian_approval_";
 
+async function getSecureStoreItem(
+  key: string,
+  options?: SecureStore.SecureStoreOptions
+): Promise<string | null> {
+  try {
+    return await SecureStore.getItemAsync(key, options);
+  } catch {
+    return null;
+  }
+}
+
+async function deleteSecureStoreItem(
+  key: string,
+  options?: SecureStore.SecureStoreOptions
+): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(key, options);
+  } catch {
+    // Missing or unavailable Keychain entries should not block logout/startup.
+  }
+}
+
 export type AssetNetworkStatus = "available" | "not_found" | "unknown";
 
 export interface AssetNetworkState {
@@ -151,12 +173,12 @@ export async function clearWalletState(): Promise<void> {
 
 // Unlocked session (stored in secure store)
 export async function loadUnlockedSession(): Promise<StoredUnlockedSession | null> {
-  const raw = await SecureStore.getItemAsync(SESSION_KEY);
+  const raw = await getSecureStoreItem(SESSION_KEY);
   if (!raw) return null;
   try {
     const session: StoredUnlockedSession = JSON.parse(raw);
     if (session.expiresAt <= Date.now()) {
-      await SecureStore.deleteItemAsync(SESSION_KEY);
+      await deleteSecureStoreItem(SESSION_KEY);
       return null;
     }
     return session;
@@ -172,7 +194,7 @@ export async function saveUnlockedSession(
 }
 
 export async function clearUnlockedSession(): Promise<void> {
-  await SecureStore.deleteItemAsync(SESSION_KEY);
+  await deleteSecureStoreItem(SESSION_KEY);
 }
 
 function biometricSecureStoreOptions(): SecureStore.SecureStoreOptions {
@@ -189,7 +211,7 @@ export async function isBiometricUnlockEnabled(): Promise<boolean> {
 }
 
 export async function loadBiometricSessionKey(): Promise<StoredBiometricSessionKey | null> {
-  const raw = await SecureStore.getItemAsync(
+  const raw = await getSecureStoreItem(
     BIOMETRIC_SESSION_KEY,
     biometricSecureStoreOptions()
   );
@@ -214,7 +236,7 @@ export async function saveBiometricSessionKey(
 }
 
 export async function clearBiometricSessionKey(): Promise<void> {
-  await SecureStore.deleteItemAsync(
+  await deleteSecureStoreItem(
     BIOMETRIC_SESSION_KEY,
     biometricSecureStoreOptions()
   );
