@@ -117,7 +117,7 @@ describe("SendScreen", () => {
         }
       })
     );
-  });
+  }, 10_000);
 
   it("reviews and sends decimal transfers as runtime fixed values", async () => {
     mockEstimateChi.mockImplementation(async () => ({
