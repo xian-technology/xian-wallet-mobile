@@ -76,6 +76,36 @@ function policySessionName(
   return sessions.find((session) => session.topic === topic)?.name ?? shortTopic(topic);
 }
 
+function sessionInitial(session: WalletConnectSessionSummary): string {
+  return (session.name.trim().charAt(0) || "?").toUpperCase();
+}
+
+function ConnectedAppIcon({ session }: { session: WalletConnectSessionSummary }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+    setImageLoaded(false);
+  }, [session.icon]);
+
+  return (
+    <View style={styles.iconFallback}>
+      {!imageLoaded || imageFailed ? (
+        <Text style={styles.iconInitial}>{sessionInitial(session)}</Text>
+      ) : null}
+      {session.icon && !imageFailed ? (
+        <Image
+          source={{ uri: session.icon }}
+          style={[styles.icon, imageLoaded ? null : styles.iconPending]}
+          onLoad={() => setImageLoaded(true)}
+          onError={() => setImageFailed(true)}
+        />
+      ) : null}
+    </View>
+  );
+}
+
 export function AppsScreen() {
   const { state, refresh, showToast } = useWallet();
   const [wcState, setWcState] = useState<WalletConnectRuntimeState>(() =>
@@ -293,13 +323,7 @@ export function AppsScreen() {
           ) : (
             wcState.sessions.map((session) => (
               <View key={session.topic} style={styles.sessionRow}>
-                {session.icon ? (
-                  <Image source={{ uri: session.icon }} style={styles.icon} />
-                ) : (
-                  <View style={styles.iconFallback}>
-                    <Feather name="grid" size={17} color={colors.accent} />
-                  </View>
-                )}
+                <ConnectedAppIcon session={session} />
                 <View style={styles.sessionBody}>
                   <Text style={styles.sessionName}>{session.name}</Text>
                   <Text style={styles.meta} numberOfLines={1}>
@@ -551,6 +575,10 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
+    position: "absolute",
+  },
+  iconPending: {
+    opacity: 0,
   },
   iconFallback: {
     width: 36,
@@ -558,7 +586,13 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
     backgroundColor: colors.accentSoft,
+  },
+  iconInitial: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: "700",
   },
   sessionBody: {
     flex: 1,

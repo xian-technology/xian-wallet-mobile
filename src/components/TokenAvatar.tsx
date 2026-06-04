@@ -1,5 +1,10 @@
 import React from "react";
-import { Image, StyleSheet, Text, View } from "react-native";
+import {
+  Image,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import Svg, {
   Circle,
   Defs,
@@ -48,62 +53,17 @@ function assetGradientPair(key: string): readonly [string, string] {
   );
 }
 
-export function TokenAvatar({
+function GradientAvatar({
   contract,
-  symbol,
-  icon,
-  size = 36,
-  textSize = 14,
-  backgroundColor = colors.bg2,
+  letter,
+  size,
+  textSize,
 }: {
   contract: string;
-  symbol: string;
-  icon?: string;
-  size?: number;
-  textSize?: number;
-  backgroundColor?: string;
+  letter: string;
+  size: number;
+  textSize: number;
 }) {
-  const trimmedIcon = icon?.trim();
-  const letter = (symbol || contract.slice(0, 6)).charAt(0).toUpperCase();
-  const isNativeXianLogo = contract === "currency" && Boolean(trimmedIcon);
-  const iconSize = isNativeXianLogo ? Math.round(size * 0.7) : size;
-  const iconRadius = isNativeXianLogo ? 0 : size / 2;
-  const containerStyle = [
-    styles.container,
-    {
-      width: size,
-      height: size,
-      borderRadius: size / 2,
-      backgroundColor,
-    },
-  ];
-
-  if (trimmedIcon) {
-    if (isInlineSvg(trimmedIcon)) {
-      return (
-        <View style={containerStyle}>
-          <SvgXml xml={trimmedIcon} width={iconSize} height={iconSize} />
-        </View>
-      );
-    }
-    if (isSvgUri(trimmedIcon)) {
-      return (
-        <View style={containerStyle}>
-          <SvgUri uri={trimmedIcon} width={iconSize} height={iconSize} />
-        </View>
-      );
-    }
-    return (
-      <View style={containerStyle}>
-        <Image
-          source={{ uri: trimmedIcon }}
-          style={{ width: iconSize, height: iconSize, borderRadius: iconRadius }}
-          resizeMode="contain"
-        />
-      </View>
-    );
-  }
-
   const [gradientStart, gradientEnd] = assetGradientPair(contract);
   return (
     <View
@@ -132,6 +92,89 @@ export function TokenAvatar({
       </Svg>
       <Text style={[styles.letter, { fontSize: textSize }]}>{letter}</Text>
     </View>
+  );
+}
+
+export function TokenAvatar({
+  contract,
+  symbol,
+  icon,
+  size = 36,
+  textSize = 14,
+  backgroundColor = colors.bg2,
+}: {
+  contract: string;
+  symbol: string;
+  icon?: string;
+  size?: number;
+  textSize?: number;
+  backgroundColor?: string;
+}) {
+  const trimmedIcon = icon?.trim();
+  const [iconFailed, setIconFailed] = React.useState(false);
+
+  React.useEffect(() => {
+    setIconFailed(false);
+  }, [trimmedIcon]);
+
+  const letter = (symbol || contract.slice(0, 6)).charAt(0).toUpperCase();
+  const isNativeXianLogo = contract === "currency" && Boolean(trimmedIcon);
+  const iconSize = isNativeXianLogo ? Math.round(size * 0.7) : size;
+  const iconRadius = isNativeXianLogo ? 0 : size / 2;
+  const containerStyle = [
+    styles.container,
+    {
+      width: size,
+      height: size,
+      borderRadius: size / 2,
+      backgroundColor,
+    },
+  ];
+
+  if (trimmedIcon && !iconFailed) {
+    if (isInlineSvg(trimmedIcon)) {
+      return (
+        <View style={containerStyle}>
+          <SvgXml
+            xml={trimmedIcon}
+            width={iconSize}
+            height={iconSize}
+            onError={() => setIconFailed(true)}
+          />
+        </View>
+      );
+    }
+    if (isSvgUri(trimmedIcon)) {
+      return (
+        <View style={containerStyle}>
+          <SvgUri
+            uri={trimmedIcon}
+            width={iconSize}
+            height={iconSize}
+            onError={() => setIconFailed(true)}
+          />
+        </View>
+      );
+    }
+    return (
+      <View style={containerStyle}>
+        <Image
+          source={{ uri: trimmedIcon }}
+          style={{ width: iconSize, height: iconSize, borderRadius: iconRadius }}
+          resizeMode="contain"
+          onError={() => setIconFailed(true)}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <GradientAvatar
+      contract={contract}
+      letter={letter}
+      size={size}
+      textSize={textSize}
+    />
   );
 }
 
