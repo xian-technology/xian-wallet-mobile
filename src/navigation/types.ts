@@ -14,6 +14,7 @@ export type RootStackParamList = {
   Lock: undefined;
   Main: undefined;
   Send: { token?: string } | undefined;
+  Trade: undefined;
   Receive: undefined;
   TokenDetail: { contract: string };
   Networks: undefined;

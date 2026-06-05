@@ -15,15 +15,21 @@ const mockSecureStore = {
 
 jest.mock("@react-native-async-storage/async-storage", () => ({
   __esModule: true,
-  default: mockAsyncStorage,
+  default: {
+    getItem: (...args: unknown[]) => mockAsyncStorage.getItem(...args),
+    setItem: (...args: unknown[]) => mockAsyncStorage.setItem(...args),
+    removeItem: (...args: unknown[]) => mockAsyncStorage.removeItem(...args),
+  },
   ...mockAsyncStorage,
 }));
 jest.mock("expo-secure-store", () => mockSecureStore);
 
 import {
   clearUnlockedSession,
+  loadDexAvailability,
   loadBiometricSessionKey,
   loadUnlockedSession,
+  saveDexAvailability,
 } from "../storage";
 
 describe("secure storage adapter", () => {
@@ -48,6 +54,43 @@ describe("secure storage adapter", () => {
 
     await expect(clearUnlockedSession()).resolves.toBeUndefined();
   });
+
+  it("stores positive DEX availability per network key", async () => {
+    mockAsyncStorageGetOnce(JSON.stringify([
+      {
+        networkKey: "other|http://rpc",
+        contract: "con_dex",
+        checkedAt: "2026-06-05T00:00:00.000Z",
+      },
+    ]));
+
+    await saveDexAvailability({
+      networkKey: "local|http://127.0.0.1:26657",
+      contract: "con_dex",
+      checkedAt: "2026-06-05T12:00:00.000Z",
+    });
+
+    const stored = JSON.parse(String((mockAsyncStorage.setItem as jest.Mock).mock.calls[0]?.[1]));
+    expect(stored).toEqual([
+      {
+        networkKey: "local|http://127.0.0.1:26657",
+        contract: "con_dex",
+        checkedAt: "2026-06-05T12:00:00.000Z",
+      },
+      {
+        networkKey: "other|http://rpc",
+        contract: "con_dex",
+        checkedAt: "2026-06-05T00:00:00.000Z",
+      },
+    ]);
+
+    mockAsyncStorageGetOnce(JSON.stringify(stored));
+    await expect(loadDexAvailability("local|http://127.0.0.1:26657")).resolves.toEqual({
+      networkKey: "local|http://127.0.0.1:26657",
+      contract: "con_dex",
+      checkedAt: "2026-06-05T12:00:00.000Z",
+    });
+  });
 });
 
 function rejectSecureStoreGetOnce(error: Error): void {
@@ -64,4 +107,12 @@ function rejectSecureStoreDelete(error: Error): void {
       mockRejectedValue: (value: Error) => void;
     }
   ).mockRejectedValue(error);
+}
+
+function mockAsyncStorageGetOnce(value: unknown): void {
+  (
+    mockAsyncStorage.getItem as unknown as {
+      mockResolvedValueOnce: (value: unknown) => void;
+    }
+  ).mockResolvedValueOnce(value);
 }

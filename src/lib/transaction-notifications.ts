@@ -8,6 +8,13 @@ export interface TransactionNotificationResult {
   message?: unknown;
 }
 
+interface TransactionNotificationLabels {
+  sent?: string;
+  finalized?: string;
+  accepted?: string;
+  failed?: string;
+}
+
 type ShowToast = WalletContextValue["showToast"];
 
 function transactionExplorerUrl(
@@ -47,26 +54,37 @@ function failureMessage(result: TransactionNotificationResult): string | undefin
     : undefined;
 }
 
-function finalStatus(result: TransactionNotificationResult): {
+function finalStatus(
+  result: TransactionNotificationResult,
+  labels: TransactionNotificationLabels = {}
+): {
   message: string;
   tone: ToastTone;
   icon: ToastIcon;
   detail?: string;
 } | null {
   if (result.finalized) {
-    return { message: "Transaction finalized.", tone: "success", icon: "success" };
+    return {
+      message: labels.finalized ?? "Transaction finalized.",
+      tone: "success",
+      icon: "success",
+    };
   }
   const failedMessage = failureMessage(result);
   if (failedMessage || result.accepted === false || result.submitted === false) {
     return {
-      message: "Transaction failed.",
+      message: labels.failed ?? "Transaction failed.",
       tone: "danger",
       icon: "danger",
       detail: failedMessage,
     };
   }
   if (result.accepted === true) {
-    return { message: "Transaction accepted.", tone: "success", icon: "success" };
+    return {
+      message: labels.accepted ?? "Transaction accepted.",
+      tone: "success",
+      icon: "success",
+    };
   }
   return null;
 }
@@ -78,13 +96,14 @@ export function transactionSucceeded(result: TransactionNotificationResult): boo
 export function showTransactionSentToast(
   showToast: ShowToast,
   dashboardUrl: string | undefined,
-  result: TransactionNotificationResult
+  result: TransactionNotificationResult,
+  labels: TransactionNotificationLabels = {}
 ): boolean {
   if (!result.submitted) {
     return false;
   }
 
-  showToast("Transaction sent.", "info", {
+  showToast(labels.sent ?? "Transaction sent.", "info", {
     icon: "info",
     detail: result.txHash ? truncateHash(result.txHash) : undefined,
     action: transactionAction(dashboardUrl, result.txHash),
@@ -97,9 +116,10 @@ export function scheduleTransactionStatusToast(
   showToast: ShowToast,
   dashboardUrl: string | undefined,
   result: TransactionNotificationResult,
-  delayMs: number
+  delayMs: number,
+  labels: TransactionNotificationLabels = {}
 ): ReturnType<typeof setTimeout> | null {
-  const status = finalStatus(result);
+  const status = finalStatus(result, labels);
   if (!status) {
     return null;
   }

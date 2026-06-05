@@ -16,6 +16,7 @@ import { SetupScreen } from "./src/screens/SetupScreen";
 import { LockScreen } from "./src/screens/LockScreen";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { SendScreen } from "./src/screens/SendScreen";
+import { TradeScreen } from "./src/screens/TradeScreen";
 import { ReceiveScreen } from "./src/screens/ReceiveScreen";
 import { SettingsScreen } from "./src/screens/SettingsScreen";
 import { TokenDetailScreen } from "./src/screens/TokenDetailScreen";
@@ -150,6 +151,7 @@ function AppNavigator() {
         options={{ headerShown: false }}
       />
       <Stack.Screen name="Send" component={SendScreen} />
+      <Stack.Screen name="Trade" component={TradeScreen} />
       <Stack.Screen name="Receive" component={ReceiveScreen} />
       <Stack.Screen name="TokenDetail" component={TokenDetailScreen} options={{ title: "Token" }} />
       <Stack.Screen name="Networks" component={NetworksScreen} />

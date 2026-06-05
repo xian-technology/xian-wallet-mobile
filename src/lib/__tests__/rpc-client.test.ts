@@ -4,6 +4,8 @@ const mockGetChainId = jest.fn() as jest.Mock;
 const mockGetTokenMetadata = jest.fn() as jest.Mock;
 const mockGetBalance = jest.fn() as jest.Mock;
 const mockGetContractMethods = jest.fn() as jest.Mock;
+const mockGetState = jest.fn() as jest.Mock;
+const mockCall = jest.fn() as jest.Mock;
 const mockEstimateChi = jest.fn() as jest.Mock;
 const mockBuildTx = jest.fn() as jest.Mock;
 const mockSignTx = jest.fn() as jest.Mock;
@@ -24,6 +26,8 @@ jest.mock("@xian-tech/client", () => ({
     getTokenMetadata = mockGetTokenMetadata;
     getBalance = mockGetBalance;
     getContractMethods = mockGetContractMethods;
+    getState = mockGetState;
+    call = mockCall;
     estimateChi = mockEstimateChi;
     buildTx = mockBuildTx;
     signTx = mockSignTx;
@@ -42,6 +46,8 @@ describe("XianRpcClient", () => {
     mockGetTokenMetadata.mockReset();
     mockGetBalance.mockReset();
     mockGetContractMethods.mockReset();
+    mockGetState.mockReset();
+    mockCall.mockReset();
     mockEstimateChi.mockReset();
     mockBuildTx.mockReset();
     mockSignTx.mockReset();
@@ -161,6 +167,28 @@ describe("XianRpcClient", () => {
       symbol: "EXP",
       logoUrl: null,
       logoSvg: "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'></svg>"
+    });
+  });
+
+  it("delegates state reads and read-only calls to xian-js", async () => {
+    mockGetState.mockImplementation(async () => "123");
+    mockCall.mockImplementation(async () => 30);
+
+    const client = new XianRpcClient("http://127.0.0.1:26657");
+
+    await expect(client.getState("con_pairs", "pairs", ["1", "token0"])).resolves.toBe("123");
+    await expect(client.call({
+      sender: "sender",
+      contract: "con_dex",
+      function: "getTradeFeeBps",
+      kwargs: { account: "sender" }
+    })).resolves.toBe(30);
+    expect(mockGetState).toHaveBeenCalledWith("con_pairs", "pairs", ["1", "token0"]);
+    expect(mockCall).toHaveBeenCalledWith({
+      sender: "sender",
+      contract: "con_dex",
+      function: "getTradeFeeBps",
+      kwargs: { account: "sender" }
     });
   });
 

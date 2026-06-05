@@ -4,6 +4,7 @@
  */
 import {
   Ed25519Signer,
+  type SimulateRequest,
   type TransactionReceipt,
   type XianShieldedWalletHistoryResult,
   XianClient
@@ -272,6 +273,20 @@ export class XianRpcClient {
   ): Promise<{ name: string; arguments: { name: string; type: string }[] }[]> {
     this.assertTransportAllowed();
     return this.client.getContractMethods(contract);
+  }
+
+  async getState(
+    contract: string,
+    variable: string,
+    keys: string[] = []
+  ): Promise<unknown> {
+    this.assertTransportAllowed();
+    return this.client.getState(contract, variable, keys);
+  }
+
+  async call(request: SimulateRequest): Promise<unknown> {
+    this.assertTransportAllowed();
+    return this.client.call(request);
   }
 
   async estimateChi(opts: {

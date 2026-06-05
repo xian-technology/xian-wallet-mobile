@@ -13,6 +13,7 @@ const BIOMETRIC_ENABLED_KEY = "xian_biometric_enabled";
 const CONTACTS_KEY = "xian_contacts";
 const REQUEST_PREFIX = "xian_req_";
 const APPROVAL_PREFIX = "xian_approval_";
+const DEX_AVAILABILITY_KEY = "xian_dex_availability";
 
 async function getSecureStoreItem(
   key: string,
@@ -152,6 +153,12 @@ export interface Contact {
   address: string;
 }
 
+export interface StoredDexAvailability {
+  networkKey: string;
+  contract: string;
+  checkedAt: string;
+}
+
 // Wallet state
 export async function loadWalletState(): Promise<StoredWalletState | null> {
   const raw = await AsyncStorage.getItem(WALLET_STATE_KEY);
@@ -169,6 +176,69 @@ export async function saveWalletState(state: StoredWalletState): Promise<void> {
 
 export async function clearWalletState(): Promise<void> {
   await AsyncStorage.removeItem(WALLET_STATE_KEY);
+}
+
+function normalizeDexAvailability(value: unknown): StoredDexAvailability | null {
+  if (typeof value !== "object" || value == null || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.networkKey !== "string" ||
+    typeof record.contract !== "string" ||
+    typeof record.checkedAt !== "string"
+  ) {
+    return null;
+  }
+  return {
+    networkKey: record.networkKey,
+    contract: record.contract,
+    checkedAt: record.checkedAt,
+  };
+}
+
+export async function loadDexAvailability(
+  networkKey: string
+): Promise<StoredDexAvailability | null> {
+  const raw = await AsyncStorage.getItem(DEX_AVAILABILITY_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    const entries = Array.isArray(parsed) ? parsed : Object.values(parsed);
+    for (const entry of entries) {
+      const normalized = normalizeDexAvailability(entry);
+      if (normalized?.networkKey === networkKey) {
+        return normalized;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+export async function saveDexAvailability(
+  availability: StoredDexAvailability
+): Promise<void> {
+  let entries: StoredDexAvailability[] = [];
+  const raw = await AsyncStorage.getItem(DEX_AVAILABILITY_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      const rawEntries = Array.isArray(parsed) ? parsed : Object.values(parsed);
+      entries = rawEntries
+        .map(normalizeDexAvailability)
+        .filter((entry): entry is StoredDexAvailability => entry != null);
+    } catch {
+      entries = [];
+    }
+  }
+
+  const next = [
+    availability,
+    ...entries.filter((entry) => entry.networkKey !== availability.networkKey),
+  ];
+  await AsyncStorage.setItem(DEX_AVAILABILITY_KEY, JSON.stringify(next));
 }
 
 // Unlocked session (stored in secure store)

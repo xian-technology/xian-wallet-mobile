@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -13,7 +13,12 @@ import { Feather } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { colors } from "../theme/colors";
 import { useWallet } from "../lib/wallet-context";
-import { loadWalletState, saveWalletState } from "../lib/storage";
+import {
+  loadDexAvailability,
+  loadWalletState,
+  saveDexAvailability,
+  saveWalletState,
+} from "../lib/storage";
 import { SwipeableRow } from "../components/SwipeableRow";
 import { DraggableList } from "../components/DraggableList";
 import { TokenAvatar } from "../components/TokenAvatar";
@@ -30,6 +35,7 @@ import {
   updateAssetNetworkState,
   visibleAssetsForActiveNetwork,
 } from "../lib/assets";
+import { DEX_ROUTER, dexNetworkKey, loadDexSnapshot } from "../lib/dex";
 import type { HomeTabScreenProps } from "../navigation/types";
 
 function truncAddr(addr: string): string {
@@ -64,6 +70,9 @@ export function HomeScreen({ navigation }: HomeTabScreenProps<"Home">) {
   const [managing, setManaging] = useState(false);
   const [addTokenValue, setAddTokenValue] = useState("");
   const [pendingUnavailableTokenContract, setPendingUnavailableTokenContract] = useState<string | null>(null);
+  const [dexStatus, setDexStatus] = useState<"unknown" | "checking" | "available" | "unavailable">("unknown");
+  const [dexStatusKey, setDexStatusKey] = useState("");
+  const [dexError, setDexError] = useState<string | null>(null);
 
   const address = state.publicKey ?? "";
   const activeAcct = state.accounts.find((a) => a.index === state.activeAccountIndex);
@@ -76,12 +85,59 @@ export function HomeScreen({ navigation }: HomeTabScreenProps<"Home">) {
     unavailableN > 0 ? `${unavailableN} unavailable` : "",
   ].filter(Boolean).join(" · ");
 
+  const checkDexAvailability = useCallback(async (force = false) => {
+    if (!state.publicKey) return;
+    const networkKey = dexNetworkKey(state);
+    setDexStatusKey(networkKey);
+    setDexError(null);
+
+    if (!force) {
+      const cached = await loadDexAvailability(networkKey).catch(() => null);
+      if (cached?.contract === DEX_ROUTER) {
+        setDexStatus("available");
+        return;
+      }
+    }
+
+    setDexStatus("checking");
+    const snapshot = await loadDexSnapshot(state, rpc).catch((error) => ({
+      available: false,
+      reason: error instanceof Error ? error.message : "Couldn't check DEX availability.",
+    }));
+    if (dexNetworkKey(state) !== networkKey) {
+      return;
+    }
+    if (snapshot.available) {
+      await saveDexAvailability({
+        networkKey,
+        contract: DEX_ROUTER,
+        checkedAt: new Date().toISOString(),
+      });
+      setDexStatus("available");
+      setDexError(null);
+    } else {
+      setDexStatus("unavailable");
+      setDexError(snapshot.reason ?? "DEX is not deployed on this network.");
+    }
+  }, [rpc, state.activeNetworkId, state.publicKey, state.rpcUrl, state.watchedAssets]);
+
+  useEffect(() => {
+    const networkKey = dexNetworkKey(state);
+    if (dexStatusKey !== networkKey) {
+      setDexStatus("unknown");
+      setDexStatusKey(networkKey);
+      setDexError(null);
+    }
+    void checkDexAvailability(false);
+  }, [checkDexAvailability, dexStatusKey, state]);
+
   const doRefresh = useCallback(async () => {
     setRefreshing(true);
     await refresh();
     await refreshBalances();
+    await checkDexAvailability(true);
     setRefreshing(false);
-  }, [refresh, refreshBalances]);
+  }, [checkDexAvailability, refresh, refreshBalances]);
 
   const reorderAsset = async (fromIndex: number, toIndex: number) => {
     const ws = await loadWalletState();
@@ -177,6 +233,12 @@ export function HomeScreen({ navigation }: HomeTabScreenProps<"Home">) {
     await refreshBalances();
   };
 
+  const tradeEnabled = dexStatus === "available";
+  const tradeChecking = dexStatus === "checking" || dexStatus === "unknown";
+  const tradeDisabledTitle = tradeChecking
+    ? "Checking DEX availability"
+    : dexError ?? "DEX is not deployed on this network.";
+
   const quickActions = (
     <View style={styles.actions}>
       <TouchableOpacity style={styles.actionBtn} onPress={() => { lightTap(); navigation.navigate("Send"); }}>
@@ -187,13 +249,14 @@ export function HomeScreen({ navigation }: HomeTabScreenProps<"Home">) {
         <View style={styles.actionCircle}><Feather name="arrow-down" size={22} color={colors.accent} /></View>
         {!prefs.hideQuickActionLabels && <Text style={styles.actionLabel}>Receive</Text>}
       </TouchableOpacity>
-      <TouchableOpacity style={[styles.actionBtn, styles.disabled]} disabled>
-        <View style={[styles.actionCircle, styles.circleDisabled]}><Feather name="trending-up" size={20} color={colors.muted} /></View>
-        {!prefs.hideQuickActionLabels && <Text style={styles.labelDisabled}>Trade</Text>}
-      </TouchableOpacity>
-      <TouchableOpacity style={[styles.actionBtn, styles.disabled]} disabled>
-        <View style={[styles.actionCircle, styles.circleDisabled]}><Feather name="repeat" size={20} color={colors.muted} /></View>
-        {!prefs.hideQuickActionLabels && <Text style={styles.labelDisabled}>Swap</Text>}
+      <TouchableOpacity
+        style={[styles.actionBtn, !tradeEnabled && styles.disabled]}
+        disabled={!tradeEnabled}
+        onPress={() => { lightTap(); navigation.navigate("Trade"); }}
+        accessibilityHint={tradeEnabled ? "Open token trading" : tradeDisabledTitle}
+      >
+        <View style={[styles.actionCircle, !tradeEnabled && styles.circleDisabled]}><Feather name="trending-up" size={20} color={tradeEnabled ? colors.accent : colors.muted} /></View>
+        {!prefs.hideQuickActionLabels && <Text style={tradeEnabled ? styles.actionLabel : styles.labelDisabled}>{tradeChecking ? "Checking" : "Trade"}</Text>}
       </TouchableOpacity>
     </View>
   );
