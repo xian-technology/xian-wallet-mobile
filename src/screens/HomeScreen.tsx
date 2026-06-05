@@ -253,10 +253,10 @@ export function HomeScreen({ navigation }: HomeTabScreenProps<"Home">) {
         style={[styles.actionBtn, !tradeEnabled && styles.disabled]}
         disabled={!tradeEnabled}
         onPress={() => { lightTap(); navigation.navigate("Trade"); }}
-        accessibilityHint={tradeEnabled ? "Open token trading" : tradeDisabledTitle}
+        accessibilityHint={tradeEnabled ? "Open token swap" : tradeDisabledTitle}
       >
-        <View style={[styles.actionCircle, !tradeEnabled && styles.circleDisabled]}><Feather name="trending-up" size={20} color={tradeEnabled ? colors.accent : colors.muted} /></View>
-        {!prefs.hideQuickActionLabels && <Text style={tradeEnabled ? styles.actionLabel : styles.labelDisabled}>{tradeChecking ? "Checking" : "Trade"}</Text>}
+        <View style={[styles.actionCircle, !tradeEnabled && styles.circleDisabled]}><Feather name="repeat" size={20} color={tradeEnabled ? colors.accent : colors.muted} /></View>
+        {!prefs.hideQuickActionLabels && <Text style={tradeEnabled ? styles.actionLabel : styles.labelDisabled}>{tradeChecking ? "Checking" : "Swap"}</Text>}
       </TouchableOpacity>
     </View>
   );
