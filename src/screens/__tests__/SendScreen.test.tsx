@@ -1,6 +1,6 @@
 import React from "react";
-import { fireEvent, render, waitFor } from "@testing-library/react-native";
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 
 const mockUseWallet = jest.fn() as jest.Mock;
 const mockLoadUnlockedSession = jest.fn() as jest.Mock;
@@ -30,6 +30,7 @@ describe("SendScreen", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.useFakeTimers();
     mockUseWallet.mockReturnValue({
       state: {
         publicKey: "sender",
@@ -52,6 +53,10 @@ describe("SendScreen", () => {
       sessionKey: "session-key",
       expiresAt: Date.now() + 60_000
     }));
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   it("reviews and sends a transfer using bigint-safe parsing", async () => {
@@ -102,7 +107,36 @@ describe("SendScreen", () => {
         chi: 12_000
       })
     );
-    expect(mockShowToast).toHaveBeenCalledWith("Transaction finalized.", "success");
+    expect(mockShowToast).toHaveBeenNthCalledWith(
+      1,
+      "Transaction sent.",
+      "info",
+      expect.objectContaining({
+        icon: "info",
+        detail: "ABC123",
+        action: {
+          label: "View transaction",
+          url: "http://127.0.0.1:8080/explorer/tx/ABC123"
+        }
+      })
+    );
+    act(() => {
+      jest.advanceTimersByTime(1600);
+    });
+    expect(mockShowToast).toHaveBeenNthCalledWith(
+      2,
+      "Transaction finalized.",
+      "success",
+      expect.objectContaining({
+        icon: "success",
+        detail: "ABC123",
+        action: {
+          label: "View transaction",
+          url: "http://127.0.0.1:8080/explorer/tx/ABC123"
+        }
+      })
+    );
+    expect(navigation.navigate).toHaveBeenCalledWith("Main");
     expect(mockNotifyActivityChanged).toHaveBeenCalledWith(
       expect.objectContaining({
         txHash: "ABC123",

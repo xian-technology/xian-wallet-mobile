@@ -87,7 +87,17 @@ function HomeTabs() {
 function ToastOverlay() {
   const { toast, clearToast } = useWallet();
   if (!toast) return null;
-  return <Toast message={toast.message} tone={toast.tone} onDismiss={clearToast} />;
+  return (
+    <Toast
+      message={toast.message}
+      tone={toast.tone}
+      detail={toast.detail}
+      action={toast.action}
+      icon={toast.icon}
+      duration={toast.duration}
+      onDismiss={clearToast}
+    />
+  );
 }
 
 function LoadingScreen() {

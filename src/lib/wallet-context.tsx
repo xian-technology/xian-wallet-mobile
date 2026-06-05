@@ -69,9 +69,27 @@ export interface ActivityRefreshRequest {
   localTx?: TxHistoryRecord;
 }
 
-type ToastMessage = { message: string; tone: "success" | "danger" | "warning" | "info" } | null;
+export type ToastTone = "success" | "danger" | "warning" | "info";
+export type ToastIcon = ToastTone | "none";
 
-interface WalletContextValue {
+export interface ToastAction {
+  label: string;
+  url: string;
+}
+
+export interface ToastOptions {
+  detail?: string;
+  action?: ToastAction;
+  icon?: ToastIcon;
+  duration?: number;
+}
+
+export type ToastMessage = ({
+  message: string;
+  tone: ToastTone;
+} & ToastOptions) | null;
+
+export interface WalletContextValue {
   state: WalletState;
   refresh: () => Promise<void>;
   refreshBalances: () => Promise<void>;
@@ -79,7 +97,7 @@ interface WalletContextValue {
   rpc: XianRpcClient;
   controller: ReturnType<typeof import("./wallet-controller").createWalletController> | null;
   toast: ToastMessage;
-  showToast: (message: string, tone?: "success" | "danger" | "warning" | "info") => void;
+  showToast: (message: string, tone?: ToastTone, options?: ToastOptions) => void;
   clearToast: () => void;
   prefs: Preferences;
   updatePrefs: (update: Partial<Preferences>) => Promise<void>;
@@ -115,10 +133,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const showToast = useCallback(
-    (message: string, tone: "success" | "danger" | "warning" | "info" = "info") => {
-      setToast({ message, tone });
+    (message: string, tone: ToastTone = "info", options: ToastOptions = {}) => {
+      setToast({ message, tone, ...options });
       if (toastTimer.current) clearTimeout(toastTimer.current);
-      toastTimer.current = setTimeout(() => setToast(null), 3000);
+      const duration = options.duration ?? (options.action ? 6000 : 3000);
+      toastTimer.current = setTimeout(() => setToast(null), duration);
     },
     []
   );

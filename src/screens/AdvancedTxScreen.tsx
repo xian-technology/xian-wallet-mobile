@@ -7,7 +7,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Linking,
   TouchableOpacity,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
@@ -19,8 +18,15 @@ import { useWallet } from "../lib/wallet-context";
 import { loadUnlockedSession } from "../lib/storage";
 import { lightTap, successTap, errorTap } from "../lib/haptics";
 import { parsePositiveIntegerInput, parseTypedInput } from "../lib/runtime-input";
+import {
+  scheduleTransactionStatusToast,
+  showTransactionSentToast,
+  transactionSucceeded,
+  type TransactionNotificationResult,
+} from "../lib/transaction-notifications";
+import type { RootStackScreenProps } from "../navigation/types";
 
-type Step = "draft" | "review" | "sending" | "result";
+type Step = "draft" | "review" | "sending";
 
 interface ContractMethod {
   name: string;
@@ -38,7 +44,7 @@ function parseKwargs(args: Arg[]): Record<string, unknown> {
   return kw;
 }
 
-export function AdvancedTxScreen() {
+export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedTx">) {
   const { state, rpc, refreshBalances, showToast, notifyActivityChanged } = useWallet();
   const [step, setStep] = useState<Step>("draft");
   const [contract, setContract] = useState("");
@@ -52,7 +58,6 @@ export function AdvancedTxScreen() {
   const [methodsLoading, setMethodsLoading] = useState(false);
   const [methodsError, setMethodsError] = useState<string | null>(null);
   const methodsGen = useRef(0);
-  const [result, setResult] = useState<{ submitted: boolean; accepted: boolean; finalized: boolean; txHash?: string; message?: string; } | null>(null);
 
   // Load methods when contract changes (debounced + generation-guarded so late
   // responses can't overwrite newer input).
@@ -128,14 +133,35 @@ export function AdvancedTxScreen() {
       const s = chi ? parsePositiveIntegerInput(chi) : estimate?.estimated ?? 50000;
       if (s == null) throw new Error("Chi must be a positive integer");
       const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: contract.trim(), function: func.trim(), kwargs: kw, chi: s });
-      setResult(r); setStep("result");
-      const ok = r.finalized || r.accepted;
-      if (ok) { successTap(); showToast("Transaction finalized.", "success"); notifyActivityChanged({ txHash: r.txHash, sender: state.publicKey!, contract: contract.trim(), function: func.trim(), kwargs: kw, accepted: r.accepted, finalized: r.finalized, message: r.message }); void refreshBalances(); }
-      else { errorTap(); showToast("Transaction failed.", "danger"); }
-    } catch (e) { errorTap(); setResult({ submitted: false, accepted: false, finalized: false, message: e instanceof Error ? e.message : "Failed" }); setStep("result"); }
+      const sentShown = showTransactionSentToast(showToast, state.dashboardUrl, r);
+      scheduleTransactionStatusToast(showToast, state.dashboardUrl, r, sentShown ? 1600 : 0);
+      const ok = transactionSucceeded(r);
+      if (ok) {
+        successTap();
+        notifyActivityChanged({ txHash: r.txHash, sender: state.publicKey!, contract: contract.trim(), function: func.trim(), kwargs: kw, accepted: r.accepted, finalized: r.finalized, message: r.message });
+        void refreshBalances();
+        setStep("draft");
+        setEstimate(null);
+        setContract("");
+        setFunc("");
+        setArgs([]);
+        navigation.navigate("Main");
+      } else {
+        errorTap();
+        setStep("review");
+      }
+    } catch (e) {
+      errorTap();
+      const r: TransactionNotificationResult = {
+        submitted: false,
+        accepted: false,
+        finalized: false,
+        message: e instanceof Error ? e.message : "Failed",
+      };
+      scheduleTransactionStatusToast(showToast, state.dashboardUrl, r, 0);
+      setStep("review");
+    }
   };
-
-  const truncHash = (h: string) => h.length > 20 ? `${h.slice(0, 10)}...${h.slice(-8)}` : h;
 
   if (step === "review") {
     const kw = parseKwargs(args);
@@ -159,23 +185,6 @@ export function AdvancedTxScreen() {
 
   if (step === "sending") {
     return (<View style={[styles.container, styles.centered]}><ActivityIndicator size="large" color={colors.accent} /><Text style={styles.sendingText}>Sending...</Text></View>);
-  }
-
-  if (step === "result" && result) {
-    const ok = result.finalized || result.accepted;
-    return (
-      <View style={styles.container}>
-        <ScrollView contentContainerStyle={styles.scroll}>
-          {!ok && result.message && <View style={styles.errorBanner}><Text style={styles.errorText}>{result.message}</Text></View>}
-          {result.txHash && (
-            <Card><Row label="TX Hash" value={truncHash(result.txHash)} mono />
-              {state.dashboardUrl && <TouchableOpacity onPress={() => Linking.openURL(`${state.dashboardUrl!.replace(/\/+$/, "")}/explorer/tx/${result.txHash}`)}><Text style={styles.linkText}>View in explorer</Text></TouchableOpacity>}
-            </Card>
-          )}
-          <Button title="New Transaction" onPress={() => { setStep("draft"); setResult(null); setEstimate(null); setContract(""); setFunc(""); setArgs([]); }} />
-        </ScrollView>
-      </View>
-    );
   }
 
   return (
@@ -260,5 +269,4 @@ const styles = StyleSheet.create({
   mono: { fontFamily: "monospace" },
   errorBanner: { backgroundColor: colors.dangerSoft, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.danger },
   errorText: { fontSize: 13, color: colors.danger },
-  linkText: { fontSize: 13, color: colors.accent, fontWeight: "600", textAlign: "center", paddingTop: 8 },
 });

@@ -9,7 +9,6 @@ import {
   Keyboard,
   Platform,
   ActivityIndicator,
-  Linking,
   Modal,
   FlatList,
 } from "react-native";
@@ -29,9 +28,15 @@ import {
   isRecognizedXianRecipient,
   parseAmountInput
 } from "../lib/runtime-input";
+import {
+  scheduleTransactionStatusToast,
+  showTransactionSentToast,
+  transactionSucceeded,
+  type TransactionNotificationResult,
+} from "../lib/transaction-notifications";
 import type { RootStackScreenProps } from "../navigation/types";
 
-type Step = "draft" | "review" | "sending" | "result";
+type Step = "draft" | "review" | "sending";
 
 export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) {
   const { state, rpc, refreshBalances, showToast, notifyActivityChanged } = useWallet();
@@ -46,9 +51,6 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
   const [chiRate, setChiRate] = useState<number | null>(null);
   const [showContacts, setShowContacts] = useState(false);
   const [unrecognizedRecipient, setUnrecognizedRecipient] = useState<string | null>(null);
-  const [result, setResult] = useState<{
-    submitted: boolean; accepted: boolean; finalized: boolean; txHash?: string; message?: string;
-  } | null>(null);
 
   const visibleTokens = visibleAssetsForActiveNetwork(state);
   const activeToken = visibleTokens.some((asset) => asset.contract === selectedToken)
@@ -110,11 +112,33 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
       if (parsedAmount == null) throw new Error("Enter a valid amount");
       const kwargs = { to: to.trim(), amount: parsedAmount };
       const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: activeToken, function: "transfer", kwargs, chi: estimate?.estimated ?? 50000 });
-      setResult(r); setStep("result");
-      const ok = r.finalized || r.accepted;
-      if (ok) { successTap(); showToast(r.finalized ? "Transaction finalized." : "Transaction accepted.", "success"); notifyActivityChanged({ txHash: r.txHash, sender: state.publicKey!, contract: activeToken, function: "transfer", kwargs, accepted: r.accepted, finalized: r.finalized, message: r.message }); void refreshBalances(); }
-      else { errorTap(); showToast("Transaction failed.", "danger"); }
-    } catch (e) { errorTap(); setResult({ submitted: false, accepted: false, finalized: false, message: e instanceof Error ? e.message : "Failed" }); setStep("result"); }
+      const sentShown = showTransactionSentToast(showToast, state.dashboardUrl, r);
+      scheduleTransactionStatusToast(showToast, state.dashboardUrl, r, sentShown ? 1600 : 0);
+      const ok = transactionSucceeded(r);
+      if (ok) {
+        successTap();
+        notifyActivityChanged({ txHash: r.txHash, sender: state.publicKey!, contract: activeToken, function: "transfer", kwargs, accepted: r.accepted, finalized: r.finalized, message: r.message });
+        void refreshBalances();
+        setStep("draft");
+        setTo("");
+        setAmount("");
+        setEstimate(null);
+        navigation.navigate("Main");
+      } else {
+        errorTap();
+        setStep("review");
+      }
+    } catch (e) {
+      errorTap();
+      const r: TransactionNotificationResult = {
+        submitted: false,
+        accepted: false,
+        finalized: false,
+        message: e instanceof Error ? e.message : "Failed",
+      };
+      scheduleTransactionStatusToast(showToast, state.dashboardUrl, r, 0);
+      setStep("review");
+    }
   };
 
   const truncHash = (h: string) => h.length > 20 ? `${h.slice(0, 10)}...${h.slice(-8)}` : h;
@@ -237,28 +261,6 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
     return (<View style={[styles.container, styles.centered]}><ActivityIndicator size="large" color={colors.accent} /><Text style={styles.sendingText}>Sending...</Text></View>);
   }
 
-  if (step === "result" && result) {
-    const ok = result.finalized || result.accepted;
-    return (
-      <View style={styles.container}>
-        <ScrollView contentContainerStyle={styles.scroll}>
-          {!ok && result.message && <View style={styles.errorBanner}><Text style={styles.errorText}>{result.message}</Text></View>}
-          {result.txHash && (
-            <Card>
-              <Row label="TX Hash" value={truncHash(result.txHash)} mono />
-              {state.dashboardUrl && (
-                <TouchableOpacity onPress={() => Linking.openURL(`${state.dashboardUrl!.replace(/\/+$/, "")}/explorer/tx/${result.txHash}`)}>
-                  <Text style={styles.linkText}>View in explorer</Text>
-                </TouchableOpacity>
-              )}
-            </Card>
-          )}
-          <Button title="New Transaction" onPress={() => { setStep("draft"); setTo(""); setAmount(""); setResult(null); setEstimate(null); }} />
-        </ScrollView>
-      </View>
-    );
-  }
-
   // ── Draft ───────────────────────────────────────────────────
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -343,7 +345,6 @@ const styles = StyleSheet.create({
   mono: { fontFamily: "monospace" },
   errorBanner: { backgroundColor: colors.dangerSoft, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.danger },
   errorText: { fontSize: 13, color: colors.danger },
-  linkText: { fontSize: 13, color: colors.accent, fontWeight: "600", textAlign: "center", paddingTop: 8 },
   // Contact modal
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
   modalContent: { backgroundColor: colors.bg1, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "50%", padding: 16 },

@@ -80,7 +80,9 @@ describe("AdvancedTxScreen", () => {
       txHash: "XYZ789"
     }));
 
-    const screen = render(<AdvancedTxScreen />);
+    const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof AdvancedTxScreen>["navigation"];
+    const route = {} as unknown as React.ComponentProps<typeof AdvancedTxScreen>["route"];
+    const screen = render(<AdvancedTxScreen navigation={navigation} route={route} />);
 
     fireEvent.changeText(screen.getByPlaceholderText("e.g. currency"), "con_token");
     await act(async () => {
@@ -118,7 +120,36 @@ describe("AdvancedTxScreen", () => {
         chi: 9007199254740995n
       })
     );
-    expect(mockShowToast).toHaveBeenCalledWith("Transaction finalized.", "success");
+    expect(mockShowToast).toHaveBeenNthCalledWith(
+      1,
+      "Transaction sent.",
+      "info",
+      expect.objectContaining({
+        icon: "info",
+        detail: "XYZ789",
+        action: {
+          label: "View transaction",
+          url: "http://127.0.0.1:8080/explorer/tx/XYZ789"
+        }
+      })
+    );
+    act(() => {
+      jest.advanceTimersByTime(1600);
+    });
+    expect(mockShowToast).toHaveBeenNthCalledWith(
+      2,
+      "Transaction finalized.",
+      "success",
+      expect.objectContaining({
+        icon: "success",
+        detail: "XYZ789",
+        action: {
+          label: "View transaction",
+          url: "http://127.0.0.1:8080/explorer/tx/XYZ789"
+        }
+      })
+    );
+    expect(navigation.navigate).toHaveBeenCalledWith("Main");
     expect(mockNotifyActivityChanged).toHaveBeenCalledWith(
       expect.objectContaining({
         txHash: "XYZ789",
@@ -149,7 +180,9 @@ describe("AdvancedTxScreen", () => {
       txHash: "AUTO123"
     }));
 
-    const screen = render(<AdvancedTxScreen />);
+    const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof AdvancedTxScreen>["navigation"];
+    const route = {} as unknown as React.ComponentProps<typeof AdvancedTxScreen>["route"];
+    const screen = render(<AdvancedTxScreen navigation={navigation} route={route} />);
 
     fireEvent.changeText(screen.getByPlaceholderText("e.g. currency"), "currency");
     fireEvent.changeText(screen.getByPlaceholderText("e.g. transfer"), "approve");
