@@ -22,6 +22,7 @@ import { parseWalletBackupJson } from "../lib/wallet-backup";
 import { lightTap } from "../lib/haptics";
 
 type Mode = "create" | "seed" | "key" | "backup";
+const SETUP_FORM_MIN_HEIGHT = 470;
 
 export function SetupScreen() {
   const { refresh, controller } = useWallet();
@@ -168,7 +169,7 @@ export function SetupScreen() {
           <Text style={styles.sub}>Self-custody for Xian. Keys encrypted locally.</Text>
         </View>
 
-        <View style={styles.form} testID="setup-form">
+        <View style={[styles.form, styles.setupForm]} testID="setup-form">
           <View style={styles.tabs}>
             {(["create", "seed", "key", "backup"] as const).map((m) => (
               <TouchableOpacity
@@ -366,6 +367,9 @@ const styles = StyleSheet.create({
     maxWidth: 520,
     alignSelf: "center" as const,
     gap: 16,
+  },
+  setupForm: {
+    minHeight: SETUP_FORM_MIN_HEIGHT,
   },
   logo: {
     width: 64,
