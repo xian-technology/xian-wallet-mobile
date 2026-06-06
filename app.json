@@ -45,6 +45,9 @@
       },
       "edgeToEdgeEnabled": true
     },
+    "extra": {
+      "walletConnectProjectId": "5b4c41698ebed6e52ba745b9111eada9"
+    },
     "plugins": [
       "expo-secure-store",
       [
