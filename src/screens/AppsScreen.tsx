@@ -115,6 +115,7 @@ export function AppsScreen() {
   const [busy, setBusy] = useState<string | null>(null);
   const [trustRequest, setTrustRequest] = useState(false);
   const [scannerVisible, setScannerVisible] = useState(false);
+  const [manualPairingVisible, setManualPairingVisible] = useState(false);
   const [scanned, setScanned] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
@@ -290,25 +291,35 @@ export function AppsScreen() {
             </View>
           ) : (
             <>
-              <Input
-                label="Pair URI"
-                value={uri}
-                onChangeText={setUri}
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholder="wc:..."
-              />
-              <View style={styles.row}>
-                <Button title="Paste" variant="secondary" onPress={pasteUri} style={styles.rowButton} />
-                <Button title="Scan QR" variant="secondary" onPress={openScanner} style={styles.rowButton} />
+              <Button title="Scan QR" onPress={openScanner} />
+              {!manualPairingVisible ? (
                 <Button
-                  title="Pair"
-                  onPress={pair}
-                  loading={busy === "pair"}
-                  disabled={!uri.trim()}
-                  style={styles.rowButton}
+                  title="Paste WalletConnect URI"
+                  variant="ghost"
+                  onPress={() => setManualPairingVisible(true)}
                 />
-              </View>
+              ) : (
+                <View style={styles.manualPairing}>
+                  <Input
+                    label="WalletConnect URI"
+                    value={uri}
+                    onChangeText={setUri}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    placeholder="wc:..."
+                  />
+                  <View style={styles.row}>
+                    <Button title="Paste" variant="secondary" onPress={pasteUri} style={styles.rowButton} />
+                    <Button
+                      title="Pair"
+                      onPress={pair}
+                      loading={busy === "pair"}
+                      disabled={!uri.trim()}
+                      style={styles.rowButton}
+                    />
+                  </View>
+                </View>
+              )}
             </>
           )}
         </View>
@@ -540,6 +551,9 @@ const styles = StyleSheet.create({
   },
   rowButton: {
     flex: 1,
+  },
+  manualPairing: {
+    gap: 10,
   },
   notice: {
     flexDirection: "row",
