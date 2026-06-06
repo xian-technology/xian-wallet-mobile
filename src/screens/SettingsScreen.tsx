@@ -344,6 +344,7 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
     try {
       const status = biometricStatus ?? await getBiometricStatus();
       setBiometricStatus(status);
+      const label = status.label;
       if (!biometricEnabled && !status.available) {
         showToast(status.reason ?? "Biometric unlock is not available.", "warning");
         return;
@@ -351,11 +352,11 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
       if (biometricEnabled) {
         await controller.disableBiometricUnlock();
         setBiometricEnabled(false);
-        showToast("Biometric unlock disabled.", "success");
+        showToast(`${label} unlock disabled.`, "success");
       } else {
         await controller.enableBiometricUnlock();
         setBiometricEnabled(true);
-        showToast("Biometric unlock enabled.", "success");
+        showToast(`${label} unlock enabled.`, "success");
       }
     } catch (e) {
       showToast(

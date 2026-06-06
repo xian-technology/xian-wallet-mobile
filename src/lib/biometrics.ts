@@ -1,4 +1,5 @@
 import * as LocalAuthentication from "expo-local-authentication";
+import { Platform } from "react-native";
 
 export interface BiometricStatus {
   available: boolean;
@@ -8,11 +9,11 @@ export interface BiometricStatus {
 }
 
 function labelForTypes(types: LocalAuthentication.AuthenticationType[]): string {
-  if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
-    return "Face ID";
-  }
   if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
     return "Fingerprint";
+  }
+  if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
+    return Platform.OS === "ios" ? "Face ID" : "Face unlock";
   }
   return "Device biometrics";
 }

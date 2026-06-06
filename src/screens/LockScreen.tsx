@@ -7,6 +7,7 @@ import {
   Platform,
   Image,
   TouchableOpacity,
+  ActivityIndicator,
 } from "react-native";
 import { colors } from "../theme/colors";
 import { Button } from "../components/Button";
@@ -16,6 +17,8 @@ import { useWallet } from "../lib/wallet-context";
 import { errorTap, successTap } from "../lib/haptics";
 import { getBiometricStatus } from "../lib/biometrics";
 
+const MAX_BIOMETRIC_UNLOCK_FAILURES = 5;
+
 export function LockScreen() {
   const { refresh, controller } = useWallet();
   const [password, setPassword] = useState("");
@@ -23,14 +26,22 @@ export function LockScreen() {
   const [biometricLoading, setBiometricLoading] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricLabel, setBiometricLabel] = useState("Biometric");
+  const [biometricChecked, setBiometricChecked] = useState(false);
+  const [biometricFailureCount, setBiometricFailureCount] = useState(0);
+  const [passwordFallback, setPasswordFallback] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const useBiometricOnly = biometricAvailable && !passwordFallback;
 
   useEffect(() => {
     let active = true;
     const loadBiometricState = async () => {
-      if (!controller) return;
+      if (!controller) {
+        setBiometricChecked(true);
+        return;
+      }
+      setBiometricChecked(false);
       try {
         const [status, enabled] = await Promise.all([
           getBiometricStatus(),
@@ -39,9 +50,15 @@ export function LockScreen() {
         if (!active) return;
         setBiometricLabel(status.label);
         setBiometricAvailable(status.available && enabled);
+        setBiometricFailureCount(0);
+        setPasswordFallback(false);
       } catch {
         if (active) {
           setBiometricAvailable(false);
+        }
+      } finally {
+        if (active) {
+          setBiometricChecked(true);
         }
       }
     };
@@ -77,7 +94,17 @@ export function LockScreen() {
       await refresh();
     } catch {
       errorTap();
-      setError(`${biometricLabel} unlock failed.`);
+      const nextFailureCount = biometricFailureCount + 1;
+      setBiometricFailureCount(nextFailureCount);
+      if (nextFailureCount >= MAX_BIOMETRIC_UNLOCK_FAILURES) {
+        setPasswordFallback(true);
+        setError(`${biometricLabel} unlock failed 5 times. Enter your password to unlock.`);
+      } else {
+        const remaining = MAX_BIOMETRIC_UNLOCK_FAILURES - nextFailureCount;
+        setError(
+          `${biometricLabel} unlock failed. ${remaining} ${remaining === 1 ? "attempt" : "attempts"} remaining before password unlock.`
+        );
+      }
     } finally {
       setBiometricLoading(false);
     }
@@ -91,18 +118,30 @@ export function LockScreen() {
       <View style={styles.inner}>
         <Image source={require("../../assets/xian-logo.png")} style={styles.logo} />
         <Text style={styles.heading}>Xian Wallet</Text>
-        <Text style={styles.sub}>Enter your password to unlock.</Text>
+        <Text style={styles.sub}>
+          {!biometricChecked
+            ? "Checking unlock options."
+            : useBiometricOnly
+            ? `Unlock with ${biometricLabel}.`
+            : "Enter your password to unlock."}
+        </Text>
 
-        <View style={styles.inputWrap}>
-          <Input
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Password"
-            onSubmitEditing={handleUnlock}
-            returnKeyType="go"
-          />
-        </View>
+        {!biometricChecked && (
+          <ActivityIndicator color={colors.accent} />
+        )}
+
+        {biometricChecked && !useBiometricOnly && (
+          <View style={styles.inputWrap}>
+            <Input
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Password"
+              onSubmitEditing={handleUnlock}
+              returnKeyType="go"
+            />
+          </View>
+        )}
 
         {error && (
           <View style={styles.errorBanner}>
@@ -110,11 +149,13 @@ export function LockScreen() {
           </View>
         )}
 
-        <View style={styles.inputWrap}>
-          <Button title="Unlock" onPress={handleUnlock} loading={loading} />
-        </View>
+        {biometricChecked && !useBiometricOnly && (
+          <View style={styles.inputWrap}>
+            <Button title="Unlock" onPress={handleUnlock} loading={loading} />
+          </View>
+        )}
 
-        {biometricAvailable && (
+        {biometricChecked && useBiometricOnly && (
           <View style={styles.inputWrap}>
             <Button
               title={`Unlock with ${biometricLabel}`}
