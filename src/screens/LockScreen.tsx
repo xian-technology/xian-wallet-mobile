@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -32,6 +32,7 @@ export function LockScreen() {
   const [error, setError] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const biometricAutoPromptedRef = useRef(false);
   const useBiometricOnly = biometricAvailable && !passwordFallback;
 
   useEffect(() => {
@@ -41,6 +42,7 @@ export function LockScreen() {
         setBiometricChecked(true);
         return;
       }
+      biometricAutoPromptedRef.current = false;
       setBiometricChecked(false);
       try {
         const [status, enabled] = await Promise.all([
@@ -84,7 +86,7 @@ export function LockScreen() {
     }
   };
 
-  const handleBiometricUnlock = async () => {
+  const handleBiometricUnlock = useCallback(async () => {
     if (!controller) return;
     setBiometricLoading(true);
     setError(null);
@@ -108,7 +110,21 @@ export function LockScreen() {
     } finally {
       setBiometricLoading(false);
     }
-  };
+  }, [biometricFailureCount, biometricLabel, controller, refresh]);
+
+  useEffect(() => {
+    if (
+      !biometricChecked ||
+      !useBiometricOnly ||
+      biometricAutoPromptedRef.current ||
+      biometricLoading
+    ) {
+      return;
+    }
+
+    biometricAutoPromptedRef.current = true;
+    void handleBiometricUnlock();
+  }, [biometricChecked, biometricLoading, handleBiometricUnlock, useBiometricOnly]);
 
   return (
     <KeyboardAvoidingView
@@ -122,11 +138,13 @@ export function LockScreen() {
           {!biometricChecked
             ? "Checking unlock options."
             : useBiometricOnly
-            ? `Unlock with ${biometricLabel}.`
+            ? biometricLoading
+              ? `Confirm ${biometricLabel} to unlock.`
+              : `Unlock with ${biometricLabel}.`
             : "Enter your password to unlock."}
         </Text>
 
-        {!biometricChecked && (
+        {(!biometricChecked || (useBiometricOnly && biometricLoading)) && (
           <ActivityIndicator color={colors.accent} />
         )}
 
@@ -155,15 +173,13 @@ export function LockScreen() {
           </View>
         )}
 
-        {biometricChecked && useBiometricOnly && (
-          <View style={styles.inputWrap}>
-            <Button
-              title={`Unlock with ${biometricLabel}`}
-              variant="secondary"
-              onPress={handleBiometricUnlock}
-              loading={biometricLoading}
-            />
-          </View>
+        {biometricChecked && useBiometricOnly && biometricFailureCount > 0 && !biometricLoading && (
+          <TouchableOpacity
+            style={styles.retryLink}
+            onPress={handleBiometricUnlock}
+          >
+            <Text style={styles.retryText}>Try {biometricLabel} again</Text>
+          </TouchableOpacity>
         )}
 
         <TouchableOpacity
@@ -237,6 +253,16 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 13,
     color: colors.danger,
+  },
+  retryLink: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  retryText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.accent,
+    textAlign: "center",
   },
   forgotLink: {
     marginTop: 8,

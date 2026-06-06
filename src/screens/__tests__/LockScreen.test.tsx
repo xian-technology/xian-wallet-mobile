@@ -49,18 +49,15 @@ describe("LockScreen", () => {
     });
   });
 
-  it("uses fingerprint-only unlock while biometric unlock is enabled", async () => {
+  it("auto-starts fingerprint unlock while biometric unlock is enabled", async () => {
     const screen = render(<LockScreen />);
 
     expect(screen.getByText("Checking unlock options.")).toBeTruthy();
-    await waitFor(() => expect(screen.getByText("Unlock with Fingerprint")).toBeTruthy());
+    await waitFor(() => expect(mockUnlockWithBiometrics).toHaveBeenCalledTimes(1));
 
     expect(screen.queryByPlaceholderText("Password")).toBeNull();
     expect(screen.queryByText("Unlock")).toBeNull();
-
-    fireEvent.press(screen.getByText("Unlock with Fingerprint"));
-
-    await waitFor(() => expect(mockUnlockWithBiometrics).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("Unlock with Fingerprint")).toBeNull();
     expect(mockUnlock).not.toHaveBeenCalled();
     expect(mockRefresh).toHaveBeenCalled();
   });
@@ -71,17 +68,18 @@ describe("LockScreen", () => {
     });
 
     const screen = render(<LockScreen />);
-    await waitFor(() => expect(screen.getByText("Unlock with Fingerprint")).toBeTruthy());
+    await waitFor(() => expect(mockUnlockWithBiometrics).toHaveBeenCalledTimes(1));
 
-    for (let attempt = 1; attempt <= 5; attempt += 1) {
-      fireEvent.press(screen.getByText("Unlock with Fingerprint"));
+    for (let attempt = 2; attempt <= 5; attempt += 1) {
+      await waitFor(() => expect(screen.getByText("Try Fingerprint again")).toBeTruthy());
+      fireEvent.press(screen.getByText("Try Fingerprint again"));
       await waitFor(() => expect(mockUnlockWithBiometrics).toHaveBeenCalledTimes(attempt));
     }
 
     await waitFor(() =>
       expect(screen.getByText("Fingerprint unlock failed 5 times. Enter your password to unlock.")).toBeTruthy()
     );
-    expect(screen.queryByText("Unlock with Fingerprint")).toBeNull();
+    expect(screen.queryByText("Try Fingerprint again")).toBeNull();
 
     fireEvent.changeText(screen.getByPlaceholderText("Password"), "secret123");
     fireEvent.press(screen.getByText("Unlock"));
