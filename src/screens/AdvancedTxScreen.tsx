@@ -51,6 +51,7 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
   const [func, setFunc] = useState("");
   const [args, setArgs] = useState<Arg[]>([]);
   const [chi, setChi] = useState("");
+  const [chiRate, setChiRate] = useState<number | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [estimate, setEstimate] = useState<{ estimated: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +59,13 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
   const [methodsLoading, setMethodsLoading] = useState(false);
   const [methodsError, setMethodsError] = useState<string | null>(null);
   const methodsGen = useRef(0);
+
+  const loadChiRate = () => {
+    setChiRate(null);
+    void rpc.getChiRate()
+      .then(setChiRate)
+      .catch(() => setChiRate(null));
+  };
 
   // Load methods when contract changes (debounced + generation-guarded so late
   // responses can't overwrite newer input).
@@ -110,6 +118,7 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
       }
       setError(null);
       setEstimate(null);
+      loadChiRate();
       lightTap();
       setStep("review");
       return;
@@ -119,7 +128,7 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
     try {
       const kw = parseKwargs(args);
       const est = await rpc.estimateChi({ sender: state.publicKey!, contract: contract.trim(), function: func.trim(), kwargs: kw });
-      setEstimate(est); lightTap(); setStep("review");
+      setEstimate(est); loadChiRate(); lightTap(); setStep("review");
     } catch (e) { setError(e instanceof Error ? e.message : "Estimation failed"); }
     finally { setEstimating(false); }
   };
@@ -142,6 +151,7 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
         void refreshBalances();
         setStep("draft");
         setEstimate(null);
+        setChiRate(null);
         setContract("");
         setFunc("");
         setArgs([]);
@@ -165,14 +175,25 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
 
   if (step === "review") {
     const kw = parseKwargs(args);
+    const kwEntries = Object.entries(kw);
+    const manualChi = chi.trim() ? parsePositiveIntegerInput(chi.trim()) : null;
+    const chiValue = formatChi(manualChi ?? estimate?.estimated ?? null, chiRate);
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scroll}>
-          <Card title="Transaction Summary">
+          <Card title="Transaction summary">
             <Row label="Contract" value={contract} mono />
             <Row label="Function" value={func} />
-            <Row label="Chi" value={chi.trim() || (estimate ? `${estimate.estimated.toLocaleString()}` : "auto")} />
-            {Object.entries(kw).map(([k, v]) => <Row key={k} label={k} value={String(v)} mono />)}
+            <View style={styles.sectionLabelWrap}>
+              <Text style={styles.sectionLabel}>Arguments</Text>
+            </View>
+            {kwEntries.length > 0
+              ? kwEntries.map(([k, v]) => <Row key={k} label={k} value={String(v)} mono />)
+              : <Text style={styles.emptyRow}>No arguments</Text>}
+          </Card>
+
+          <Card title="Transaction fee">
+            <Row label="Chi" value={chiValue} />
           </Card>
         </ScrollView>
         <View style={styles.stickyBottom}>
@@ -247,6 +268,13 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
   return (<View style={styles.detailRow}><Text style={styles.detailLabel}>{label}</Text><Text style={[styles.detailValue, mono && styles.mono]} numberOfLines={1}>{value}</Text></View>);
 }
 
+function formatChi(value: number | bigint | null, chiRate: number | null): string {
+  if (value == null) return "Not provided";
+  const formatted = value.toLocaleString();
+  if (typeof value !== "number" || !chiRate) return formatted;
+  return `${formatted} (~${(value / chiRate).toLocaleString(undefined, { maximumFractionDigits: 8 })} XIAN)`;
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg0 },
   centered: { alignItems: "center", justifyContent: "center" },
@@ -267,6 +295,9 @@ const styles = StyleSheet.create({
   detailLabel: { fontSize: 13, color: colors.muted },
   detailValue: { fontSize: 13, color: colors.fg, fontWeight: "500", maxWidth: "60%" },
   mono: { fontFamily: "monospace" },
+  sectionLabelWrap: { paddingTop: 8 },
+  sectionLabel: { color: colors.muted, fontSize: 12, fontWeight: "700", textTransform: "uppercase" },
+  emptyRow: { color: colors.muted, fontSize: 13, paddingVertical: 6 },
   errorBanner: { backgroundColor: colors.dangerSoft, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.danger },
   errorText: { fontSize: 13, color: colors.danger },
 });

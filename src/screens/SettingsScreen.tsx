@@ -22,6 +22,7 @@ import { Input } from "../components/Input";
 import { Card } from "../components/Card";
 import { useWallet } from "../lib/wallet-context";
 import { saveWalletState, loadWalletState } from "../lib/storage";
+import { parseWalletBackupJson } from "../lib/wallet-backup";
 import { assertRpcTransportAllowed } from "../lib/network-security";
 import { lightTap } from "../lib/haptics";
 import { getBiometricStatus, type BiometricStatus } from "../lib/biometrics";
@@ -159,10 +160,7 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
 
   const importWalletBackupJson = async (json: string) => {
     if (!controller) return;
-    const backup = JSON.parse(json);
-    if (!backup?.version || (backup.version !== 2 && !backup.type)) {
-      throw new Error("Invalid backup.");
-    }
+    const backup = parseWalletBackupJson(json);
     await controller.importWalletBackup(backup, backupPassword);
     showToast("Wallet imported.", "success");
     await refresh();

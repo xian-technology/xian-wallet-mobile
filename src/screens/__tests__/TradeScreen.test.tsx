@@ -168,13 +168,13 @@ describe("TradeScreen", () => {
     );
     await waitFor(() =>
       expect(
-        screen.getByText("Approval complete. Review and send the swap to complete the trade.")
+        screen.getByText("Approval complete. Review and send the swap.")
       ).toBeTruthy()
     );
     await waitFor(() => expect(screen.getByText("Review Swap")).toBeTruthy());
 
     fireEvent.press(screen.getByText("Review Swap"));
-    await waitFor(() => expect(screen.getByText("Trade summary")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Swap summary")).toBeTruthy());
     fireEvent.press(screen.getByText("Send Swap"));
 
     await waitFor(() =>

@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import * as Clipboard from "expo-clipboard";
+import * as DocumentPicker from "expo-document-picker";
+import { File } from "expo-file-system";
 import {
   View,
   Text,
@@ -16,9 +18,10 @@ import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Card } from "../components/Card";
 import { useWallet } from "../lib/wallet-context";
+import { parseWalletBackupJson } from "../lib/wallet-backup";
 import { lightTap } from "../lib/haptics";
 
-type Mode = "create" | "seed" | "key";
+type Mode = "create" | "seed" | "key" | "backup";
 
 export function SetupScreen() {
   const { refresh, controller } = useWallet();
@@ -27,6 +30,8 @@ export function SetupScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [mnemonic, setMnemonic] = useState("");
   const [privateKey, setPrivateKey] = useState("");
+  const [backupJson, setBackupJson] = useState("");
+  const [backupFileName, setBackupFileName] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [generatedMnemonic, setGeneratedMnemonic] = useState<string | null>(null);
@@ -39,7 +44,11 @@ export function SetupScreen() {
 
   const handleCreate = async () => {
     if (!controller) return;
-    if (password.length < 6) {
+    if (!password) {
+      setError(mode === "backup" ? "Enter the backup password." : "Enter a wallet password.");
+      return;
+    }
+    if (mode !== "backup" && password.length < 6) {
       setError("Password must be at least 6 characters.");
       return;
     }
@@ -52,6 +61,13 @@ export function SetupScreen() {
     setError(null);
 
     try {
+      if (mode === "backup") {
+        const backup = parseWalletBackupJson(backupJson.trim());
+        await controller.importWalletBackup(backup, password);
+        await refresh();
+        return;
+      }
+
       const opts: Parameters<typeof controller.createWallet>[0] = {
         password,
         networkName: networkName.trim() || undefined,
@@ -76,6 +92,32 @@ export function SetupScreen() {
       setError(e instanceof Error ? e.message : "Failed to create wallet");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const importBackupFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "application/json",
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if (!asset) return;
+      const file = new File(asset.uri);
+      const json = (await file.text()).trim();
+      if (!json) {
+        setError("Selected file is empty.");
+        return;
+      }
+      parseWalletBackupJson(json);
+      setBackupJson(json);
+      setBackupFileName(asset.name ?? "backup file");
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Import failed");
+      setBackupFileName(null);
     }
   };
 
@@ -128,14 +170,14 @@ export function SetupScreen() {
 
         <View style={styles.form} testID="setup-form">
           <View style={styles.tabs}>
-            {(["create", "seed", "key"] as const).map((m) => (
+            {(["create", "seed", "key", "backup"] as const).map((m) => (
               <TouchableOpacity
                 key={m}
                 style={[styles.tab, mode === m && styles.tabActive]}
                 onPress={() => { setMode(m); setError(null); }}
               >
                 <Text style={[styles.tabText, mode === m && styles.tabTextActive]}>
-                  {m === "create" ? "Create" : m === "seed" ? "Seed" : "Key"}
+                  {m === "create" ? "Create" : m === "seed" ? "Seed" : m === "key" ? "Key" : "Backup"}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -143,11 +185,11 @@ export function SetupScreen() {
 
           <Card>
             <Input
-              label="Password"
+              label={mode === "backup" ? "Backup password" : "Password"}
               secureTextEntry
               value={password}
               onChangeText={setPassword}
-              placeholder="Wallet password"
+              placeholder={mode === "backup" ? "Backup password" : "Wallet password"}
             />
             {mode === "create" && (
               <Input
@@ -179,18 +221,59 @@ export function SetupScreen() {
                 autoCorrect={false}
               />
             )}
+            {mode === "backup" && (
+              <>
+                <View style={styles.btnRow}>
+                  <Button
+                    title="Import File"
+                    variant="secondary"
+                    onPress={importBackupFile}
+                    style={{ flex: 1 }}
+                  />
+                  <Button
+                    title="Clear"
+                    variant="ghost"
+                    onPress={() => {
+                      setBackupJson("");
+                      setBackupFileName(null);
+                      setError(null);
+                    }}
+                    style={{ flex: 1 }}
+                  />
+                </View>
+                {backupFileName && (
+                  <Text style={styles.loadedFileText}>Loaded {backupFileName}.</Text>
+                )}
+                <Input
+                  label="Backup JSON"
+                  value={backupJson}
+                  onChangeText={(value) => {
+                    setBackupJson(value);
+                    setBackupFileName(null);
+                  }}
+                  placeholder="Paste encrypted backup JSON"
+                  multiline
+                  numberOfLines={6}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={styles.backupJsonInput}
+                />
+              </>
+            )}
           </Card>
 
-          <TouchableOpacity
-            style={styles.disclosure}
-            onPress={() => setNetworkExpanded(!networkExpanded)}
-          >
-            <Text style={styles.disclosureText}>
-              {networkExpanded ? "▼" : "▶"}  Network settings
-            </Text>
-          </TouchableOpacity>
+          {mode !== "backup" && (
+            <TouchableOpacity
+              style={styles.disclosure}
+              onPress={() => setNetworkExpanded(!networkExpanded)}
+            >
+              <Text style={styles.disclosureText}>
+                {networkExpanded ? "▼" : "▶"}  Network settings
+              </Text>
+            </TouchableOpacity>
+          )}
 
-          {networkExpanded && (
+          {mode !== "backup" && networkExpanded && (
             <Card>
               <Input
                 label="Network label"
@@ -249,7 +332,9 @@ export function SetupScreen() {
                 ? "Create Wallet"
                 : mode === "seed"
                   ? "Import from Seed"
-                  : "Import from Key"
+                  : mode === "key"
+                    ? "Import from Key"
+                    : "Import Backup"
             }
             onPress={handleCreate}
             loading={loading}
@@ -350,6 +435,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.muted,
     marginTop: 3,
+  },
+  btnRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  loadedFileText: {
+    fontSize: 12,
+    color: colors.muted,
+  },
+  backupJsonInput: {
+    minHeight: 120,
+    textAlignVertical: "top",
+    fontFamily: "monospace",
+    fontSize: 12,
   },
   errorBanner: {
     backgroundColor: colors.dangerSoft,

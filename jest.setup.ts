@@ -26,6 +26,56 @@ jest.mock("expo-clipboard", () => ({
   setStringAsync: jest.fn(async () => undefined)
 }));
 
+jest.mock("expo-document-picker", () => ({
+  getDocumentAsync: jest.fn(async () => ({ canceled: true, assets: [] }))
+}));
+
+jest.mock("expo-file-system", () => {
+  const fileTextByUri = new Map<string, string>();
+
+  class MockFile {
+    uri: string;
+    exists = false;
+
+    constructor(...parts: string[]) {
+      this.uri = parts.join("/");
+      this.exists = fileTextByUri.has(this.uri);
+    }
+
+    create(): void {
+      this.exists = true;
+      if (!fileTextByUri.has(this.uri)) {
+        fileTextByUri.set(this.uri, "");
+      }
+    }
+
+    write(value: string): void {
+      this.exists = true;
+      fileTextByUri.set(this.uri, value);
+    }
+
+    async text(): Promise<string> {
+      return fileTextByUri.get(this.uri) ?? "";
+    }
+
+    delete(): void {
+      this.exists = false;
+      fileTextByUri.delete(this.uri);
+    }
+  }
+
+  return {
+    File: MockFile,
+    Paths: { cache: "/tmp/xian-wallet-mobile" },
+    __setFileText: (uri: string, text: string) => {
+      fileTextByUri.set(uri, text);
+    },
+    __clearFileText: () => {
+      fileTextByUri.clear();
+    }
+  };
+});
+
 jest.mock("expo-haptics", () => ({
   ImpactFeedbackStyle: {
     Light: "light",

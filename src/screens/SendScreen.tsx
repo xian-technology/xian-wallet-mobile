@@ -239,14 +239,24 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
 
   // ── Review ──────────────────────────────────────────────────
   if (step === "review") {
+    const chiValue = formatChi(estimate?.estimated ?? null, chiRate);
+    const parsedAmount = parseAmountInput(amount);
+    const amountValue = `${formatRuntimeInput(parsedAmount) || amount.trim()} ${tokenSymbol}`;
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scroll}>
-          <Card title="Transaction Summary">
-            <Row label="Token" value={tokenSymbol} />
-            <Row label="To" value={truncHash(to.trim())} mono />
-            <Row label="Amount" value={`${formatRuntimeInput(parseAmountInput(amount)) || amount.trim()} ${tokenSymbol}`} />
-            <Row label="Chi" value={estimate ? `${estimate.estimated.toLocaleString()}${chiRate ? ` (~${(estimate.estimated / chiRate).toLocaleString(undefined, { maximumFractionDigits: 8 })} XIAN)` : ""}` : "-"} />
+          <Card title="Transaction summary">
+            <Row label="Contract" value={activeToken} mono />
+            <Row label="Function" value="transfer" />
+            <View style={styles.sectionLabelWrap}>
+              <Text style={styles.sectionLabel}>Arguments</Text>
+            </View>
+            <Row label="to" value={truncHash(to.trim())} mono />
+            <Row label="amount" value={amountValue} />
+          </Card>
+
+          <Card title="Transaction fee">
+            <Row label="Chi" value={chiValue} />
           </Card>
         </ScrollView>
         <View style={styles.stickyBottom}>
@@ -328,6 +338,13 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
   );
 }
 
+function formatChi(value: number | null, chiRate: number | null): string {
+  if (value == null) return "Not provided";
+  const formatted = value.toLocaleString();
+  if (!chiRate) return formatted;
+  return `${formatted} (~${(value / chiRate).toLocaleString(undefined, { maximumFractionDigits: 8 })} XIAN)`;
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg0 },
   scroll: { padding: 16, gap: 16, paddingBottom: 120 },
@@ -343,6 +360,8 @@ const styles = StyleSheet.create({
   detailLabel: { fontSize: 13, color: colors.muted },
   detailValue: { fontSize: 13, color: colors.fg, fontWeight: "500", maxWidth: "60%" },
   mono: { fontFamily: "monospace" },
+  sectionLabelWrap: { paddingTop: 8 },
+  sectionLabel: { color: colors.muted, fontSize: 12, fontWeight: "700", textTransform: "uppercase" },
   errorBanner: { backgroundColor: colors.dangerSoft, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.danger },
   errorText: { fontSize: 13, color: colors.danger },
   // Contact modal

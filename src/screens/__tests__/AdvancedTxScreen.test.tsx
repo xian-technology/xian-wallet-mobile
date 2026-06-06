@@ -23,6 +23,7 @@ import { AdvancedTxScreen } from "../AdvancedTxScreen";
 
 describe("AdvancedTxScreen", () => {
   const mockGetContractMethods = jest.fn() as jest.Mock;
+  const mockGetChiRate = jest.fn() as jest.Mock;
   const mockEstimateChi = jest.fn() as jest.Mock;
   const mockSendTransaction = jest.fn() as jest.Mock;
   const mockRefreshBalances = jest.fn(async () => undefined) as jest.Mock;
@@ -40,6 +41,7 @@ describe("AdvancedTxScreen", () => {
       },
       rpc: {
         getContractMethods: mockGetContractMethods,
+        getChiRate: mockGetChiRate,
         estimateChi: mockEstimateChi,
         sendTransaction: mockSendTransaction
       },
@@ -52,6 +54,7 @@ describe("AdvancedTxScreen", () => {
       sessionKey: "session-key",
       expiresAt: Date.now() + 60_000
     }));
+    mockGetChiRate.mockImplementation(async () => 20);
   });
 
   afterEach(() => {

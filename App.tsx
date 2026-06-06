@@ -151,7 +151,7 @@ function AppNavigator() {
         options={{ headerShown: false }}
       />
       <Stack.Screen name="Send" component={SendScreen} />
-      <Stack.Screen name="Trade" component={TradeScreen} />
+      <Stack.Screen name="Trade" component={TradeScreen} options={{ title: "Swap" }} />
       <Stack.Screen name="Receive" component={ReceiveScreen} />
       <Stack.Screen name="TokenDetail" component={TokenDetailScreen} options={{ title: "Token" }} />
       <Stack.Screen name="Networks" component={NetworksScreen} />

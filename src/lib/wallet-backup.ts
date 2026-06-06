@@ -55,6 +55,19 @@ export interface EncryptedWalletBackup {
 
 export type WalletBackup = WalletBackupPayload | EncryptedWalletBackup;
 
+export function parseWalletBackupJson(text: string): WalletBackup {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("invalid wallet backup");
+  }
+  if (isEncryptedWalletBackup(parsed as WalletBackup)) {
+    return parsed as WalletBackup;
+  }
+  return assertPlainWalletBackup(parsed);
+}
+
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) {

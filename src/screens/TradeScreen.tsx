@@ -323,7 +323,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
           message: result.message,
         });
         await refreshSnapshot(true);
-        setApprovalNotice("Approval complete. Review and send the swap to complete the trade.");
+        setApprovalNotice("Approval complete. Review and send the swap.");
         void refreshBalances();
       } else {
         errorTap();
@@ -557,7 +557,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scroll}>
-          <Card title="Trade summary">
+          <Card title="Swap summary">
             <Row label="From" value={`${formatTradeNumber(reviewQuote.amountIn)} ${tokenSymbol(reviewFrom)}`} />
             <Row label="To" value={`~${formatTradeNumber(reviewQuote.amountOut)} ${tokenSymbol(reviewTo)}`} />
             <Row label="Minimum received" value={`${formatTradeNumber(minOut)} ${tokenSymbol(reviewTo)}`} />
@@ -600,7 +600,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
   const primaryLabel = snapshotLoading
     ? "Loading markets..."
     : tokens.length < 2
-      ? "No trade tokens"
+      ? "No swap tokens"
       : !quoteState.quote
         ? "Enter amount"
         : insufficient
@@ -620,7 +620,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
       {tokenPickerModal}
       <ScrollView contentContainerStyle={styles.scroll}>
         <Card
-          title="Trade"
+          title="Swap"
           subtitle={`Swap through ${DEX_ROUTER} on ${state.activeNetworkName ?? "this network"}.`}
         >
           {snapshotLoading && (
@@ -793,16 +793,6 @@ function TradePanel({
           style={styles.amountInput}
         />
         <TouchableOpacity style={styles.tokenSelector} onPress={onSelectToken}>
-          {token && (
-            <TokenAvatar
-              contract={token.contract}
-              symbol={symbol}
-              icon={token.logoUrl ?? token.logoSvg ?? undefined}
-              size={28}
-              textSize={12}
-              backgroundColor={token.contract === "currency" ? colors.accentDim : colors.bg2}
-            />
-          )}
           <Text style={styles.tokenSelectorText} numberOfLines={1}>{symbol || "Token"}</Text>
           <Feather name="chevron-down" size={15} color={colors.muted} />
         </TouchableOpacity>
@@ -908,9 +898,9 @@ const styles = StyleSheet.create({
   panelBalance: { fontSize: 12, color: colors.muted },
   maxText: { fontSize: 10, fontWeight: "700", color: colors.accent, letterSpacing: 0.5 },
   tradePanelBody: { flexDirection: "row", alignItems: "center", gap: 12 },
-  amountInput: { flex: 1, minHeight: 44, color: colors.fg, fontSize: 26, fontWeight: "600", padding: 0 },
-  tokenSelector: { flexDirection: "row", alignItems: "center", gap: 7, maxWidth: 138, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 999, backgroundColor: colors.bg1 },
-  tokenSelectorText: { color: colors.fg, fontSize: 13, fontWeight: "700", maxWidth: 70 },
+  amountInput: { flex: 1, height: 52, color: colors.fg, fontSize: 26, fontWeight: "600", padding: 0 },
+  tokenSelector: { height: 52, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, width: 132, paddingHorizontal: 12, borderRadius: 12, backgroundColor: colors.bg1 },
+  tokenSelectorText: { color: colors.fg, fontSize: 26, fontWeight: "600", maxWidth: 86 },
   flipButton: { alignSelf: "center", width: 42, height: 42, borderRadius: 21, backgroundColor: colors.bg2, borderWidth: 1, borderColor: colors.line, alignItems: "center", justifyContent: "center", marginVertical: -2 },
   settingsGrid: { gap: 12 },
   optionGroup: { gap: 7 },

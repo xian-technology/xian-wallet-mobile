@@ -2,6 +2,8 @@ import React from "react";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import { describe, expect, it, jest, beforeEach } from "@jest/globals";
 import * as Clipboard from "expo-clipboard";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
 
 const mockUseWallet = jest.fn() as jest.Mock;
 
@@ -13,14 +15,17 @@ import { SetupScreen } from "../SetupScreen";
 
 describe("SetupScreen", () => {
   const mockCreateWallet = jest.fn() as jest.Mock;
+  const mockImportWalletBackup = jest.fn() as jest.Mock;
   const mockRefresh = jest.fn(async () => undefined) as jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (FileSystem as unknown as { __clearFileText: () => void }).__clearFileText();
     mockUseWallet.mockReturnValue({
       refresh: mockRefresh,
       controller: {
-        createWallet: mockCreateWallet
+        createWallet: mockCreateWallet,
+        importWalletBackup: mockImportWalletBackup
       }
     });
   });
@@ -77,5 +82,44 @@ describe("SetupScreen", () => {
         allowInsecureHttp: false,
       })
     );
+  });
+
+  it("imports a backup JSON file from setup", async () => {
+    const backup = {
+      version: 2,
+      kind: "xian-wallet-backup",
+      encryption: {
+        algorithm: "AES-256-GCM",
+        kdf: "PBKDF2-SHA256",
+        iterations: 10_000,
+        salt: "salt",
+        iv: "iv",
+      },
+      ciphertext: "ciphertext",
+    };
+    (
+      DocumentPicker.getDocumentAsync as unknown as {
+        mockResolvedValueOnce: (value: unknown) => void;
+      }
+    ).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ uri: "file://backup.json", name: "backup.json" }],
+    });
+    (FileSystem as unknown as { __setFileText: (uri: string, text: string) => void })
+      .__setFileText("file://backup.json", JSON.stringify(backup));
+    mockImportWalletBackup.mockImplementation(async () => undefined);
+
+    const screen = render(<SetupScreen />);
+    fireEvent.press(screen.getByText("Backup"));
+    fireEvent.changeText(screen.getByPlaceholderText("Backup password"), "backup-pass");
+    fireEvent.press(screen.getByText("Import File"));
+
+    await waitFor(() => expect(screen.getByText("Loaded backup.json.")).toBeTruthy());
+    fireEvent.press(screen.getByText("Import Backup"));
+
+    await waitFor(() =>
+      expect(mockImportWalletBackup).toHaveBeenCalledWith(backup, "backup-pass")
+    );
+    expect(mockRefresh).toHaveBeenCalled();
   });
 });
