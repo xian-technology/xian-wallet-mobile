@@ -75,8 +75,6 @@ export interface TxHistoryRecord {
     [key: string]: unknown;
   } | null;
   envelope?: unknown;
-  /** Legacy convenience: some backends flatten payload.kwargs into the row. */
-  kwargs?: Record<string, unknown>;
   /** Wallet-local fallback row for nodes without indexed transaction history. */
   local?: boolean;
   local_status?: "accepted" | "finalized";

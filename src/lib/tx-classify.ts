@@ -36,7 +36,7 @@ const TOKEN_FACTORY_CONTRACT = "token_factory";
 export function classifyTx(tx: TxHistoryRecord): TxClassification {
   const contract = tx.contract ?? "";
   const fn = tx.function ?? "";
-  const kwargs = (tx.payload?.kwargs ?? tx.kwargs ?? {}) as Record<string, unknown>;
+  const kwargs = (tx.payload?.kwargs ?? {}) as Record<string, unknown>;
 
   if (contract === TOKEN_FACTORY_CONTRACT && fn === "create_token") {
     return { category: "create_token", label: "Create token", icon: "star", accent: "accent" };

@@ -108,7 +108,7 @@ function formatArgValue(value: unknown): string {
 }
 
 function kwargsOf(tx: TxHistoryRecord): Record<string, unknown> {
-  return (tx.payload?.kwargs ?? tx.kwargs ?? {}) as Record<string, unknown>;
+  return (tx.payload?.kwargs ?? {}) as Record<string, unknown>;
 }
 
 function accentColors(accent: TxClassification["accent"]): { bg: string; fg: string } {

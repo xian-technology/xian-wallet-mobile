@@ -100,7 +100,6 @@ export function makeLocalActivityTx(input: SubmittedActivityTx): TxHistoryRecord
       function: input.function,
       kwargs
     },
-    kwargs,
     result: input.message ? { message: sanitizeActivityValue(input.message) } : undefined,
     local: true,
     local_status: input.finalized ? "finalized" : "accepted"
