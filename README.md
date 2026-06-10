@@ -22,6 +22,8 @@ flowchart LR
   Controller --> NetworkPresets["Network presets"]
   Activity["Activity and balances"] --> Client
   AdvancedTx["Advanced contract call"] --> Client
+  Dapp["WalletConnect dapp"] --> WC["WalletConnect sessions"]
+  WC --> Controller
 ```
 
 ## Quick Start
@@ -57,14 +59,16 @@ app covers:
 | Flow | Screen / layer | Notes |
 | --- | --- | --- |
 | Create or restore wallet | `Setup` | generates or restores mnemonic-backed wallet state |
-| Lock / unlock | `Lock`, wallet controller | keeps private key access behind the local session boundary |
+| Lock / unlock | `Lock`, wallet controller | password unlock plus optional biometric unlock with password fallback |
 | Receive funds | `Receive` | shows the public address and QR code |
 | Send token transfer | `Send` | estimates chi, submits transfer, refreshes balances |
+| Swap tokens | `Trade` | in-wallet DEX swap through `con_dex` with reserve-based quotes, slippage, deadline, and automatic approval |
 | Inspect balances | `Home`, `TokenDetail` | reads token balances through `@xian-tech/client` |
 | Review activity | `Activity` | pulls indexed transaction history where available |
 | Manage networks | `Networks`, `Settings` | stores RPC / dashboard presets and switches active network |
 | Advanced contract call | `AdvancedTx` | loads contract methods, validates kwargs JSON, estimates chi, sends tx |
-| Apps / watched assets | `Apps`, wallet context | tracks dapp-requested or user-added assets |
+| WalletConnect dapps | `Apps`, walletconnect lib | pair via QR scan or `wc:` URI, approve session proposals and per-request signing prompts, disconnect sessions |
+| Encrypted backup | `Settings`, wallet-backup lib | export encrypted backup JSON via Share sheet; import a backup file or pasted JSON |
 
 The default network preset points at `http://127.0.0.1:26657`, which is
 convenient for local desktop testing but not always reachable from a device:
@@ -112,7 +116,7 @@ npm run test
 ## Key Directories
 
 - `App.tsx`, `index.ts` — Expo entrypoint and root component.
-- `src/screens/` — top-level screens: `Setup`, `Home`, `Send`,
+- `src/screens/` — top-level screens: `Setup`, `Home`, `Send`, `Trade`,
   `Receive`, `Activity`, `Apps`, `Networks`, `Settings`,
   `TokenDetail`, `AdvancedTx`, `Lock`.
 - `src/navigation/` — React Navigation stack and tab navigators.
@@ -123,6 +127,11 @@ npm run test
   - `storage.ts`, `preferences.ts` — secure-store wrappers and user
     preferences.
   - `rpc-client.ts` — RPC client wired through `@xian-tech/client`.
+  - `dex.ts` — DEX quoting and swap helpers for the Trade screen.
+  - `walletconnect.ts`, `signing-policy.ts` — WalletConnect session
+    handling and dapp request policy.
+  - `biometrics.ts` — biometric unlock support.
+  - `wallet-backup.ts` — encrypted backup parsing and validation.
   - `tx-classify.ts`, `runtime-input.ts` — transaction classification
     and input validation helpers.
   - `crypto-polyfill.ts`, `haptics.ts` — platform polyfills and haptic
@@ -179,7 +188,7 @@ npx pod-install ios
 npm run ios
 ```
 
-## Related Repos
+## Related Docs
 
 - [`../xian-js/README.md`](../xian-js/README.md) — official JS / TS SDK consumed by this app
 - [`../xian-wallet-browser/README.md`](../xian-wallet-browser/README.md) — browser wallet product workspace
