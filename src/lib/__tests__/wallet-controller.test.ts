@@ -70,7 +70,13 @@ jest.mock("@scure/bip39", () => ({
   ),
   mnemonicToSeed: jest.fn(async (mnemonic: string) =>
     new Uint8Array(
-      require("node:crypto").createHash("sha256").update(mnemonic).digest()
+      require("node:crypto").pbkdf2Sync(
+        Buffer.from(mnemonic, "utf8"),
+        Buffer.from("mnemonic", "utf8"),
+        2048,
+        64,
+        "sha512"
+      )
     )
   ),
   validateMnemonic: jest.fn(
@@ -230,6 +236,23 @@ describe("wallet-controller", () => {
     expect(mockStoredState?.accounts).toHaveLength(2);
     expect(mockStoredState?.activeAccountIndex).toBe(1);
     expect(mockStoredSession?.sessionKey).toEqual(expect.any(String));
+  });
+
+  it("derives canonical indexed mnemonic private keys", async () => {
+    const controller = createWalletController();
+
+    await controller.createWallet({
+      password: "secret123",
+      mnemonic: VALID_MNEMONIC
+    });
+    expect(mockStoredSession?.privateKey).toBe(
+      "b3aee0ed179a18a754136d3d134c03e9c1ad97eb2e9912401dc2d9ffc96882e0"
+    );
+
+    await controller.addAccount();
+    expect(mockStoredSession?.privateKey).toBe(
+      "f1f4674448f4d17a78af6b150a7fa45a752d0014fb0235604a339a898695ce69"
+    );
   });
 
   it("refreshes the unlocked session when removing the active derived account", async () => {

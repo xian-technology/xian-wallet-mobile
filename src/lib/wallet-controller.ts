@@ -217,21 +217,16 @@ async function derivePrivateKeyFromMnemonic(
   mnemonic: string,
   accountIndex: number = 0
 ): Promise<string> {
+  if (!Number.isInteger(accountIndex) || accountIndex < 0 || accountIndex > 0xffffffff) {
+    throw new Error("account index must be an integer between 0 and 4294967295");
+  }
   const normalized = normalizeMnemonic(mnemonic);
   if (!normalized) {
     throw new Error("invalid BIP39 mnemonic");
   }
 
   const seed = await mnemonicToSeed(normalized);
-  const context = ENCODER.encode("xian-wallet-seed-v1");
-
-  if (accountIndex === 0) {
-    const buffer = new Uint8Array(seed.length + context.length);
-    buffer.set(seed, 0);
-    buffer.set(context, seed.length);
-    return bytesToHex(sha256Digest(buffer));
-  }
-
+  const context = ENCODER.encode("xian-wallet-seed-v2");
   const indexBytes = new Uint8Array(4);
   new DataView(indexBytes.buffer).setUint32(0, accountIndex, false);
   const buffer = new Uint8Array(seed.length + context.length + 4);
