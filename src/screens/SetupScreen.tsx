@@ -286,7 +286,7 @@ export function SetupScreen() {
                 label="Expected chain ID"
                 value={networkChainId}
                 onChangeText={setNetworkChainId}
-                placeholder="Optional, e.g. xian-1"
+                placeholder="Optional, e.g. xian-local-1"
                 autoCapitalize="none"
               />
               <Input

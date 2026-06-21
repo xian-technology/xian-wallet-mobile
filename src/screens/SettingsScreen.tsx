@@ -677,7 +677,7 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
               <Input label="Name" value={netName} onChangeText={setNetName} placeholder="e.g. Mainnet" />
               <Input label="RPC URL" value={netRpcUrl} onChangeText={setNetRpcUrl} placeholder="http://..." autoCapitalize="none" autoCorrect={false} />
               <Input label="Dashboard URL" value={netDashboardUrl} onChangeText={setNetDashboardUrl} placeholder="http://... (optional)" autoCapitalize="none" autoCorrect={false} />
-              <Input label="Chain ID" value={netChainId} onChangeText={setNetChainId} placeholder="Optional, e.g. xian-1" autoCapitalize="none" />
+              <Input label="Chain ID" value={netChainId} onChangeText={setNetChainId} placeholder="Optional, e.g. xian-local-1" autoCapitalize="none" />
               <TouchableOpacity
                 style={styles.prefRow}
                 onPress={() => {

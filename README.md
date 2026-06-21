@@ -141,6 +141,7 @@ npm run test
 - `ios/` — native iOS project produced by Expo prebuild.
 - `assets/` — app icons, splash images, fonts.
 - `app.json` — Expo configuration.
+- `docs/` — architecture and repo-local follow-ups.
 
 ## Validation
 
@@ -192,3 +193,5 @@ npm run ios
 
 - [`../xian-js/README.md`](../xian-js/README.md) — official JS / TS SDK consumed by this app
 - [`../xian-wallet-browser/README.md`](../xian-wallet-browser/README.md) — browser wallet product workspace
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — mobile wallet component boundaries and runtime flow
+- [docs/BACKLOG.md](docs/BACKLOG.md) — repo-local follow-ups
