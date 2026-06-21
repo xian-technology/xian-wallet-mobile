@@ -52,3 +52,4 @@ yarn-error.*
 /android/app/*.key
 /android/app/*.pem
 xian-wallet-mobile-v*.apk
+graphify-out/
