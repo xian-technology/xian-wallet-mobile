@@ -15,7 +15,10 @@ import {
   type BarcodeScanningResult,
 } from "expo-camera";
 import { Feather } from "@expo/vector-icons";
-import { parseXianDappAction } from "@xian-tech/provider";
+import {
+  parseXianDappAction,
+  type XianDappPolicyArgumentScope
+} from "@xian-tech/provider";
 
 import { AppDialog } from "../components/AppDialog";
 import { Button } from "../components/Button";
@@ -113,7 +116,10 @@ export function AppsScreen() {
   );
   const [uri, setUri] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const [trustRequest, setTrustRequest] = useState(false);
+  const [trustScope, setTrustScope] =
+    useState<XianDappPolicyArgumentScope | null>(null);
+  const [broadTrustRequest, setBroadTrustRequest] =
+    useState<DappSessionRequest | null>(null);
   const [scannerVisible, setScannerVisible] = useState(false);
   const [manualPairingVisible, setManualPairingVisible] = useState(false);
   const [scanned, setScanned] = useState(false);
@@ -135,7 +141,8 @@ export function AppsScreen() {
   const activeRequest = wcState.requests[0];
 
   useEffect(() => {
-    setTrustRequest(false);
+    setTrustScope(null);
+    setBroadTrustRequest(null);
   }, [activeRequest?.id]);
 
   const policies = useMemo(
@@ -227,12 +234,23 @@ export function AppsScreen() {
     }
   }
 
-  async function approveRequest(request: DappSessionRequest): Promise<void> {
+  async function approveRequest(
+    request: DappSessionRequest,
+    scope: XianDappPolicyArgumentScope | null = trustScope,
+    options: { confirmedBroad?: boolean } = {}
+  ): Promise<void> {
+    if (scope === "any" && !options.confirmedBroad) {
+      setBroadTrustRequest(request);
+      return;
+    }
     setBusy(`request-${request.id}`);
     try {
-      await approveWalletConnectRequest(request.id, { trust: trustRequest });
+      await approveWalletConnectRequest(request.id, {
+        trust: scope ?? undefined
+      });
       await refresh();
       syncWalletConnectState();
+      setBroadTrustRequest(null);
       showToast("Request approved.", "success");
     } catch (error) {
       showToast(error instanceof Error ? error.message : String(error), "danger");
@@ -373,6 +391,11 @@ export function AppsScreen() {
                     {policySessionName(policy.origin, wcState.sessions)} · {policy.chainId}
                   </Text>
                   <Text style={styles.meta}>
+                    {policy.argumentScope === "any"
+                      ? "Any arguments"
+                      : `Exact arguments${policy.kwargs ? ` (${Object.keys(policy.kwargs).length})` : ""}`}
+                  </Text>
+                  <Text style={styles.meta}>
                     {formatTimestamp(policy.expiresAt)}
                     {policy.lastUsedAt ? ` · Used ${formatTimestamp(policy.lastUsedAt)}` : ""}
                   </Text>
@@ -455,7 +478,7 @@ export function AppsScreen() {
       </AppDialog>
 
       <AppDialog
-        visible={Boolean(activeRequest)}
+        visible={Boolean(activeRequest) && !broadTrustRequest}
         title="Approve request"
         message={
           activeRequest
@@ -486,25 +509,79 @@ export function AppsScreen() {
               {activeRequest.chainId ?? "Active wallet network"}
             </Text>
             {activeRequest.trustSuggestion ? (
-              <View style={styles.trustRow}>
-                <View style={styles.trustText}>
-                  <Text style={styles.dialogValue}>
-                    {activeRequest.trustSuggestion.label}
-                  </Text>
-                  <Text style={styles.meta}>
-                    {activeRequest.trustSuggestion.description}
-                  </Text>
+              <View style={styles.trustChoiceStack}>
+                <View style={styles.trustRow}>
+                  <View style={styles.trustText}>
+                    <Text style={styles.dialogValue}>
+                      {activeRequest.trustSuggestion.label}
+                    </Text>
+                    <Text style={styles.meta}>
+                      {activeRequest.trustSuggestion.description}
+                    </Text>
+                  </View>
+                  <Switch
+                    value={trustScope === "exact"}
+                    onValueChange={(enabled) => setTrustScope(enabled ? "exact" : null)}
+                    trackColor={{ false: colors.bg2, true: colors.accentDim }}
+                    thumbColor={trustScope === "exact" ? colors.accent : colors.muted}
+                  />
                 </View>
-                <Switch
-                  value={trustRequest}
-                  onValueChange={setTrustRequest}
-                  trackColor={{ false: colors.bg2, true: colors.accentDim }}
-                  thumbColor={trustRequest ? colors.accent : colors.muted}
-                />
+                <View style={styles.trustRow}>
+                  <View style={styles.trustText}>
+                    <Text style={styles.dialogValue}>
+                      {activeRequest.trustSuggestion.broadLabel}
+                    </Text>
+                    <Text style={styles.meta}>
+                      {activeRequest.trustSuggestion.broadDescription}
+                    </Text>
+                  </View>
+                  <Switch
+                    value={trustScope === "any"}
+                    onValueChange={(enabled) => setTrustScope(enabled ? "any" : null)}
+                    trackColor={{ false: colors.bg2, true: colors.dangerSoft }}
+                    thumbColor={trustScope === "any" ? colors.danger : colors.muted}
+                  />
+                </View>
               </View>
             ) : null}
             <Text style={styles.dialogLabel}>Payload</Text>
             <Text style={styles.payload}>{requestPayload(activeRequest)}</Text>
+          </View>
+        ) : null}
+      </AppDialog>
+
+      <AppDialog
+        visible={Boolean(broadTrustRequest)}
+        title="Enable broad auto-approval?"
+        message={broadTrustRequest?.trustSuggestion?.broadWarning}
+        onRequestClose={() => setBroadTrustRequest(null)}
+        actions={[
+          {
+            title: "Cancel",
+            variant: "secondary",
+            onPress: () => setBroadTrustRequest(null),
+            disabled: busy != null,
+          },
+          {
+            title: "Enable",
+            variant: "danger",
+            onPress: () =>
+              broadTrustRequest &&
+              void approveRequest(broadTrustRequest, "any", {
+                confirmedBroad: true,
+              }),
+            loading: broadTrustRequest
+              ? busy === `request-${broadTrustRequest.id}`
+              : false,
+          },
+        ]}
+      >
+        {broadTrustRequest?.trustSuggestion ? (
+          <View style={styles.dialogStack}>
+            <Text style={styles.dialogLabel}>Rule</Text>
+            <Text style={styles.dialogValue}>
+              {broadTrustRequest.trustSuggestion.broadLabel}
+            </Text>
           </View>
         ) : null}
       </AppDialog>
@@ -668,6 +745,9 @@ const styles = StyleSheet.create({
     color: colors.fg,
     fontSize: 14,
     lineHeight: 20,
+  },
+  trustChoiceStack: {
+    gap: 8,
   },
   trustRow: {
     flexDirection: "row",

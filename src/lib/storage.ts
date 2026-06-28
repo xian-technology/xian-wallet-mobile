@@ -4,7 +4,10 @@
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
-import type { XianDappPolicy } from "@xian-tech/provider";
+import {
+  xianDappPoliciesHaveSameScope,
+  type XianDappPolicy
+} from "@xian-tech/provider";
 
 const WALLET_STATE_KEY = "xian_wallet_state";
 const SESSION_KEY = "xian_unlocked_session";
@@ -415,21 +418,6 @@ function currentTrustedPolicies(state: StoredWalletState): XianDappPolicy[] {
     : [];
 }
 
-function sameTrustedPolicyScope(
-  left: XianDappPolicy,
-  right: XianDappPolicy
-): boolean {
-  return (
-    left.origin === right.origin &&
-    left.account === right.account &&
-    left.chainId === right.chainId &&
-    left.contract === right.contract &&
-    left.function === right.function &&
-    left.methods.length === right.methods.length &&
-    left.methods.every((method) => right.methods.includes(method))
-  );
-}
-
 export async function loadTrustedDappPolicies(): Promise<XianDappPolicy[]> {
   const state = await loadWalletState();
   return state ? currentTrustedPolicies(state) : [];
@@ -446,7 +434,9 @@ export async function upsertTrustedDappPolicy(
   await saveWalletState({
     ...state,
     trustedDappPolicies: [
-      ...policies.filter((existing) => !sameTrustedPolicyScope(existing, policy)),
+      ...policies.filter(
+        (existing) => !xianDappPoliciesHaveSameScope(existing, policy)
+      ),
       policy
     ]
   });

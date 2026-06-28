@@ -1,8 +1,10 @@
 import React from "react";
+import { Switch } from "react-native";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 
 const mockUseWallet = jest.fn() as jest.Mock;
+const mockApproveWalletConnectRequest = jest.fn() as jest.Mock;
 const mockPairWalletConnectUri = jest.fn() as jest.Mock;
 const mockGetWalletConnectState = jest.fn() as jest.Mock;
 const mockUseCameraPermissions = jest.fn() as jest.Mock;
@@ -30,7 +32,8 @@ jest.mock("expo-camera", () => {
 
 jest.mock("../../lib/walletconnect", () => ({
   approveWalletConnectProposal: jest.fn(),
-  approveWalletConnectRequest: jest.fn(),
+  approveWalletConnectRequest: (...args: unknown[]) =>
+    mockApproveWalletConnectRequest(...args),
   disconnectWalletConnectSession: jest.fn(),
   extractWalletConnectUri: (value: string) => value.trim().startsWith("wc:") ? value.trim() : null,
   getWalletConnectState: () => mockGetWalletConnectState(),
@@ -62,6 +65,7 @@ describe("AppsScreen", () => {
       { granted: true },
       mockRequestCameraPermission,
     ]);
+    mockApproveWalletConnectRequest.mockImplementation(async () => undefined);
     mockPairWalletConnectUri.mockImplementation(async () => undefined);
     mockUseWallet.mockReturnValue({
       state: {
@@ -86,5 +90,52 @@ describe("AppsScreen", () => {
     fireEvent.press(screen.getByText("Pair"));
 
     await waitFor(() => expect(mockPairWalletConnectUri).toHaveBeenCalledWith("wc:test-topic@2"));
+  });
+
+  it("requires an in-app confirmation before broad auto-approval", async () => {
+    mockGetWalletConnectState.mockImplementation(() => ({
+      configured: true,
+      sessions: [],
+      proposals: [],
+      requests: [
+        {
+          id: 7,
+          topic: "topic-1",
+          origin: "wc:topic-1",
+          sessionName: "Swap dapp",
+          chainId: "xian-local",
+          request: { method: "xian_sendCall", params: [] },
+          trustSuggestion: {
+            label: "Auto-approve this exact currency.transfer",
+            description: "Repeat this request with the same arguments.",
+            broadLabel: "Auto-approve any currency.transfer",
+            broadDescription: "Allow changed arguments.",
+            broadWarning: "Broad auto-approval can move funds.",
+            exactScope: "exact",
+            broadScope: "any",
+          },
+        },
+      ],
+    }));
+
+    const screen = render(<AppsScreen />);
+    await waitFor(() =>
+      expect(screen.getByText("Auto-approve any currency.transfer")).toBeTruthy()
+    );
+
+    const switches = screen.UNSAFE_getAllByType(Switch);
+    fireEvent(switches[1], "valueChange", true);
+    fireEvent.press(screen.getByText("Approve"));
+
+    expect(screen.getByText("Enable broad auto-approval?")).toBeTruthy();
+    expect(mockApproveWalletConnectRequest).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByText("Enable"));
+
+    await waitFor(() =>
+      expect(mockApproveWalletConnectRequest).toHaveBeenCalledWith(7, {
+        trust: "any",
+      })
+    );
   });
 });

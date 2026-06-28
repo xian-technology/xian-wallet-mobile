@@ -23,6 +23,32 @@ jest.mock("@react-native-async-storage/async-storage", () => ({
   ...mockAsyncStorage,
 }));
 jest.mock("expo-secure-store", () => mockSecureStore);
+jest.mock(
+  "@xian-tech/provider",
+  () => ({
+    xianDappPoliciesHaveSameScope: (left: any, right: any) => {
+      const sameMethods =
+        Array.isArray(left.methods) &&
+        Array.isArray(right.methods) &&
+        left.methods.length === right.methods.length &&
+        left.methods.every((method: string) => right.methods.includes(method));
+      const leftScope = left.argumentScope === "any" ? "any" : "exact";
+      const rightScope = right.argumentScope === "any" ? "any" : "exact";
+      return (
+        left.origin === right.origin &&
+        left.account === right.account &&
+        left.chainId === right.chainId &&
+        left.contract === right.contract &&
+        left.function === right.function &&
+        sameMethods &&
+        leftScope === rightScope &&
+        (leftScope === "any" ||
+          JSON.stringify(left.kwargs ?? {}) === JSON.stringify(right.kwargs ?? {}))
+      );
+    },
+  }),
+  { virtual: true }
+);
 
 import {
   clearUnlockedSession,

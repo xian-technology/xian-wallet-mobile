@@ -23,6 +23,7 @@ import {
   xianChainIdToCaip2,
   type BroadcastMode,
   type XianDappPolicy,
+  type XianDappPolicyArgumentScope,
   type XianProviderRequest,
   type XianTransactionIntent,
   type XianUnsignedTransaction,
@@ -103,6 +104,11 @@ export interface DappSessionRequest {
   trustSuggestion?: {
     label: string;
     description: string;
+    broadLabel: string;
+    broadDescription: string;
+    broadWarning: string;
+    exactScope: XianDappPolicyArgumentScope;
+    broadScope: XianDappPolicyArgumentScope;
   };
 }
 
@@ -489,9 +495,9 @@ function requestSummary(
   const chainId = xianChainIdFromCaip2(event.params.chainId);
   const request = event.params.request as XianProviderRequest;
   const action = parseXianDappAction(request);
-  const label =
+  const target =
     action?.contract && action.function
-      ? `Always allow ${action.contract}.${action.function}`
+      ? `${action.contract}.${action.function}`
       : undefined;
   return {
     id: event.id,
@@ -500,11 +506,18 @@ function requestSummary(
     sessionName: sessionName(event.topic),
     chainId: chainId ?? undefined,
     request,
-    trustSuggestion: label
+    trustSuggestion: target
       ? {
-          label,
+          label: `Auto-approve this exact ${target}`,
           description:
-            "For the next 30 days, matching requests from this dapp can run without another prompt on this account and network."
+            "For the next 30 days, this dapp can repeat matching requests with the same arguments on this account and network.",
+          broadLabel: `Auto-approve any ${target}`,
+          broadDescription:
+            "For the next 30 days, this dapp can send matching requests even if recipients, amounts, routes, or other arguments change.",
+          broadWarning:
+            "Broad auto-approval can move funds or execute contract logic without another prompt. Use it only for dapps you fully trust.",
+          exactScope: "exact",
+          broadScope: "any"
         }
       : undefined
   };
@@ -536,7 +549,8 @@ async function respondWithError(
 }
 
 async function createPolicyForRequest(
-  pending: DappSessionRequest
+  pending: DappSessionRequest,
+  argumentScope: XianDappPolicyArgumentScope
 ): Promise<XianDappPolicy | null> {
   const state = await loadWalletState();
   if (!state) {
@@ -551,7 +565,8 @@ async function createPolicyForRequest(
     chainId,
     request: pending.request,
     now: Date.now(),
-    expiresAt: Date.now() + TRUSTED_DAPP_POLICY_TTL_MS
+    expiresAt: Date.now() + TRUSTED_DAPP_POLICY_TTL_MS,
+    argumentScope
   });
 }
 
@@ -835,7 +850,7 @@ export async function rejectWalletConnectProposal(id: number): Promise<void> {
 
 export async function approveWalletConnectRequest(
   id: number,
-  options?: { trust?: boolean }
+  options?: { trust?: XianDappPolicyArgumentScope }
 ): Promise<void> {
   await initializeWalletConnect();
   if (!walletKit) {
@@ -849,7 +864,7 @@ export async function approveWalletConnectRequest(
     const result = await executeXianRequest(pending.request, pending.chainId);
     await respondWithResult(walletKit, pending, result);
     if (options?.trust) {
-      const policy = await createPolicyForRequest(pending);
+      const policy = await createPolicyForRequest(pending, options.trust);
       if (policy) {
         await upsertTrustedDappPolicy(policy);
       }
