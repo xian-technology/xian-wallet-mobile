@@ -1,11 +1,19 @@
+function normalizeParsedHostname(hostname: string): string {
+  const normalized = hostname.toLowerCase();
+  return normalized.startsWith("[") && normalized.endsWith("]")
+    ? normalized.slice(1, -1)
+    : normalized;
+}
+
 export function isLoopbackHttpUrl(value: string): boolean {
   try {
     const url = new URL(value);
+    const hostname = normalizeParsedHostname(url.hostname);
     return (
       url.protocol === "http:" &&
-      (url.hostname === "localhost" ||
-        url.hostname === "::1" ||
-        /^127(?:\.\d{1,3}){3}$/.test(url.hostname))
+      (hostname === "localhost" ||
+        hostname === "::1" ||
+        /^127(?:\.\d{1,3}){3}$/.test(hostname))
     );
   } catch {
     return false;

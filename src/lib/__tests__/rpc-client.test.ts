@@ -211,4 +211,18 @@ describe("XianRpcClient", () => {
     const client = new XianRpcClient("http://127.0.0.1:26657");
     await expect(client.getTransactionHistory("addr")).resolves.toEqual([]);
   });
+
+  it("builds transaction-history queries from bracketed IPv6 loopback RPC URLs", async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      text: async () => "",
+    })) as unknown as typeof fetch;
+
+    const client = new XianRpcClient("http://[::1]:26657");
+    await expect(client.getTransactionHistory("addr")).resolves.toEqual([]);
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringMatching(/^http:\/\/\[::1\]:26657\/abci_query\?path=/),
+      { method: "POST" }
+    );
+  });
 });

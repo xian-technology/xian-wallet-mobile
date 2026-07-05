@@ -32,11 +32,14 @@ function transactionExplorerUrl(
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       return undefined;
     }
+    const basePath = parsed.pathname.replace(/\/+$/, "");
+    parsed.pathname = `${basePath}/explorer/tx/${encodeURIComponent(trimmedHash)}`;
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString();
   } catch {
     return undefined;
   }
-
-  return `${trimmedDashboard.replace(/\/+$/, "")}/explorer/tx/${encodeURIComponent(trimmedHash)}`;
 }
 
 function truncateHash(hash: string): string {
