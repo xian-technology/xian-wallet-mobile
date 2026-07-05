@@ -74,12 +74,20 @@ export interface ShieldedWalletSnapshotSummary {
   updatedAt: string;
 }
 
-// Types matching wallet-core interfaces
+// Stored wallet state written to AsyncStorage. Secret material is encrypted
+// with the versioned walletEncryption parameters before persistence.
+export interface StoredWalletEncryption {
+  version: 1;
+  algorithm: "PBKDF2-SHA256";
+  iterations: number;
+  salt: string;
+}
+
 export interface StoredWalletState {
   publicKey: string;
   encryptedPrivateKey: string;
   encryptedMnemonic?: string;
-  walletEncryptionSalt: string;
+  walletEncryption: StoredWalletEncryption;
   seedSource: "privateKey" | "mnemonic";
   mnemonicWordCount?: number;
   accounts?: Array<{

@@ -7,7 +7,8 @@ import {
 
 const ENCODER = new TextEncoder();
 const DECODER = new TextDecoder();
-const BACKUP_ITERATIONS = 10_000;
+export const WALLET_BACKUP_KDF_ITERATIONS = 600_000;
+export const MIN_WALLET_BACKUP_KDF_ITERATIONS = 250_000;
 
 export interface WalletBackupPayload {
   version: 1;
@@ -53,7 +54,7 @@ export interface EncryptedWalletBackup {
   ciphertext: string;
 }
 
-export type WalletBackup = WalletBackupPayload | EncryptedWalletBackup;
+export type WalletBackup = EncryptedWalletBackup;
 
 export function parseWalletBackupJson(text: string): WalletBackup {
   let parsed: unknown;
@@ -62,10 +63,10 @@ export function parseWalletBackupJson(text: string): WalletBackup {
   } catch {
     throw new Error("invalid wallet backup");
   }
-  if (isEncryptedWalletBackup(parsed as WalletBackup)) {
-    return parsed as WalletBackup;
+  if (isEncryptedWalletBackup(parsed)) {
+    return parsed;
   }
-  return assertPlainWalletBackup(parsed);
+  throw new Error("invalid wallet backup");
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -84,7 +85,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isEncryptedWalletBackup(value: WalletBackup): value is EncryptedWalletBackup {
+function isEncryptedWalletBackup(value: unknown): value is EncryptedWalletBackup {
   return (
     isRecord(value) &&
     value.version === 2 &&
@@ -115,7 +116,11 @@ export async function encryptWalletBackupPayload(
 ): Promise<EncryptedWalletBackup> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await pbkdf2DeriveKey(ENCODER.encode(password), salt, BACKUP_ITERATIONS);
+  const key = await pbkdf2DeriveKey(
+    ENCODER.encode(password),
+    salt,
+    WALLET_BACKUP_KDF_ITERATIONS
+  );
   const ciphertext = aesGcmEncrypt(key, iv, ENCODER.encode(JSON.stringify(backup)));
   return {
     version: 2,
@@ -123,7 +128,7 @@ export async function encryptWalletBackupPayload(
     encryption: {
       algorithm: "AES-256-GCM",
       kdf: "PBKDF2-SHA256",
-      iterations: BACKUP_ITERATIONS,
+      iterations: WALLET_BACKUP_KDF_ITERATIONS,
       salt: bytesToBase64(salt),
       iv: bytesToBase64(iv)
     },
@@ -135,12 +140,9 @@ export async function decryptWalletBackup(
   backup: WalletBackup,
   password: string
 ): Promise<WalletBackupPayload> {
-  if (!isEncryptedWalletBackup(backup)) {
-    return assertPlainWalletBackup(backup);
-  }
   if (
     !Number.isSafeInteger(backup.encryption.iterations) ||
-    backup.encryption.iterations <= 0
+    backup.encryption.iterations < MIN_WALLET_BACKUP_KDF_ITERATIONS
   ) {
     throw new Error("invalid wallet backup encryption parameters");
   }

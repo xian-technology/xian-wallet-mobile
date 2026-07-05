@@ -13,7 +13,12 @@ function walletState(): StoredWalletState {
   return {
     publicKey: "sender",
     encryptedPrivateKey: "encrypted",
-    walletEncryptionSalt: "salt",
+    walletEncryption: {
+      version: 1,
+      algorithm: "PBKDF2-SHA256",
+      iterations: 250_000,
+      salt: "salt",
+    },
     seedSource: "privateKey",
     rpcUrl: "http://local",
     activeNetworkId: "local",

@@ -102,7 +102,7 @@ jest.mock("../crypto-polyfill", () => ({
       require("node:crypto").pbkdf2Sync(
         Buffer.from(password),
         Buffer.from(salt),
-        iterations,
+        Math.min(iterations, 10_000),
         32,
         "sha256"
       )
@@ -156,8 +156,15 @@ const { __mockStore: mockStore } = jest.requireMock("../storage") as {
   };
 };
 
-import { createWalletController } from "../wallet-controller";
-import { decryptWalletBackup } from "../wallet-backup";
+import {
+  createWalletController,
+  WALLET_STATE_KDF_ITERATIONS,
+} from "../wallet-controller";
+import {
+  decryptWalletBackup,
+  parseWalletBackupJson,
+  WALLET_BACKUP_KDF_ITERATIONS,
+} from "../wallet-backup";
 
 describe("wallet-controller", () => {
   beforeEach(() => {
@@ -205,7 +212,12 @@ describe("wallet-controller", () => {
       privateKey: VALID_PRIVATE_KEY
     });
 
-    expect(mockStoredState?.walletEncryptionSalt).toEqual(expect.any(String));
+    expect(mockStoredState?.walletEncryption).toMatchObject({
+      version: 1,
+      algorithm: "PBKDF2-SHA256",
+      iterations: WALLET_STATE_KDF_ITERATIONS,
+      salt: expect.any(String)
+    });
     expect(mockStoredSession).toMatchObject({
       privateKey: VALID_PRIVATE_KEY,
       sessionKey: expect.any(String)
@@ -331,6 +343,21 @@ describe("wallet-controller", () => {
     expect(mockStoredBiometricSession).toBeNull();
   });
 
+  it("rejects stored wallets with weak encryption parameters", async () => {
+    const controller = createWalletController();
+
+    await controller.createWallet({
+      password: "secret123",
+      privateKey: VALID_PRIVATE_KEY
+    });
+    await controller.lock();
+    (mockStoredState as StoredWalletState).walletEncryption.iterations = 10_000;
+
+    await expect(controller.unlock("secret123")).rejects.toThrow(
+      "invalid wallet encryption parameters"
+    );
+  });
+
   it("stores shielded snapshots, includes them in wallet backups, and restores them on import", async () => {
     const controller = createWalletController();
 
@@ -354,6 +381,9 @@ describe("wallet-controller", () => {
 
     const backup = await controller.exportWallet("backup-pass");
     expect(backup.version).toBe(2);
+    if (backup.version === 2) {
+      expect(backup.encryption.iterations).toBe(WALLET_BACKUP_KDF_ITERATIONS);
+    }
     expect(JSON.stringify(backup)).not.toContain(VALID_PRIVATE_KEY);
     expect(JSON.stringify(backup)).not.toContain(SHIELDED_STATE_SNAPSHOT);
     await expect(decryptWalletBackup(backup, "wrong-pass")).rejects.toThrow(
@@ -379,6 +409,12 @@ describe("wallet-controller", () => {
         assetId: "con_private"
       })
     ]);
+    expect((mockStoredState as StoredWalletState | null)?.walletEncryption).toMatchObject({
+      version: 1,
+      algorithm: "PBKDF2-SHA256",
+      iterations: WALLET_STATE_KDF_ITERATIONS,
+      salt: expect.any(String)
+    });
 
     const snapshotId = (mockStoredState as StoredWalletState | null)?.shieldedWalletSnapshots?.[0]?.id;
     expect(snapshotId).toEqual(expect.any(String));
@@ -424,5 +460,37 @@ describe("wallet-controller", () => {
         })
       ])
     );
+  });
+
+  it("rejects encrypted wallet backups with weak KDF parameters", async () => {
+    await expect(
+      decryptWalletBackup(
+        {
+          version: 2,
+          kind: "xian-wallet-backup",
+          encryption: {
+            algorithm: "AES-256-GCM",
+            kdf: "PBKDF2-SHA256",
+            iterations: 10_000,
+            salt: "salt",
+            iv: "iv"
+          },
+          ciphertext: "ciphertext"
+        },
+        "backup-pass"
+      )
+    ).rejects.toThrow("invalid wallet backup encryption parameters");
+  });
+
+  it("rejects plaintext wallet backup JSON", () => {
+    expect(() =>
+      parseWalletBackupJson(
+        JSON.stringify({
+          version: 1,
+          type: "privateKey",
+          privateKey: VALID_PRIVATE_KEY
+        })
+      )
+    ).toThrow("invalid wallet backup");
   });
 });

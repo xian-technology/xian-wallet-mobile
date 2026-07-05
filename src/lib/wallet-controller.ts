@@ -13,6 +13,7 @@ import {
 
 import {
   type StoredWalletState,
+  type StoredWalletEncryption,
   type StoredShieldedWalletSnapshot,
   type StoredUnlockedSession,
   createMobileStore
@@ -32,9 +33,11 @@ import {
 import { assertRpcTransportAllowed } from "./network-security";
 
 const ENCODER = new TextEncoder();
-// Lower than browser (250k) to keep mobile unlock responsive on-device.
-// Backup files carry their own KDF parameters for cross-wallet import.
-const ITERATIONS = 10_000;
+export const WALLET_STATE_KDF_ITERATIONS = 250_000;
+
+const WALLET_STATE_KDF_ALGORITHM = "PBKDF2-SHA256";
+const WALLET_STATE_KDF_VERSION = 1;
+const WALLET_STATE_KDF_SALT_BYTES = 16;
 const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
 
 const store = createMobileStore();
@@ -52,6 +55,10 @@ function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes)
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -180,27 +187,66 @@ function decryptWithKey(payload: string, key: Uint8Array): string {
   return new TextDecoder().decode(plaintext);
 }
 
-async function createWalletSessionKey(password: string): Promise<{
-  walletEncryptionSalt: string;
-  sessionKey: string;
-}> {
-  const walletEncryptionSalt = bytesToBase64(
-    crypto.getRandomValues(new Uint8Array(16))
+function createWalletEncryptionParams(): StoredWalletEncryption {
+  const salt = bytesToBase64(
+    crypto.getRandomValues(new Uint8Array(WALLET_STATE_KDF_SALT_BYTES))
   );
   return {
-    walletEncryptionSalt,
-    sessionKey: await deriveWalletSessionKey(password, walletEncryptionSalt)
+    version: WALLET_STATE_KDF_VERSION,
+    algorithm: WALLET_STATE_KDF_ALGORITHM,
+    iterations: WALLET_STATE_KDF_ITERATIONS,
+    salt,
   };
+}
+
+async function createWalletSessionKey(password: string): Promise<{
+  walletEncryption: StoredWalletEncryption;
+  sessionKey: string;
+}> {
+  const walletEncryption = createWalletEncryptionParams();
+  return {
+    walletEncryption,
+    sessionKey: await deriveWalletSessionKey(password, walletEncryption)
+  };
+}
+
+function decodeWalletEncryptionSalt(walletEncryption: unknown): Uint8Array {
+  if (!isRecord(walletEncryption)) {
+    throw new Error("invalid wallet encryption parameters");
+  }
+
+  const { version, algorithm, iterations, salt: saltValue } = walletEncryption;
+  if (
+    version !== WALLET_STATE_KDF_VERSION ||
+    algorithm !== WALLET_STATE_KDF_ALGORITHM ||
+    typeof iterations !== "number" ||
+    !Number.isSafeInteger(iterations) ||
+    iterations < WALLET_STATE_KDF_ITERATIONS ||
+    typeof saltValue !== "string"
+  ) {
+    throw new Error("invalid wallet encryption parameters");
+  }
+
+  let salt: Uint8Array;
+  try {
+    salt = base64ToBytes(saltValue);
+  } catch {
+    throw new Error("invalid wallet encryption parameters");
+  }
+  if (salt.length < WALLET_STATE_KDF_SALT_BYTES) {
+    throw new Error("invalid wallet encryption parameters");
+  }
+  return salt;
 }
 
 async function deriveWalletSessionKey(
   password: string,
-  walletEncryptionSalt: string
+  walletEncryption: StoredWalletEncryption
 ): Promise<string> {
   const key = await pbkdf2DeriveKey(
     ENCODER.encode(password),
-    base64ToBytes(walletEncryptionSalt),
-    ITERATIONS
+    decodeWalletEncryptionSalt(walletEncryption),
+    walletEncryption.iterations
   );
   return bytesToBase64(key);
 }
@@ -331,7 +377,7 @@ export function createWalletController() {
     state: StoredWalletState,
     password: string
   ): Promise<string> {
-    return deriveWalletSessionKey(password, state.walletEncryptionSalt);
+    return deriveWalletSessionKey(password, state.walletEncryption);
   }
 
   async function decryptPrivateKeyForState(
@@ -479,7 +525,7 @@ export function createWalletController() {
       }
 
       const publicKey = getPublicKey(privateKey);
-      const { walletEncryptionSalt, sessionKey } = await createWalletSessionKey(
+      const { walletEncryption, sessionKey } = await createWalletSessionKey(
         opts.password
       );
       const encryptedPrivateKey = await encryptPrivateKeyWithSessionKey(
@@ -538,7 +584,7 @@ export function createWalletController() {
         publicKey,
         encryptedPrivateKey,
         encryptedMnemonic,
-        walletEncryptionSalt,
+        walletEncryption,
         seedSource: mnemonic ? "mnemonic" : "privateKey",
         mnemonicWordCount: mnemonic ? mnemonic.split(" ").length : undefined,
         accounts: [account],
@@ -822,7 +868,7 @@ export function createWalletController() {
         throw new Error("backup must contain a mnemonic or private key");
       }
 
-      const { walletEncryptionSalt, sessionKey } = await createWalletSessionKey(
+      const { walletEncryption, sessionKey } = await createWalletSessionKey(
         password
       );
       const nowIso = new Date().toISOString();
@@ -904,7 +950,7 @@ export function createWalletController() {
         publicKey: activeAccount.publicKey,
         encryptedPrivateKey: activeAccount.encryptedPrivateKey,
         encryptedMnemonic,
-        walletEncryptionSalt,
+        walletEncryption,
         seedSource: decryptedBackup.type,
         mnemonicWordCount: mnemonic ? mnemonic.split(" ").length : undefined,
         accounts,

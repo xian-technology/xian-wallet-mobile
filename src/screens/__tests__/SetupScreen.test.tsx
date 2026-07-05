@@ -91,7 +91,7 @@ describe("SetupScreen", () => {
       encryption: {
         algorithm: "AES-256-GCM",
         kdf: "PBKDF2-SHA256",
-        iterations: 10_000,
+        iterations: 600_000,
         salt: "salt",
         iv: "iv",
       },
