@@ -13,12 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout xian-wallet-mobile
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: xian-wallet-mobile
 
       - name: Checkout xian-js
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ github.repository_owner }}/xian-js
           ref: main
