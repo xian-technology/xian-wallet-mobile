@@ -30,8 +30,8 @@ describe("SetupScreen", () => {
     });
   });
 
-  it("keeps the wallet form full width within the screen padding", () => {
-    const screen = render(<SetupScreen />);
+  it("keeps the wallet form full width within the screen padding", async () => {
+    const screen = await render(<SetupScreen />);
 
     expect(screen.getByTestId("setup-form")).toHaveStyle({
       width: "100%",
@@ -44,32 +44,32 @@ describe("SetupScreen", () => {
     const mnemonic = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu";
     mockCreateWallet.mockImplementation(async () => ({ mnemonic }));
 
-    const screen = render(<SetupScreen />);
-    fireEvent.changeText(screen.getByPlaceholderText("Wallet password"), "secret123");
-    fireEvent.changeText(screen.getByPlaceholderText("Confirm password"), "secret123");
-    fireEvent.press(screen.getByText("Create Wallet"));
+    const screen = await render(<SetupScreen />);
+    await fireEvent.changeText(screen.getByPlaceholderText("Wallet password"), "secret123");
+    await fireEvent.changeText(screen.getByPlaceholderText("Confirm password"), "secret123");
+    await fireEvent.press(screen.getByText("Create Wallet"));
 
     await waitFor(() => expect(screen.getByText("Recovery Seed")).toBeTruthy());
     expect(mockRefresh).not.toHaveBeenCalled();
-    fireEvent.press(screen.getByText(mnemonic));
+    await fireEvent.press(screen.getByText(mnemonic));
 
     expect(Clipboard.setStringAsync).toHaveBeenCalledWith(mnemonic);
 
-    fireEvent.press(screen.getByText("I've saved my seed"));
+    await fireEvent.press(screen.getByText("I've saved my seed"));
     await waitFor(() => expect(mockRefresh).toHaveBeenCalled());
   });
 
   it("passes key imports through to the controller", async () => {
     mockCreateWallet.mockImplementation(async () => ({}));
 
-    const screen = render(<SetupScreen />);
-    fireEvent.press(screen.getByText("Key"));
-    fireEvent.changeText(screen.getByPlaceholderText("Wallet password"), "secret123");
-    fireEvent.changeText(
+    const screen = await render(<SetupScreen />);
+    await fireEvent.press(screen.getByText("Key"));
+    await fireEvent.changeText(screen.getByPlaceholderText("Wallet password"), "secret123");
+    await fireEvent.changeText(
       screen.getByPlaceholderText("64-character hex key"),
       "11".repeat(32)
     );
-    fireEvent.press(screen.getByText("Import from Key"));
+    await fireEvent.press(screen.getByText("Import from Key"));
 
     await waitFor(() =>
       expect(mockCreateWallet).toHaveBeenCalledWith({
@@ -109,13 +109,13 @@ describe("SetupScreen", () => {
       .__setFileText("file://backup.json", JSON.stringify(backup));
     mockImportWalletBackup.mockImplementation(async () => undefined);
 
-    const screen = render(<SetupScreen />);
-    fireEvent.press(screen.getByText("Backup"));
-    fireEvent.changeText(screen.getByPlaceholderText("Backup password"), "backup-pass");
-    fireEvent.press(screen.getByText("Import File"));
+    const screen = await render(<SetupScreen />);
+    await fireEvent.press(screen.getByText("Backup"));
+    await fireEvent.changeText(screen.getByPlaceholderText("Backup password"), "backup-pass");
+    await fireEvent.press(screen.getByText("Import File"));
 
     await waitFor(() => expect(screen.getByText("Loaded backup.json.")).toBeTruthy());
-    fireEvent.press(screen.getByText("Import Backup"));
+    await fireEvent.press(screen.getByText("Import Backup"));
 
     await waitFor(() =>
       expect(mockImportWalletBackup).toHaveBeenCalledWith(backup, "backup-pass")

@@ -72,14 +72,14 @@ describe("SendScreen", () => {
 
     const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof SendScreen>["navigation"];
     const route = { params: { token: "currency" } } as unknown as React.ComponentProps<typeof SendScreen>["route"];
-    const screen = render(<SendScreen navigation={navigation} route={route} />);
+    const screen = await render(<SendScreen navigation={navigation} route={route} />);
 
-    fireEvent.changeText(screen.getByPlaceholderText("Wallet address"), "ab".repeat(32));
-    fireEvent.changeText(
+    await fireEvent.changeText(screen.getByPlaceholderText("Wallet address"), "ab".repeat(32));
+    await fireEvent.changeText(
       screen.getByPlaceholderText("0.00"),
       "9007199254740993"
     );
-    fireEvent.press(screen.getByText("Review"));
+    await fireEvent.press(screen.getByText("Review"));
 
     await waitFor(() =>
       expect(mockEstimateChi).toHaveBeenCalledWith({
@@ -93,7 +93,7 @@ describe("SendScreen", () => {
       })
     );
 
-    fireEvent.press(screen.getByText("Send Transaction"));
+    await fireEvent.press(screen.getByText("Send Transaction"));
 
     await waitFor(() =>
       expect(mockSendTransaction).toHaveBeenCalledWith({
@@ -120,7 +120,7 @@ describe("SendScreen", () => {
         }
       })
     );
-    act(() => {
+    await act(() => {
       jest.advanceTimersByTime(1600);
     });
     expect(mockShowToast).toHaveBeenNthCalledWith(
@@ -166,11 +166,11 @@ describe("SendScreen", () => {
 
     const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof SendScreen>["navigation"];
     const route = { params: { token: "currency" } } as unknown as React.ComponentProps<typeof SendScreen>["route"];
-    const screen = render(<SendScreen navigation={navigation} route={route} />);
+    const screen = await render(<SendScreen navigation={navigation} route={route} />);
 
-    fireEvent.changeText(screen.getByPlaceholderText("Wallet address"), "ab".repeat(32));
-    fireEvent.changeText(screen.getByPlaceholderText("0.00"), "12.5");
-    fireEvent.press(screen.getByText("Review"));
+    await fireEvent.changeText(screen.getByPlaceholderText("Wallet address"), "ab".repeat(32));
+    await fireEvent.changeText(screen.getByPlaceholderText("0.00"), "12.5");
+    await fireEvent.press(screen.getByText("Review"));
 
     await waitFor(() =>
       expect(mockEstimateChi).toHaveBeenCalledWith({
@@ -184,7 +184,7 @@ describe("SendScreen", () => {
       })
     );
 
-    fireEvent.press(screen.getByText("Send Transaction"));
+    await fireEvent.press(screen.getByText("Send Transaction"));
 
     await waitFor(() =>
       expect(mockSendTransaction).toHaveBeenCalledWith({
@@ -207,16 +207,16 @@ describe("SendScreen", () => {
 
     const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof SendScreen>["navigation"];
     const route = { params: { token: "currency" } } as unknown as React.ComponentProps<typeof SendScreen>["route"];
-    const screen = render(<SendScreen navigation={navigation} route={route} />);
+    const screen = await render(<SendScreen navigation={navigation} route={route} />);
 
-    fireEvent.changeText(screen.getByPlaceholderText("Wallet address"), "qwe");
-    fireEvent.changeText(screen.getByPlaceholderText("0.00"), "5");
-    fireEvent.press(screen.getByText("Review"));
+    await fireEvent.changeText(screen.getByPlaceholderText("Wallet address"), "qwe");
+    await fireEvent.changeText(screen.getByPlaceholderText("0.00"), "5");
+    await fireEvent.press(screen.getByText("Review"));
 
     expect(screen.getByText("Confirm recipient")).toBeTruthy();
     expect(mockEstimateChi).not.toHaveBeenCalled();
 
-    fireEvent.press(screen.getByText("Send Anyway"));
+    await fireEvent.press(screen.getByText("Send Anyway"));
 
     await waitFor(() =>
       expect(mockEstimateChi).toHaveBeenCalledWith({
@@ -234,14 +234,14 @@ describe("SendScreen", () => {
   it("does not estimate an unrecognized recipient when confirmation is cancelled", async () => {
     const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof SendScreen>["navigation"];
     const route = { params: { token: "currency" } } as unknown as React.ComponentProps<typeof SendScreen>["route"];
-    const screen = render(<SendScreen navigation={navigation} route={route} />);
+    const screen = await render(<SendScreen navigation={navigation} route={route} />);
 
-    fireEvent.changeText(screen.getByPlaceholderText("Wallet address"), "qwe");
-    fireEvent.changeText(screen.getByPlaceholderText("0.00"), "5");
-    fireEvent.press(screen.getByText("Review"));
+    await fireEvent.changeText(screen.getByPlaceholderText("Wallet address"), "qwe");
+    await fireEvent.changeText(screen.getByPlaceholderText("0.00"), "5");
+    await fireEvent.press(screen.getByText("Review"));
 
     expect(screen.getByText("Confirm recipient")).toBeTruthy();
-    fireEvent.press(screen.getByText("Cancel"));
+    await fireEvent.press(screen.getByText("Cancel"));
 
     expect(mockEstimateChi).not.toHaveBeenCalled();
   });

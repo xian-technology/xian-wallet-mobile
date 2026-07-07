@@ -775,7 +775,7 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
   },
   busyOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
   },

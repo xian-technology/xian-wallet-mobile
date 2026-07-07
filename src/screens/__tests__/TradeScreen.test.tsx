@@ -150,12 +150,12 @@ describe("TradeScreen", () => {
   it("approves the input token and sends the swap through con_dex", async () => {
     const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof TradeScreen>["navigation"];
     const route = {} as unknown as React.ComponentProps<typeof TradeScreen>["route"];
-    const screen = render(<TradeScreen navigation={navigation} route={route} />);
+    const screen = await render(<TradeScreen navigation={navigation} route={route} />);
 
     await waitFor(() => expect(screen.getByText("Enter amount")).toBeTruthy());
-    fireEvent.changeText(screen.getAllByPlaceholderText("0.00")[0], "1");
+    await fireEvent.changeText(screen.getAllByPlaceholderText("0.00")[0], "1");
     await waitFor(() => expect(screen.getByText("Approve XIAN")).toBeTruthy());
-    fireEvent.press(screen.getByText("Approve XIAN"));
+    await fireEvent.press(screen.getByText("Approve XIAN"));
 
     await waitFor(() =>
       expect(mockSendTransaction).toHaveBeenCalledWith({
@@ -173,9 +173,9 @@ describe("TradeScreen", () => {
     );
     await waitFor(() => expect(screen.getByText("Review Swap")).toBeTruthy());
 
-    fireEvent.press(screen.getByText("Review Swap"));
+    await fireEvent.press(screen.getByText("Review Swap"));
     await waitFor(() => expect(screen.getByText("Swap summary")).toBeTruthy());
-    fireEvent.press(screen.getByText("Send Swap"));
+    await fireEvent.press(screen.getByText("Send Swap"));
 
     await waitFor(() =>
       expect(mockSendTransaction).toHaveBeenLastCalledWith({
@@ -202,7 +202,7 @@ describe("TradeScreen", () => {
         }
       })
     );
-    act(() => {
+    await act(() => {
       jest.advanceTimersByTime(1600);
     });
     expect(mockNotifyActivityChanged).toHaveBeenCalledWith(

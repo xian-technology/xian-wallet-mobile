@@ -1,5 +1,4 @@
 import React from "react";
-import { Switch } from "react-native";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 
@@ -77,17 +76,17 @@ describe("AppsScreen", () => {
   });
 
   it("prioritizes QR scanning and hides manual URI entry until requested", async () => {
-    const screen = render(<AppsScreen />);
+    const screen = await render(<AppsScreen />);
 
     await waitFor(() => expect(screen.getByText("Scan QR")).toBeTruthy());
     expect(screen.getByText("Paste WalletConnect URI")).toBeTruthy();
     expect(screen.queryByPlaceholderText("wc:...")).toBeNull();
 
-    fireEvent.press(screen.getByText("Paste WalletConnect URI"));
+    await fireEvent.press(screen.getByText("Paste WalletConnect URI"));
 
     expect(screen.getByPlaceholderText("wc:...")).toBeTruthy();
-    fireEvent.changeText(screen.getByPlaceholderText("wc:..."), "wc:test-topic@2");
-    fireEvent.press(screen.getByText("Pair"));
+    await fireEvent.changeText(screen.getByPlaceholderText("wc:..."), "wc:test-topic@2");
+    await fireEvent.press(screen.getByText("Pair"));
 
     await waitFor(() => expect(mockPairWalletConnectUri).toHaveBeenCalledWith("wc:test-topic@2"));
   });
@@ -118,19 +117,19 @@ describe("AppsScreen", () => {
       ],
     }));
 
-    const screen = render(<AppsScreen />);
+    const screen = await render(<AppsScreen />);
     await waitFor(() =>
       expect(screen.getByText("Auto-approve any currency.transfer")).toBeTruthy()
     );
 
-    const switches = screen.UNSAFE_getAllByType(Switch);
-    fireEvent(switches[1], "valueChange", true);
-    fireEvent.press(screen.getByText("Approve"));
+    const switches = screen.getAllByRole("switch");
+    await fireEvent(switches[1], "valueChange", true);
+    await fireEvent.press(screen.getByText("Approve"));
 
     expect(screen.getByText("Enable broad auto-approval?")).toBeTruthy();
     expect(mockApproveWalletConnectRequest).not.toHaveBeenCalled();
 
-    fireEvent.press(screen.getByText("Enable"));
+    await fireEvent.press(screen.getByText("Enable"));
 
     await waitFor(() =>
       expect(mockApproveWalletConnectRequest).toHaveBeenCalledWith(7, {

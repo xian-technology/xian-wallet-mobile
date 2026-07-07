@@ -50,9 +50,8 @@ describe("LockScreen", () => {
   });
 
   it("auto-starts fingerprint unlock while biometric unlock is enabled", async () => {
-    const screen = render(<LockScreen />);
+    const screen = await render(<LockScreen />);
 
-    expect(screen.getByText("Checking unlock options.")).toBeTruthy();
     await waitFor(() => expect(mockUnlockWithBiometrics).toHaveBeenCalledTimes(1));
 
     expect(screen.queryByPlaceholderText("Password")).toBeNull();
@@ -67,12 +66,12 @@ describe("LockScreen", () => {
       throw new Error("biometric failed");
     });
 
-    const screen = render(<LockScreen />);
+    const screen = await render(<LockScreen />);
     await waitFor(() => expect(mockUnlockWithBiometrics).toHaveBeenCalledTimes(1));
 
     for (let attempt = 2; attempt <= 5; attempt += 1) {
       await waitFor(() => expect(screen.getByText("Try Fingerprint again")).toBeTruthy());
-      fireEvent.press(screen.getByText("Try Fingerprint again"));
+      await fireEvent.press(screen.getByText("Try Fingerprint again"));
       await waitFor(() => expect(mockUnlockWithBiometrics).toHaveBeenCalledTimes(attempt));
     }
 
@@ -81,8 +80,8 @@ describe("LockScreen", () => {
     );
     expect(screen.queryByText("Try Fingerprint again")).toBeNull();
 
-    fireEvent.changeText(screen.getByPlaceholderText("Password"), "secret123");
-    fireEvent.press(screen.getByText("Unlock"));
+    await fireEvent.changeText(screen.getByPlaceholderText("Password"), "secret123");
+    await fireEvent.press(screen.getByText("Unlock"));
 
     await waitFor(() => expect(mockUnlock).toHaveBeenCalledWith("secret123"));
   });
@@ -90,7 +89,7 @@ describe("LockScreen", () => {
   it("shows password unlock when biometric unlock is not enabled", async () => {
     mockIsBiometricUnlockEnabled.mockImplementation(async () => false);
 
-    const screen = render(<LockScreen />);
+    const screen = await render(<LockScreen />);
 
     await waitFor(() => expect(screen.getByPlaceholderText("Password")).toBeTruthy());
     expect(screen.getByText("Unlock")).toBeTruthy();

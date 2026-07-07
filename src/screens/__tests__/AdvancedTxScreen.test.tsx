@@ -85,29 +85,29 @@ describe("AdvancedTxScreen", () => {
 
     const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof AdvancedTxScreen>["navigation"];
     const route = {} as unknown as React.ComponentProps<typeof AdvancedTxScreen>["route"];
-    const screen = render(<AdvancedTxScreen navigation={navigation} route={route} />);
+    const screen = await render(<AdvancedTxScreen navigation={navigation} route={route} />);
 
-    fireEvent.changeText(screen.getByPlaceholderText("e.g. currency"), "con_token");
+    await fireEvent.changeText(screen.getByPlaceholderText("e.g. currency"), "con_token");
     await act(async () => {
       jest.advanceTimersByTime(500);
     });
 
     await waitFor(() => expect(screen.getByText("mint")).toBeTruthy());
-    fireEvent.press(screen.getByText("mint"));
-    fireEvent.changeText(screen.getByPlaceholderText("int value"), "9007199254740993");
-    fireEvent.changeText(screen.getByPlaceholderText("float value"), "12.5");
-    fireEvent.changeText(
+    await fireEvent.press(screen.getByText("mint"));
+    await fireEvent.changeText(screen.getByPlaceholderText("int value"), "9007199254740993");
+    await fireEvent.changeText(screen.getByPlaceholderText("float value"), "12.5");
+    await fireEvent.changeText(
       screen.getByPlaceholderText("dict value"),
       "{\"mode\":\"fast\"}"
     );
-    fireEvent.changeText(screen.getByPlaceholderText("bool value"), "true");
-    fireEvent.changeText(screen.getByPlaceholderText("Auto-estimate"), "9007199254740995");
-    fireEvent.press(screen.getByText("Review Transaction"));
+    await fireEvent.changeText(screen.getByPlaceholderText("bool value"), "true");
+    await fireEvent.changeText(screen.getByPlaceholderText("Auto-estimate"), "9007199254740995");
+    await fireEvent.press(screen.getByText("Review Transaction"));
 
     expect(mockEstimateChi).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByText("Send Transaction")).toBeTruthy());
 
-    fireEvent.press(screen.getByText("Send Transaction"));
+    await fireEvent.press(screen.getByText("Send Transaction"));
 
     await waitFor(() =>
       expect(mockSendTransaction).toHaveBeenCalledWith({
@@ -136,7 +136,7 @@ describe("AdvancedTxScreen", () => {
         }
       })
     );
-    act(() => {
+    await act(() => {
       jest.advanceTimersByTime(1600);
     });
     expect(mockShowToast).toHaveBeenNthCalledWith(
@@ -185,11 +185,11 @@ describe("AdvancedTxScreen", () => {
 
     const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof AdvancedTxScreen>["navigation"];
     const route = {} as unknown as React.ComponentProps<typeof AdvancedTxScreen>["route"];
-    const screen = render(<AdvancedTxScreen navigation={navigation} route={route} />);
+    const screen = await render(<AdvancedTxScreen navigation={navigation} route={route} />);
 
-    fireEvent.changeText(screen.getByPlaceholderText("e.g. currency"), "currency");
-    fireEvent.changeText(screen.getByPlaceholderText("e.g. transfer"), "approve");
-    fireEvent.press(screen.getByText("Review Transaction"));
+    await fireEvent.changeText(screen.getByPlaceholderText("e.g. currency"), "currency");
+    await fireEvent.changeText(screen.getByPlaceholderText("e.g. transfer"), "approve");
+    await fireEvent.press(screen.getByText("Review Transaction"));
 
     await waitFor(() =>
       expect(mockEstimateChi).toHaveBeenCalledWith({
@@ -200,7 +200,7 @@ describe("AdvancedTxScreen", () => {
       })
     );
 
-    fireEvent.press(screen.getByText("Send Transaction"));
+    await fireEvent.press(screen.getByText("Send Transaction"));
 
     await waitFor(() =>
       expect(mockSendTransaction).toHaveBeenCalledWith({

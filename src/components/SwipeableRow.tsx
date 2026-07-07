@@ -146,7 +146,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   bg: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
