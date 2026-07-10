@@ -67,7 +67,7 @@ app covers:
 | Review activity | `Activity` | pulls indexed transaction history where available |
 | Manage networks | `Networks`, `Settings` | stores RPC / dashboard presets and switches active network |
 | Advanced contract call | `AdvancedTx` | loads contract methods, validates kwargs JSON, estimates chi, sends tx |
-| WalletConnect dapps | `Apps`, walletconnect lib | pair via QR scan or `wc:` URI, approve session proposals and per-request signing prompts, disconnect sessions |
+| WalletConnect dapps | `Apps`, walletconnect lib | pair via QR or `wc:` URI, approve required-only Xian scopes, enforce each live session request, and disconnect sessions |
 | Encrypted backup | `Settings`, wallet-backup lib | export encrypted backup JSON via Share sheet; import a backup file or pasted JSON |
 
 The default network preset points at `http://127.0.0.1:26657`, which is
@@ -101,9 +101,16 @@ npm run test
 - **Mobile-first product code.** The repo is a wallet app, not an SDK
   example. UX, recovery, secure storage, and approval flows live here.
 - **Secrets stay encrypted on-device.** Mnemonics and private keys are
-  encrypted before being stored in AsyncStorage. Short-lived unlocked session
-  material is stored via `expo-secure-store`. Networking and signing happen in
-  the app process.
+  encrypted before being stored in AsyncStorage. The short-lived unlocked
+  record in `expo-secure-store` contains only a version, public key,
+  device-wrapped session key, and expiry; raw private keys and mnemonics are
+  decrypted only in process memory. Invalid or legacy raw-secret sessions fail
+  closed to the locked state.
+- **Dapp authority is explicit.** WalletConnect approves only required Xian
+  methods/events on the active chain, never silently grants optional scope, and
+  rechecks the live session method, chain, and account before every request.
+  External message signatures use the versioned chain/account-bound Xian
+  message envelope.
 - **SDK lives elsewhere.** Wire formats, RPC contracts, and signing
   primitives live in `xian-js` and are consumed from
   `@xian-tech/client`. Changes to that contract land in `xian-js` first.
@@ -128,8 +135,9 @@ npm run test
     preferences.
   - `rpc-client.ts` — RPC client wired through `@xian-tech/client`.
   - `dex.ts` — DEX quoting and swap helpers for the Trade screen.
-  - `walletconnect.ts`, `signing-policy.ts` — WalletConnect session
-    handling and dapp request policy.
+  - `walletconnect.ts`, `walletconnect-policy.ts`, `signing-policy.ts` —
+    WalletConnect session handling, least-privilege namespace enforcement, and
+    dapp request policy.
   - `biometrics.ts` — biometric unlock support.
   - `wallet-backup.ts` — encrypted backup parsing and validation.
   - `tx-classify.ts`, `runtime-input.ts` — transaction classification

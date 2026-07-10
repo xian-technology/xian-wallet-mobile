@@ -126,8 +126,8 @@ export interface StoredWalletState {
 }
 
 export interface StoredUnlockedSession {
-  privateKey: string;
-  mnemonic?: string;
+  version: 2;
+  publicKey: string;
   sessionKey: string;
   expiresAt: number;
 }
@@ -252,18 +252,61 @@ export async function saveDexAvailability(
   await AsyncStorage.setItem(DEX_AVAILABILITY_KEY, JSON.stringify(next));
 }
 
-// Unlocked session (stored in secure store)
+function unlockedSessionSecureStoreOptions(): SecureStore.SecureStoreOptions {
+  return {
+    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    keychainService: SESSION_KEY,
+  };
+}
+
+function normalizeUnlockedSession(value: unknown): StoredUnlockedSession | null {
+  if (
+    typeof value !== "object" ||
+    value == null ||
+    Array.isArray(value)
+  ) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    record.version !== 2 ||
+    typeof record.publicKey !== "string" ||
+    !/^[0-9a-f]{64}$/i.test(record.publicKey) ||
+    typeof record.sessionKey !== "string" ||
+    record.sessionKey.length === 0 ||
+    typeof record.expiresAt !== "number" ||
+    !Number.isSafeInteger(record.expiresAt)
+  ) {
+    return null;
+  }
+  return {
+    version: 2,
+    publicKey: record.publicKey.toLowerCase(),
+    sessionKey: record.sessionKey,
+    expiresAt: record.expiresAt,
+  };
+}
+
+// Unlocked session (stored in secure store). This record intentionally contains
+// only device-wrapped session material; raw private keys and mnemonics are never
+// persisted for an unlocked session.
 export async function loadUnlockedSession(): Promise<StoredUnlockedSession | null> {
-  const raw = await getSecureStoreItem(SESSION_KEY);
+  const options = unlockedSessionSecureStoreOptions();
+  const raw = await getSecureStoreItem(SESSION_KEY, options);
   if (!raw) return null;
   try {
-    const session: StoredUnlockedSession = JSON.parse(raw);
+    const session = normalizeUnlockedSession(JSON.parse(raw));
+    if (!session) {
+      await deleteSecureStoreItem(SESSION_KEY, options);
+      return null;
+    }
     if (session.expiresAt <= Date.now()) {
-      await deleteSecureStoreItem(SESSION_KEY);
+      await deleteSecureStoreItem(SESSION_KEY, options);
       return null;
     }
     return session;
   } catch {
+    await deleteSecureStoreItem(SESSION_KEY, options);
     return null;
   }
 }
@@ -271,11 +314,22 @@ export async function loadUnlockedSession(): Promise<StoredUnlockedSession | nul
 export async function saveUnlockedSession(
   session: StoredUnlockedSession
 ): Promise<void> {
-  await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify(session));
+  const normalized = normalizeUnlockedSession(session);
+  if (!normalized || normalized.expiresAt <= Date.now()) {
+    throw new Error("refusing to persist an invalid unlocked session");
+  }
+  await SecureStore.setItemAsync(
+    SESSION_KEY,
+    JSON.stringify(normalized),
+    unlockedSessionSecureStoreOptions()
+  );
 }
 
 export async function clearUnlockedSession(): Promise<void> {
-  await deleteSecureStoreItem(SESSION_KEY);
+  await deleteSecureStoreItem(
+    SESSION_KEY,
+    unlockedSessionSecureStoreOptions()
+  );
 }
 
 function biometricSecureStoreOptions(): SecureStore.SecureStoreOptions {

@@ -3,7 +3,7 @@ import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 
 const mockUseWallet = jest.fn() as jest.Mock;
-const mockLoadUnlockedSession = jest.fn() as jest.Mock;
+const mockLoadUnlockedWalletMaterial = jest.fn() as jest.Mock;
 const mockLoadDexAvailability = jest.fn() as jest.Mock;
 const mockSaveDexAvailability = jest.fn() as jest.Mock;
 
@@ -12,9 +12,12 @@ jest.mock("../../lib/wallet-context", () => ({
 }));
 
 jest.mock("../../lib/storage", () => ({
-  loadUnlockedSession: () => mockLoadUnlockedSession(),
   loadDexAvailability: (...args: unknown[]) => mockLoadDexAvailability(...args),
   saveDexAvailability: (...args: unknown[]) => mockSaveDexAvailability(...args),
+}));
+
+jest.mock("../../lib/wallet-controller", () => ({
+  loadUnlockedWalletMaterial: () => mockLoadUnlockedWalletMaterial()
 }));
 
 jest.mock("../../lib/haptics", () => ({
@@ -45,7 +48,7 @@ describe("TradeScreen", () => {
     approved = false;
     mockLoadDexAvailability.mockImplementation(async () => null);
     mockSaveDexAvailability.mockImplementation(async () => undefined);
-    mockLoadUnlockedSession.mockImplementation(async () => ({
+    mockLoadUnlockedWalletMaterial.mockImplementation(async () => ({
       privateKey: "11".repeat(32),
       sessionKey: "session-key",
       expiresAt: Date.now() + 60_000

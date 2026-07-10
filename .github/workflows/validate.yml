@@ -8,26 +8,62 @@ on:
     branches:
       - "*"
 
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  workflow-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Lint GitHub Actions workflows
+        uses: raven-actions/actionlint@e01d1ea33dd6a5ed517d95b4c0c357560ac6f518 # v2.1.1
+        with:
+          version: 1.7.12
+          pyflakes: false
+
   validate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout xian-wallet-mobile
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           path: xian-wallet-mobile
 
       - name: Checkout xian-js
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           repository: ${{ github.repository_owner }}/xian-js
           ref: main
           path: xian-js
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
+      - name: Checkout xian-contracting
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
-          node-version: "24"
+          repository: ${{ github.repository_owner }}/xian-contracting
+          ref: main
+          path: xian-contracting
+
+      - name: Checkout xian-meta
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: ${{ github.repository_owner }}/xian-meta
+          ref: main
+          path: xian-meta
+
+      - name: Report resolved sibling SHAs
+        run: python3 xian-meta/scripts/report_workspace_shas.py --workspace-root .
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24.18.0"
           cache: npm
           cache-dependency-path: |
             xian-js/package-lock.json
@@ -52,3 +88,7 @@ jobs:
       - name: Test xian-wallet-mobile
         working-directory: xian-wallet-mobile
         run: npm test
+
+      - name: Build production Android bundle
+        working-directory: xian-wallet-mobile
+        run: npx --no-install expo export --platform android --output-dir dist-ci

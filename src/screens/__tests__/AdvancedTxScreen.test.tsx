@@ -3,14 +3,14 @@ import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 
 const mockUseWallet = jest.fn() as jest.Mock;
-const mockLoadUnlockedSession = jest.fn() as jest.Mock;
+const mockLoadUnlockedWalletMaterial = jest.fn() as jest.Mock;
 
 jest.mock("../../lib/wallet-context", () => ({
   useWallet: () => mockUseWallet()
 }));
 
-jest.mock("../../lib/storage", () => ({
-  loadUnlockedSession: () => mockLoadUnlockedSession()
+jest.mock("../../lib/wallet-controller", () => ({
+  loadUnlockedWalletMaterial: () => mockLoadUnlockedWalletMaterial()
 }));
 
 jest.mock("../../lib/haptics", () => ({
@@ -49,7 +49,7 @@ describe("AdvancedTxScreen", () => {
       showToast: mockShowToast,
       notifyActivityChanged: mockNotifyActivityChanged
     });
-    mockLoadUnlockedSession.mockImplementation(async () => ({
+    mockLoadUnlockedWalletMaterial.mockImplementation(async () => ({
       privateKey: "11".repeat(32),
       sessionKey: "session-key",
       expiresAt: Date.now() + 60_000

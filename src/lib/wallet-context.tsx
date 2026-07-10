@@ -15,8 +15,8 @@ import {
   loadContacts,
   saveContacts,
   saveWalletState,
-  loadUnlockedSession,
 } from "./storage";
+import { loadUnlockedWalletMaterial } from "./wallet-controller";
 import { XianRpcClient } from "./rpc-client";
 import { loadPreferences, savePreferences, type Preferences } from "./preferences";
 import {
@@ -223,7 +223,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(async () => {
     let walletState = await loadWalletState();
-    const session = await loadUnlockedSession();
+    const session = await loadUnlockedWalletMaterial();
     const contacts = await loadContacts();
 
     if (walletState) {

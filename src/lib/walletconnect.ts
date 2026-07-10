@@ -8,19 +8,17 @@ import {
   formatJsonRpcError,
   formatJsonRpcResult
 } from "@walletconnect/jsonrpc-utils";
-import { buildApprovedNamespaces, getSdkError } from "@walletconnect/utils";
+import { getSdkError } from "@walletconnect/utils";
 import { WalletKit, type WalletKitTypes } from "@reown/walletkit";
-import { Ed25519Signer } from "@xian-tech/client";
 import {
-  XIAN_WALLETCONNECT_EVENTS,
-  XIAN_WALLETCONNECT_METHODS,
-  XIAN_WALLETCONNECT_NAMESPACE,
+  createXianMessageSigningPayload,
+  Ed25519Signer
+} from "@xian-tech/client";
+import {
   createXianDappPolicyForRequest,
   findMatchingXianDappPolicy,
   parseXianDappAction,
-  xianAccountToCaip10,
   xianChainIdFromCaip2,
-  xianChainIdToCaip2,
   type BroadcastMode,
   type XianDappPolicy,
   type XianDappPolicyArgumentScope,
@@ -31,13 +29,13 @@ import {
 } from "@xian-tech/provider";
 
 import {
-  loadUnlockedSession,
   loadWalletState,
   saveWalletState,
   touchTrustedDappPolicy,
   upsertTrustedDappPolicy,
   type StoredWalletState,
 } from "./storage";
+import { loadUnlockedWalletMaterial } from "./wallet-controller";
 import { XianRpcClient } from "./rpc-client";
 import { activeNetworkAllowsInsecureHttp } from "./network-security";
 import {
@@ -46,13 +44,19 @@ import {
   saveLocalActivityTx,
 } from "./local-activity";
 import { isUnsafeMessageToSign } from "./signing-policy";
+import {
+  authorizeXianWalletConnectRequest,
+  buildRequiredXianApprovedNamespaces,
+  WalletConnectScopeError,
+  type WalletConnectApprovedNamespace,
+  type WalletConnectSessionNamespace,
+} from "./walletconnect-policy";
 
 const WALLETCONNECT_NATIVE_REDIRECT = "xianwallet://";
 const WALLETCONNECT_ORIGIN_PREFIX = "wc:";
 const TRUSTED_DAPP_POLICY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 type WalletKitClient = Awaited<ReturnType<typeof WalletKit.init>>;
-type BuildApprovedNamespacesParams = Parameters<typeof buildApprovedNamespaces>[0];
 
 function rpcClientForState(state: StoredWalletState): XianRpcClient {
   return new XianRpcClient(state.rpcUrl, {
@@ -70,6 +74,7 @@ interface WalletConnectMetadata {
 interface WalletConnectSession {
   topic: string;
   expiry?: number;
+  namespaces?: Record<string, WalletConnectSessionNamespace>;
   peer?: {
     metadata?: WalletConnectMetadata;
   };
@@ -99,6 +104,7 @@ export interface DappSessionRequest {
   topic: string;
   origin: string;
   sessionName: string;
+  caipChainId?: string;
   chainId?: string;
   request: XianProviderRequest;
   trustSuggestion?: {
@@ -295,24 +301,21 @@ async function updateWalletConnectOrigin(
 
 async function executionContext(expectedChainId?: string): Promise<{
   state: StoredWalletState;
-  session: NonNullable<Awaited<ReturnType<typeof loadUnlockedSession>>>;
+  privateKey: string;
   rpc: XianRpcClient;
   chainId: string;
 }> {
-  const state = await loadWalletState();
-  if (!state) {
-    throw new Error("wallet is not configured");
-  }
-  const session = await loadUnlockedSession();
-  if (!session) {
+  const material = await loadUnlockedWalletMaterial();
+  if (!material) {
     throw new Error("wallet is locked");
   }
+  const { state, privateKey } = material;
   const rpc = rpcClientForState(state);
   const chainId = await activeChainIdForState(state, rpc);
   if (expectedChainId && expectedChainId !== chainId) {
     throw new Error("wallet is connected to a different chain");
   }
-  return { state, session, rpc, chainId };
+  return { state, privateKey, rpc, chainId };
 }
 
 async function recordSubmittedTransaction(
@@ -337,10 +340,14 @@ async function recordSubmittedTransaction(
 
 async function executeXianRequest(
   request: XianProviderRequest,
-  expectedChainId?: string
+  expectedChainId?: string,
+  expectedAccount?: string
 ): Promise<unknown> {
-  const { state, session, rpc, chainId } = await executionContext(expectedChainId);
-  const signer = new Ed25519Signer(session.privateKey);
+  const { state, privateKey, rpc, chainId } = await executionContext(expectedChainId);
+  if (expectedAccount && expectedAccount !== state.publicKey) {
+    throw new Error("WalletConnect session is approved for a different account");
+  }
+  const signer = new Ed25519Signer(privateKey);
 
   switch (request.method) {
     case "xian_requestAccounts":
@@ -377,7 +384,13 @@ async function executeXianRequest(
       if (isUnsafeMessageToSign(message)) {
         throw new Error("refusing to sign a transaction-like payload as a plain message");
       }
-      return signer.signMessage(message);
+      return signer.signMessage(
+        createXianMessageSigningPayload({
+          account: state.publicKey,
+          chainId,
+          message
+        })
+      );
     }
 
     case "xian_prepareTransaction": {
@@ -404,7 +417,7 @@ async function executeXianRequest(
       if (payload.chain_id !== chainId) {
         throw new Error("transaction chain does not match the active wallet chain");
       }
-      return rpc.signTransaction(session.privateKey, unsignedTx);
+      return rpc.signTransaction(privateKey, unsignedTx);
     }
 
     case "xian_sendTransaction": {
@@ -418,7 +431,7 @@ async function executeXianRequest(
       if (payload.chain_id !== chainId) {
         throw new Error("transaction chain does not match the active wallet chain");
       }
-      const signedTx = await rpc.signTransaction(session.privateKey, unsignedTx);
+      const signedTx = await rpc.signTransaction(privateKey, unsignedTx);
       const result = await rpc.broadcastSignedTransaction(signedTx, {
         mode: mode as BroadcastMode | undefined,
         waitForTx: waitForTx as boolean | undefined,
@@ -442,7 +455,7 @@ async function executeXianRequest(
         chi: parseXianNumber(txIntent.chi),
         chiSupplied: parseXianNumber(txIntent.chiSupplied)
       });
-      const signedTx = await rpc.signTransaction(session.privateKey, unsignedTx);
+      const signedTx = await rpc.signTransaction(privateKey, unsignedTx);
       const result = await rpc.broadcastSignedTransaction(signedTx, {
         mode: mode as BroadcastMode | undefined,
         waitForTx: waitForTx as boolean | undefined,
@@ -470,13 +483,48 @@ async function executeXianRequest(
   }
 }
 
+function authorizePendingRequest(
+  client: WalletKitClient,
+  pending: DappSessionRequest
+): { account: string; chainId: string } {
+  const session = client.getActiveSessions()[pending.topic] as
+    | WalletConnectSession
+    | undefined;
+  if (!session) {
+    throw new Error("WalletConnect session is no longer active");
+  }
+  return authorizeXianWalletConnectRequest({
+    namespaces: session.namespaces,
+    caipChainId: pending.caipChainId ?? "",
+    method: pending.request.method,
+  });
+}
+
+async function requiredNamespacesForProposal(
+  proposal: WalletKitTypes.SessionProposal
+): Promise<Record<string, WalletConnectApprovedNamespace>> {
+  const state = await loadWalletState();
+  if (!state) {
+    throw new Error("wallet is not configured");
+  }
+  const rpc = rpcClientForState(state);
+  const chainId = await activeChainIdForState(state, rpc);
+  return buildRequiredXianApprovedNamespaces({
+    proposal: proposal.params,
+    chainId,
+    account: state.publicKey,
+  });
+}
+
 function proposalSummary(
   proposal: WalletKitTypes.SessionProposal
 ): DappSessionProposal {
   const metadata = proposal.params.proposer.metadata as WalletConnectMetadata;
-  const required = Object.values(proposal.params.requiredNamespaces ?? {});
-  const requiredChains = required.flatMap((namespace) => namespace.chains ?? []);
-  const requiredMethods = required.flatMap((namespace) => namespace.methods ?? []);
+  const required = Object.entries(proposal.params.requiredNamespaces ?? {});
+  const requiredChains = required.flatMap(([key, namespace]) =>
+    key.includes(":") ? [key] : namespace.chains ?? []
+  );
+  const requiredMethods = required.flatMap(([, namespace]) => namespace.methods ?? []);
   return {
     id: proposal.id,
     name: metadataName(metadata),
@@ -504,6 +552,7 @@ function requestSummary(
     topic: event.topic,
     origin: wcOrigin(event.topic),
     sessionName: sessionName(event.topic),
+    caipChainId: event.params.chainId,
     chainId: chainId ?? undefined,
     request,
     trustSuggestion: target
@@ -574,11 +623,18 @@ async function tryAutoApproveRequest(
   client: WalletKitClient,
   pending: DappSessionRequest
 ): Promise<boolean> {
-  const state = await loadWalletState();
-  const session = await loadUnlockedSession();
-  if (!state || !session) {
+  let authorization: { account: string; chainId: string };
+  try {
+    authorization = authorizePendingRequest(client, pending);
+  } catch (error) {
+    await respondWithError(client, pending, error);
+    return true;
+  }
+  const material = await loadUnlockedWalletMaterial();
+  if (!material) {
     return false;
   }
+  const { state } = material;
   const rpc = rpcClientForState(state);
   const chainId = await activeChainIdForState(state, rpc);
   const match = findMatchingXianDappPolicy(
@@ -596,7 +652,11 @@ async function tryAutoApproveRequest(
   }
 
   try {
-    const result = await executeXianRequest(pending.request, pending.chainId);
+    const result = await executeXianRequest(
+      pending.request,
+      authorization.chainId,
+      authorization.account
+    );
     await respondWithResult(client, pending, result);
     await touchTrustedDappPolicy(match.policy.id);
   } catch (error) {
@@ -612,16 +672,35 @@ function attachListeners(client: WalletKitClient): void {
   listenersAttached = true;
 
   client.on("session_proposal", (proposal) => {
-    proposals = [
-      ...proposals.filter((entry) => entry.id !== proposal.id),
-      proposalSummary(proposal)
-    ];
-    emitChange();
+    void (async () => {
+      try {
+        await requiredNamespacesForProposal(proposal);
+        proposals = [
+          ...proposals.filter((entry) => entry.id !== proposal.id),
+          proposalSummary(proposal)
+        ];
+      } catch (error) {
+        const reason =
+          error instanceof WalletConnectScopeError
+            ? getSdkError(error.reason)
+            : getSdkError("UNSUPPORTED_NAMESPACE_KEY");
+        await client.rejectSession({ id: proposal.id, reason });
+        proposals = proposals.filter((entry) => entry.id !== proposal.id);
+      }
+      emitChange();
+    })();
   });
 
   client.on("session_request", (event) => {
     void (async () => {
       const pending = requestSummary(event);
+      try {
+        authorizePendingRequest(client, pending);
+      } catch (error) {
+        await respondWithError(client, pending, error);
+        emitChange();
+        return;
+      }
       if (await tryAutoApproveRequest(client, pending)) {
         emitChange();
         return;
@@ -808,24 +887,7 @@ export async function approveWalletConnectProposal(id: number): Promise<void> {
   if (!pending) {
     throw new Error("WalletConnect proposal not found");
   }
-  const state = await loadWalletState();
-  if (!state) {
-    throw new Error("wallet is not configured");
-  }
-  const rpc = rpcClientForState(state);
-  const chainId = await activeChainIdForState(state, rpc);
-  const caipChainId = xianChainIdToCaip2(chainId);
-  const approvedNamespaces = buildApprovedNamespaces({
-    proposal: pending.raw.params as BuildApprovedNamespacesParams["proposal"],
-    supportedNamespaces: {
-      [XIAN_WALLETCONNECT_NAMESPACE]: {
-        chains: [caipChainId],
-        methods: [...XIAN_WALLETCONNECT_METHODS],
-        events: [...XIAN_WALLETCONNECT_EVENTS],
-        accounts: [xianAccountToCaip10(chainId, state.publicKey)]
-      }
-    }
-  });
+  const approvedNamespaces = await requiredNamespacesForProposal(pending.raw);
   const session = await walletKit.approveSession({
     id,
     namespaces: approvedNamespaces
@@ -861,7 +923,12 @@ export async function approveWalletConnectRequest(
     throw new Error("WalletConnect request not found");
   }
   try {
-    const result = await executeXianRequest(pending.request, pending.chainId);
+    const authorization = authorizePendingRequest(walletKit, pending);
+    const result = await executeXianRequest(
+      pending.request,
+      authorization.chainId,
+      authorization.account
+    );
     await respondWithResult(walletKit, pending, result);
     if (options?.trust) {
       const policy = await createPolicyForRequest(pending, options.trust);

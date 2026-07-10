@@ -20,7 +20,7 @@ import { Card } from "../components/Card";
 import { TokenAvatar } from "../components/TokenAvatar";
 import { AppDialog } from "../components/AppDialog";
 import { useWallet } from "../lib/wallet-context";
-import { loadUnlockedSession } from "../lib/storage";
+import { loadUnlockedWalletMaterial } from "../lib/wallet-controller";
 import { visibleAssetsForActiveNetwork } from "../lib/assets";
 import { lightTap, successTap, errorTap } from "../lib/haptics";
 import {
@@ -106,12 +106,12 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
   const handleSend = async () => {
     setStep("sending");
     try {
-      const session = await loadUnlockedSession();
-      if (!session) throw new Error("Wallet is locked");
+      const material = await loadUnlockedWalletMaterial();
+      if (!material) throw new Error("Wallet is locked");
       const parsedAmount = parseAmountInput(amount);
       if (parsedAmount == null) throw new Error("Enter a valid amount");
       const kwargs = { to: to.trim(), amount: parsedAmount };
-      const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: activeToken, function: "transfer", kwargs, chi: estimate?.estimated ?? 50000 });
+      const r = await rpc.sendTransaction({ privateKey: material.privateKey, contract: activeToken, function: "transfer", kwargs, chi: estimate?.estimated ?? 50000 });
       const sentShown = showTransactionSentToast(showToast, state.dashboardUrl, r);
       scheduleTransactionStatusToast(showToast, state.dashboardUrl, r, sentShown ? 1600 : 0);
       const ok = transactionSucceeded(r);

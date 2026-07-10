@@ -42,9 +42,9 @@ import {
 import { useWallet } from "../lib/wallet-context";
 import {
   loadDexAvailability,
-  loadUnlockedSession,
   saveDexAvailability,
 } from "../lib/storage";
+import { loadUnlockedWalletMaterial } from "../lib/wallet-controller";
 import {
   scheduleTransactionStatusToast,
   showTransactionSentToast,
@@ -275,8 +275,8 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
     setStep("approving");
     setError(null);
     try {
-      const session = await loadUnlockedSession();
-      if (!session) throw new Error("Wallet is locked");
+      const material = await loadUnlockedWalletMaterial();
+      if (!material) throw new Error("Wallet is locked");
       const kwargs = {
         amount:
           runtimeFixedFromString(amount) ??
@@ -290,7 +290,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
         kwargs,
       });
       const result = await rpc.sendTransaction({
-        privateKey: session.privateKey,
+        privateKey: material.privateKey,
         contract: from.contract,
         function: "approve",
         kwargs,
@@ -405,11 +405,11 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
     }
     setStep("swapping");
     try {
-      const session = await loadUnlockedSession();
-      if (!session) throw new Error("Wallet is locked");
+      const material = await loadUnlockedWalletMaterial();
+      if (!material) throw new Error("Wallet is locked");
       const fn = tradeSwapFunction(snapshot, reviewQuote);
       const result = await rpc.sendTransaction({
-        privateKey: session.privateKey,
+        privateKey: material.privateKey,
         contract: DEX_ROUTER,
         function: fn,
         kwargs: reviewKwargs,

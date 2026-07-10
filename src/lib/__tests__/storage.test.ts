@@ -22,7 +22,12 @@ jest.mock("@react-native-async-storage/async-storage", () => ({
   },
   ...mockAsyncStorage,
 }));
-jest.mock("expo-secure-store", () => mockSecureStore);
+jest.mock("expo-secure-store", () => ({
+  getItemAsync: (...args: unknown[]) => mockSecureStore.getItemAsync(...args),
+  setItemAsync: (...args: unknown[]) => mockSecureStore.setItemAsync(...args),
+  deleteItemAsync: (...args: unknown[]) => mockSecureStore.deleteItemAsync(...args),
+  WHEN_UNLOCKED_THIS_DEVICE_ONLY: "WHEN_UNLOCKED_THIS_DEVICE_ONLY",
+}));
 jest.mock(
   "@xian-tech/provider",
   () => ({
@@ -56,6 +61,7 @@ import {
   loadBiometricSessionKey,
   loadUnlockedSession,
   saveDexAvailability,
+  saveUnlockedSession,
 } from "../storage";
 
 describe("secure storage adapter", () => {
@@ -79,6 +85,56 @@ describe("secure storage adapter", () => {
     rejectSecureStoreDelete(new Error("A required entitlement isn't present."));
 
     await expect(clearUnlockedSession()).resolves.toBeUndefined();
+  });
+
+  it("stores only a device-bound versioned unlocked session", async () => {
+    const session = {
+      version: 2 as const,
+      publicKey: "aa".repeat(32),
+      sessionKey: "wrapped-session-key",
+      expiresAt: Date.now() + 60_000,
+    };
+
+    await saveUnlockedSession(session);
+
+    expect(mockSecureStore.setItemAsync).toHaveBeenCalledWith(
+      "xian_unlocked_session",
+      JSON.stringify(session),
+      {
+        keychainAccessible: "WHEN_UNLOCKED_THIS_DEVICE_ONLY",
+        keychainService: "xian_unlocked_session",
+      }
+    );
+  });
+
+  it("deletes legacy unlocked sessions containing raw secrets and stays locked", async () => {
+    mockSecureStoreGetOnce(JSON.stringify({
+      privateKey: "11".repeat(32),
+      mnemonic: "legacy mnemonic",
+      sessionKey: "legacy-session-key",
+      expiresAt: Date.now() + 60_000,
+    }));
+
+    await expect(loadUnlockedSession()).resolves.toBeNull();
+    expect(mockSecureStore.deleteItemAsync).toHaveBeenCalledWith(
+      "xian_unlocked_session",
+      {
+        keychainAccessible: "WHEN_UNLOCKED_THIS_DEVICE_ONLY",
+        keychainService: "xian_unlocked_session",
+      }
+    );
+  });
+
+  it("deletes malformed versioned sessions instead of partially restoring them", async () => {
+    mockSecureStoreGetOnce(JSON.stringify({
+      version: 2,
+      publicKey: "not-a-public-key",
+      sessionKey: "session-key",
+      expiresAt: Date.now() + 60_000,
+    }));
+
+    await expect(loadUnlockedSession()).resolves.toBeNull();
+    expect(mockSecureStore.deleteItemAsync).toHaveBeenCalledTimes(1);
   });
 
   it("stores positive DEX availability per network key", async () => {
@@ -125,6 +181,14 @@ function rejectSecureStoreGetOnce(error: Error): void {
       mockRejectedValueOnce: (value: Error) => void;
     }
   ).mockRejectedValueOnce(error);
+}
+
+function mockSecureStoreGetOnce(value: unknown): void {
+  (
+    mockSecureStore.getItemAsync as unknown as {
+      mockResolvedValueOnce: (value: unknown) => void;
+    }
+  ).mockResolvedValueOnce(value);
 }
 
 function rejectSecureStoreDelete(error: Error): void {

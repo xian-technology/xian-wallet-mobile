@@ -334,16 +334,69 @@ async function decryptMnemonicWithSessionKey(
   return normalized;
 }
 
+export interface UnlockedWalletMaterial {
+  state: StoredWalletState;
+  privateKey: string;
+  mnemonic?: string;
+  sessionKey: string;
+  expiresAt: number;
+}
+
+export async function loadUnlockedWalletMaterial(): Promise<UnlockedWalletMaterial | null> {
+  const [state, session] = await Promise.all([
+    store.loadState(),
+    store.loadUnlockedSession(),
+  ]);
+  if (!state || !session) {
+    if (session) {
+      await store.clearUnlockedSession();
+    }
+    return null;
+  }
+
+  try {
+    if (session.publicKey !== state.publicKey) {
+      throw new Error("unlocked session belongs to a different account");
+    }
+    const privateKey = await decryptPrivateKeyWithSessionKey(
+      state.encryptedPrivateKey,
+      session.sessionKey
+    );
+    if (getPublicKey(privateKey) !== state.publicKey) {
+      throw new Error("unlocked session does not match stored wallet");
+    }
+    const mnemonic = state.encryptedMnemonic
+      ? await decryptMnemonicWithSessionKey(
+          state.encryptedMnemonic,
+          session.sessionKey
+        )
+      : undefined;
+    return {
+      state,
+      privateKey,
+      mnemonic,
+      sessionKey: session.sessionKey,
+      expiresAt: session.expiresAt,
+    };
+  } catch {
+    await store.clearUnlockedSession();
+    return null;
+  }
+}
+
 export function createWalletController() {
   let unlockedPrivateKey: string | null = null;
   let unlockedMnemonic: string | null = null;
   let unlockedSessionKey: string | null = null;
 
-  async function persistSession(privateKey: string): Promise<void> {
+  async function persistSession(): Promise<void> {
+    if (!unlockedPrivateKey || !unlockedSessionKey) {
+      throw new Error("cannot persist a locked wallet session");
+    }
     const session: StoredUnlockedSession = {
-      privateKey,
-      mnemonic: unlockedMnemonic ?? undefined,
-      sessionKey: unlockedSessionKey as string,
+      version: 2,
+      publicKey: getPublicKey(unlockedPrivateKey),
+      sessionKey: unlockedSessionKey,
       expiresAt: Date.now() + SESSION_TIMEOUT_MS
     };
     await store.saveUnlockedSession(session);
@@ -353,16 +406,13 @@ export function createWalletController() {
     if (unlockedPrivateKey) {
       return true;
     }
-    const session = await store.loadUnlockedSession();
-    if (!session || session.expiresAt <= Date.now()) {
-      if (session) {
-        await store.clearUnlockedSession();
-      }
+    const material = await loadUnlockedWalletMaterial();
+    if (!material) {
       return false;
     }
-    unlockedPrivateKey = session.privateKey;
-    unlockedMnemonic = session.mnemonic ?? null;
-    unlockedSessionKey = session.sessionKey;
+    unlockedPrivateKey = material.privateKey;
+    unlockedMnemonic = material.mnemonic ?? null;
+    unlockedSessionKey = material.sessionKey;
     return true;
   }
 
@@ -433,7 +483,7 @@ export function createWalletController() {
       unlockedMnemonic = null;
     }
 
-    await persistSession(privateKey);
+    await persistSession();
   }
 
   function storedShieldedWalletSnapshots(
@@ -613,7 +663,7 @@ export function createWalletController() {
       unlockedPrivateKey = privateKey;
       unlockedMnemonic = mnemonic ?? null;
       unlockedSessionKey = sessionKey;
-      await persistSession(privateKey);
+      await persistSession();
 
       return { mnemonic };
     },
@@ -705,7 +755,7 @@ export function createWalletController() {
       await store.saveState(state);
 
       unlockedPrivateKey = privateKey;
-      await persistSession(privateKey);
+      await persistSession();
     },
 
     async switchAccount(index: number): Promise<void> {
@@ -726,7 +776,7 @@ export function createWalletController() {
         state.encryptedPrivateKey = target.encryptedPrivateKey;
         state.activeAccountIndex = index;
         await store.saveState(state);
-        await persistSession(privateKey);
+        await persistSession();
       } else {
         state.publicKey = target.publicKey;
         state.encryptedPrivateKey = target.encryptedPrivateKey;
@@ -779,7 +829,7 @@ export function createWalletController() {
             primary.index
           );
           unlockedPrivateKey = privateKey;
-          await persistSession(privateKey);
+          await persistSession();
         } else if (unlockedPrivateKey) {
           await clearSession();
         }
@@ -970,7 +1020,7 @@ export function createWalletController() {
       unlockedPrivateKey = activePrivateKey;
       unlockedMnemonic = mnemonic ?? null;
       unlockedSessionKey = sessionKey;
-      await persistSession(activePrivateKey);
+      await persistSession();
     },
 
     async saveShieldedWalletSnapshot(

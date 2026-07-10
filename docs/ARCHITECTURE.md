@@ -16,8 +16,9 @@ store, biometrics, QR scanning, sharing, and WalletConnect sessions.
 - `src/lib/wallet-context.tsx`: React context wrapper around the controller.
 - `src/lib/storage.ts`, `src/lib/preferences.ts`: local persistence helpers.
 - `src/lib/rpc-client.ts`: mobile wrapper around `@xian-tech/client`.
-- `src/lib/walletconnect.ts`, `src/lib/signing-policy.ts`: dapp session and
-  request-approval policy.
+- `src/lib/walletconnect.ts`, `src/lib/walletconnect-policy.ts`,
+  `src/lib/signing-policy.ts`: dapp sessions, required-only namespace scope,
+  live request authorization, and request-approval policy.
 - `src/lib/wallet-backup.ts`: encrypted backup import/export validation.
 - `src/lib/biometrics.ts`: biometric unlock support with password fallback.
 - `src/theme/`: design tokens and shared styling primitives.
@@ -44,6 +45,14 @@ flowchart LR
   reachability.
 - Signing policy is enforced before any dapp or screen request reaches the
   transaction submission path.
+- AsyncStorage contains only password-encrypted wallet secrets. SecureStore's
+  unlocked record is a device-bound, expiring v2 session-key record with no raw
+  private key or mnemonic; restoration decrypts the active account into process
+  memory and deletes any legacy or malformed record.
+- WalletConnect proposals must require supported Xian permissions on the active
+  chain. Optional namespaces are not approved, and queued or automatic requests
+  are reauthorized against the live method, chain, and account before signing
+  or submission.
 
 ## Boundaries
 

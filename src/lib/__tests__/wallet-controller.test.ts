@@ -158,6 +158,7 @@ const { __mockStore: mockStore } = jest.requireMock("../storage") as {
 
 import {
   createWalletController,
+  loadUnlockedWalletMaterial,
   WALLET_STATE_KDF_ITERATIONS,
 } from "../wallet-controller";
 import {
@@ -204,7 +205,7 @@ describe("wallet-controller", () => {
     });
   });
 
-  it("persists a session key instead of a plaintext password", async () => {
+  it("persists only versioned session material, never raw wallet secrets", async () => {
     const controller = createWalletController();
 
     await controller.createWallet({
@@ -219,10 +220,45 @@ describe("wallet-controller", () => {
       salt: expect.any(String)
     });
     expect(mockStoredSession).toMatchObject({
-      privateKey: VALID_PRIVATE_KEY,
+      version: 2,
+      publicKey: mockStoredState?.publicKey,
       sessionKey: expect.any(String)
     });
+    expect(JSON.stringify(mockStoredSession)).not.toContain(VALID_PRIVATE_KEY);
+    expect(JSON.stringify(mockStoredSession)).not.toContain(VALID_MNEMONIC);
     expect("password" in (mockStoredSession as object)).toBe(false);
+  });
+
+  it("deletes an orphaned unlocked session when wallet state is missing", async () => {
+    mockStoredSession = {
+      version: 2,
+      publicKey: "aa".repeat(32),
+      sessionKey: "orphaned-session-key",
+      expiresAt: Date.now() + 60_000,
+    };
+
+    await expect(loadUnlockedWalletMaterial()).resolves.toBeNull();
+    expect(mockStore.clearUnlockedSession).toHaveBeenCalledTimes(1);
+    expect(mockStoredSession).toBeNull();
+  });
+
+  it("restores an unlocked mnemonic session after an app restart", async () => {
+    const controller = createWalletController();
+    await controller.createWallet({
+      password: "secret123",
+      mnemonic: VALID_MNEMONIC
+    });
+
+    const persisted = JSON.stringify(mockStoredSession);
+    expect(persisted).not.toContain(VALID_MNEMONIC);
+    expect(persisted).not.toContain(
+      "b3aee0ed179a18a754136d3d134c03e9c1ad97eb2e9912401dc2d9ffc96882e0"
+    );
+
+    const resumedController = createWalletController();
+    await expect(resumedController.isUnlocked()).resolves.toBe(true);
+    await expect(resumedController.addAccount()).resolves.toBeUndefined();
+    expect(mockStoredState?.accounts).toHaveLength(2);
   });
 
   it("rejects malformed private-key imports", async () => {
@@ -257,12 +293,12 @@ describe("wallet-controller", () => {
       password: "secret123",
       mnemonic: VALID_MNEMONIC
     });
-    expect(mockStoredSession?.privateKey).toBe(
+    await expect(controller.revealPrivateKey("secret123")).resolves.toBe(
       "b3aee0ed179a18a754136d3d134c03e9c1ad97eb2e9912401dc2d9ffc96882e0"
     );
 
     await controller.addAccount();
-    expect(mockStoredSession?.privateKey).toBe(
+    await expect(controller.revealPrivateKey("secret123")).resolves.toBe(
       "f1f4674448f4d17a78af6b150a7fa45a752d0014fb0235604a339a898695ce69"
     );
   });
@@ -274,18 +310,22 @@ describe("wallet-controller", () => {
       password: "secret123",
       mnemonic: VALID_MNEMONIC
     });
-    const primaryPrivateKey = mockStoredSession?.privateKey;
+    const primaryPrivateKey = await controller.revealPrivateKey("secret123");
 
     await controller.addAccount();
     expect(mockStoredState?.activeAccountIndex).toBe(1);
-    expect(mockStoredSession?.privateKey).not.toBe(primaryPrivateKey);
+    await expect(controller.revealPrivateKey("secret123")).resolves.not.toBe(
+      primaryPrivateKey
+    );
 
     const resumedController = createWalletController();
     await resumedController.removeAccount(1);
 
     expect(mockStoredState?.activeAccountIndex).toBe(0);
     expect(mockStoredState?.publicKey).toBe(mockStoredState?.accounts?.[0]?.publicKey);
-    expect(mockStoredSession?.privateKey).toBe(primaryPrivateKey);
+    await expect(resumedController.revealPrivateKey("secret123")).resolves.toBe(
+      primaryPrivateKey
+    );
     expect(mockStore.clearUnlockedSession).not.toHaveBeenCalled();
   });
 
@@ -322,7 +362,9 @@ describe("wallet-controller", () => {
     const resumedController = createWalletController();
     await resumedController.unlockWithBiometrics();
 
-    expect(mockStoredSession?.privateKey).toBe(VALID_PRIVATE_KEY);
+    await expect(resumedController.revealPrivateKey("secret123")).resolves.toBe(
+      VALID_PRIVATE_KEY
+    );
     expect(await resumedController.isBiometricUnlockEnabled()).toBe(true);
 
     await resumedController.disableBiometricUnlock();

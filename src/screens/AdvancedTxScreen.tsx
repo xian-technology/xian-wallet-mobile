@@ -15,7 +15,7 @@ import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Card } from "../components/Card";
 import { useWallet } from "../lib/wallet-context";
-import { loadUnlockedSession } from "../lib/storage";
+import { loadUnlockedWalletMaterial } from "../lib/wallet-controller";
 import { lightTap, successTap, errorTap } from "../lib/haptics";
 import { parsePositiveIntegerInput, parseTypedInput } from "../lib/runtime-input";
 import {
@@ -136,12 +136,12 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
   const handleSend = async () => {
     setStep("sending");
     try {
-      const session = await loadUnlockedSession();
-      if (!session) throw new Error("Wallet is locked");
+      const material = await loadUnlockedWalletMaterial();
+      if (!material) throw new Error("Wallet is locked");
       const kw = parseKwargs(args);
       const s = chi ? parsePositiveIntegerInput(chi) : estimate?.estimated ?? 50000;
       if (s == null) throw new Error("Chi must be a positive integer");
-      const r = await rpc.sendTransaction({ privateKey: session.privateKey, contract: contract.trim(), function: func.trim(), kwargs: kw, chi: s });
+      const r = await rpc.sendTransaction({ privateKey: material.privateKey, contract: contract.trim(), function: func.trim(), kwargs: kw, chi: s });
       const sentShown = showTransactionSentToast(showToast, state.dashboardUrl, r);
       scheduleTransactionStatusToast(showToast, state.dashboardUrl, r, sentShown ? 1600 : 0);
       const ok = transactionSucceeded(r);
