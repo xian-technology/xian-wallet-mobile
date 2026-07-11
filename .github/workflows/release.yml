@@ -1,0 +1,148 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          path: xian-wallet-mobile
+          ref: ${{ github.ref }}
+
+      - name: Check out xian-js
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: ${{ github.repository_owner }}/xian-js
+          ref: main
+          path: xian-js
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24.18.0"
+          cache: npm
+          cache-dependency-path: |
+            xian-js/package-lock.json
+            xian-wallet-mobile/package-lock.json
+
+      - name: Install and build xian-js
+        working-directory: xian-js
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install xian-wallet-mobile
+        working-directory: xian-wallet-mobile
+        run: npm ci
+
+      - name: Verify release version metadata
+        working-directory: xian-wallet-mobile
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          version="${RELEASE_VERSION#v}"
+          RELEASE_VERSION="${version}" node <<'NODE'
+          const fs = require("node:fs");
+
+          const expected = process.env.RELEASE_VERSION;
+          const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"));
+          const appJson = JSON.parse(fs.readFileSync("app.json", "utf8")).expo;
+          const androidGradle = fs.readFileSync("android/app/build.gradle", "utf8");
+          const iosInfo = fs.readFileSync("ios/XianWallet/Info.plist", "utf8");
+          const failures = [];
+
+          if (packageJson.version !== expected) {
+            failures.push(`package.json version ${packageJson.version}`);
+          }
+          if (appJson.version !== expected) {
+            failures.push(`app.json expo.version ${appJson.version}`);
+          }
+          if (!androidGradle.includes(`versionName "${expected}"`)) {
+            failures.push("android/app/build.gradle versionName");
+          }
+          if (!iosInfo.includes(`<string>${expected}</string>`)) {
+            failures.push("ios/XianWallet/Info.plist CFBundleShortVersionString");
+          }
+
+          if (failures.length > 0) {
+            throw new Error(`Release metadata does not match ${expected}: ${failures.join(", ")}`);
+          }
+          NODE
+
+      - name: Audit production dependencies
+        working-directory: xian-wallet-mobile
+        run: npm audit --audit-level=critical --omit=dev
+
+      - name: Typecheck xian-wallet-mobile
+        working-directory: xian-wallet-mobile
+        run: npm run typecheck
+
+      - name: Test xian-wallet-mobile
+        working-directory: xian-wallet-mobile
+        run: npm test
+
+      - name: Export Android bundle
+        working-directory: xian-wallet-mobile
+        run: npx --no-install expo export --platform android --output-dir dist-release
+
+      - name: Pack release artifacts
+        working-directory: xian-wallet-mobile
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          version="${RELEASE_VERSION#v}"
+          mkdir -p release-dist
+          tar -czf "release-dist/xian-wallet-mobile-${version}-android-export.tar.gz" \
+            -C dist-release .
+          cp app.json package.json package-lock.json release-dist/
+          (
+            cd release-dist
+            sha256sum -- * > SHA256SUMS
+          )
+
+      - name: Upload validated release artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-dist
+          path: xian-wallet-mobile/release-dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download validated release artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-dist
+          path: release-dist
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_flags=()
+          if [[ "${GITHUB_REF_NAME}" == *"-"* ]]; then
+            release_flags+=(--prerelease)
+          fi
+          gh release create "${GITHUB_REF_NAME}" release-dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --title "xian-wallet-mobile ${GITHUB_REF_NAME#v}" \
+            --generate-notes \
+            "${release_flags[@]}"

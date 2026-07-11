@@ -170,6 +170,9 @@ npm run ios
 
 ## Release Artifacts
 
+- Pushing a `vX.Y.Z` tag runs the release workflow, validates that
+  `package.json`, `app.json`, and native version metadata match the tag, exports
+  the Android bundle, and creates the GitHub Release with checksummed artifacts.
 - Build outputs are not committed. APK, AAB, IPA, and other platform artifacts
   are local or CI release outputs only.
 - Production releases follow Expo's standard build flow against the
