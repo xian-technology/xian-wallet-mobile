@@ -3,7 +3,7 @@
     "name": "Xian Wallet",
     "slug": "xian-wallet-mobile",
     "scheme": "xianwallet",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -15,7 +15,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "buildNumber": "3",
+      "buildNumber": "4",
       "bundleIdentifier": "org.xian.wallet.mobile",
       "entitlements": {
         "keychain-access-groups": [
@@ -56,7 +56,6 @@
           "faceIDPermission": "Allow Xian Wallet to use Face ID for wallet unlock."
         }
       ],
-      "expo-router",
       "expo-sharing",
       [
         "expo-camera",

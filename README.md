@@ -114,7 +114,7 @@ npm run test
 - **SDK lives elsewhere.** Wire formats, RPC contracts, and signing
   primitives live in `xian-js` and are consumed from
   `@xian-tech/client`. Changes to that contract land in `xian-js` first.
-- **Expo + React Native.** The app uses Expo Router for navigation,
+- **Expo + React Native.** The app uses React Navigation for navigation,
   `react-native-get-random-values` for native random bytes, and Noble crypto
   libraries for wallet encryption primitives.
 - **Independent release cadence.** Mobile releases are shipped
