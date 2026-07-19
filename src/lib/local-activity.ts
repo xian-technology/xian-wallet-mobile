@@ -46,7 +46,7 @@ function normalizeTx(value: unknown): TxHistoryRecord | null {
   }
   const tx = value as Partial<TxHistoryRecord>;
   if (
-    typeof tx.hash !== "string" ||
+    typeof tx.tx_hash !== "string" ||
     typeof tx.sender !== "string" ||
     typeof tx.contract !== "string" ||
     typeof tx.function !== "string"
@@ -82,13 +82,13 @@ async function saveStore(store: LocalActivityStore): Promise<void> {
 }
 
 export function makeLocalActivityTx(input: SubmittedActivityTx): TxHistoryRecord | null {
-  const hash = input.txHash?.trim();
-  if (!hash) {
+  const txHash = input.txHash?.trim();
+  if (!txHash) {
     return null;
   }
   const kwargs = sanitizeActivityValue(input.kwargs) as Record<string, unknown>;
   return {
-    hash,
+    tx_hash: txHash,
     sender: input.sender,
     contract: input.contract,
     function: input.function,
@@ -117,7 +117,13 @@ export async function saveLocalActivityTx(
 ): Promise<void> {
   const store = await loadStore();
   const current = store[networkKey] ?? [];
-  store[networkKey] = [tx, ...current.filter((item) => item.hash !== tx.hash)]
+  const txHash = normalizedActivityTxHash(tx.tx_hash);
+  store[networkKey] = [
+    tx,
+    ...current.filter(
+      (item) => normalizedActivityTxHash(item.tx_hash) !== txHash
+    )
+  ]
     .slice(0, MAX_LOCAL_ACTIVITY_PER_NETWORK);
   await saveStore(store);
 }
@@ -125,6 +131,9 @@ export async function saveLocalActivityTx(
 function txTime(tx: TxHistoryRecord): number {
   const raw = tx.created_at ?? tx.block_time;
   if (typeof raw === "number" && Number.isFinite(raw)) {
+    if (raw > 1e15) {
+      return Math.floor(raw / 1_000_000);
+    }
     return raw > 1e12 ? raw : raw * 1000;
   }
   if (typeof raw === "string") {
@@ -138,17 +147,31 @@ export function mergeActivityTxs(
   indexedTxs: TxHistoryRecord[],
   localTxs: TxHistoryRecord[]
 ): TxHistoryRecord[] {
-  const indexedHashes = new Set(indexedTxs.map((tx) => tx.hash));
+  const indexedHashes = new Set(
+    indexedTxs.map((tx) => normalizedActivityTxHash(tx.tx_hash))
+  );
   const seenLocalHashes = new Set<string>();
   const dedupedLocalTxs = localTxs.filter((tx) => {
-    if (indexedHashes.has(tx.hash) || seenLocalHashes.has(tx.hash)) {
+    const txHash = normalizedActivityTxHash(tx.tx_hash);
+    if (indexedHashes.has(txHash) || seenLocalHashes.has(txHash)) {
       return false;
     }
-    seenLocalHashes.add(tx.hash);
+    seenLocalHashes.add(txHash);
     return true;
   });
   return [
     ...dedupedLocalTxs,
     ...indexedTxs
   ].sort((left, right) => txTime(right) - txTime(left));
+}
+
+export function normalizedActivityTxHash(hash: string): string {
+  return hash.trim().toUpperCase();
+}
+
+export function activityHasTx(txs: TxHistoryRecord[], hash: string): boolean {
+  const expectedHash = normalizedActivityTxHash(hash);
+  return txs.some(
+    (tx) => normalizedActivityTxHash(tx.tx_hash) === expectedHash
+  );
 }

@@ -1,4 +1,4 @@
-import type { TxHistoryRecord } from "./rpc-client";
+import type { TxHistoryPayload, TxHistoryRecord } from "./rpc-client";
 
 export type TxCategory =
   | "send"
@@ -33,10 +33,28 @@ export interface TxClassification {
 const DEX_CONTRACT = "con_dex";
 const TOKEN_FACTORY_CONTRACT = "token_factory";
 
+export function txHistoryPayload(tx: TxHistoryRecord): TxHistoryPayload | null {
+  if (typeof tx.payload === "string") {
+    try {
+      const parsed = JSON.parse(tx.payload) as unknown;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as TxHistoryPayload)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  return tx.payload ?? null;
+}
+
+export function txHistoryKwargs(tx: TxHistoryRecord): Record<string, unknown> {
+  return txHistoryPayload(tx)?.kwargs ?? {};
+}
+
 export function classifyTx(tx: TxHistoryRecord): TxClassification {
   const contract = tx.contract ?? "";
   const fn = tx.function ?? "";
-  const kwargs = (tx.payload?.kwargs ?? {}) as Record<string, unknown>;
+  const kwargs = txHistoryKwargs(tx);
 
   if (contract === TOKEN_FACTORY_CONTRACT && fn === "create_token") {
     return { category: "create_token", label: "Create token", icon: "star", accent: "accent" };

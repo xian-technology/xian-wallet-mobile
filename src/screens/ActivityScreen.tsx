@@ -17,8 +17,13 @@ import { Button } from "../components/Button";
 import { useWallet } from "../lib/wallet-context";
 import { lightTap } from "../lib/haptics";
 import type { TxHistoryRecord } from "../lib/rpc-client";
-import { classifyTx, type TxClassification } from "../lib/tx-classify";
 import {
+  classifyTx,
+  txHistoryKwargs,
+  type TxClassification
+} from "../lib/tx-classify";
+import {
+  activityHasTx,
   activityNetworkKey,
   loadLocalActivityTxs,
   mergeActivityTxs,
@@ -108,7 +113,7 @@ function formatArgValue(value: unknown): string {
 }
 
 function kwargsOf(tx: TxHistoryRecord): Record<string, unknown> {
-  return (tx.payload?.kwargs ?? {}) as Record<string, unknown>;
+  return txHistoryKwargs(tx);
 }
 
 function accentColors(accent: TxClassification["accent"]): { bg: string; fg: string } {
@@ -268,7 +273,7 @@ export function ActivityScreen() {
           return;
         }
         const results = await fetchTxs(localTxs);
-        if (cancelled || !expectedHash || results.some((tx) => tx.hash === expectedHash)) {
+        if (cancelled || !expectedHash || activityHasTx(results, expectedHash)) {
           return;
         }
       }
@@ -375,7 +380,7 @@ export function ActivityScreen() {
       }
     }
 
-    rows.push({ label: "Hash", value: truncHash(selectedTx.hash), mono: true });
+    rows.push({ label: "Hash", value: truncHash(selectedTx.tx_hash), mono: true });
     rows.push({ label: "Contract", value: `${selectedTx.contract}.${selectedTx.function}` });
     if (selectedTx.block_height != null) {
       rows.push({ label: "Block", value: String(selectedTx.block_height) });
@@ -470,7 +475,7 @@ export function ActivityScreen() {
           )}
 
           {state.dashboardUrl && (
-            <TouchableOpacity style={styles.explorerBtn} onPress={() => openExplorer(selectedTx.hash)}>
+            <TouchableOpacity style={styles.explorerBtn} onPress={() => openExplorer(selectedTx.tx_hash)}>
               <Feather name="external-link" size={14} color={colors.accent} />
               <Text style={styles.explorerText}>View in Explorer</Text>
             </TouchableOpacity>
@@ -493,7 +498,7 @@ export function ActivityScreen() {
     <View style={styles.container}>
       <FlatList
         data={txs}
-        keyExtractor={(item) => item.hash}
+        keyExtractor={(item) => item.tx_hash}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} colors={[colors.accent]} progressBackgroundColor={colors.bg2} />
         }

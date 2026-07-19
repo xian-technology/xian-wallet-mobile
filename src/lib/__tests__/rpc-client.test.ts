@@ -202,6 +202,32 @@ describe("XianRpcClient", () => {
     await expect(client.getTransactionHistory("addr")).resolves.toEqual([]);
   });
 
+  it("keeps the canonical tx_hash from indexed transaction history", async () => {
+    const indexedTx = {
+      tx_hash: "TX-1",
+      block_height: 12,
+      sender: "addr",
+      contract: "currency",
+      function: "transfer",
+      success: true
+    };
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          result: {
+            response: {
+              code: 0,
+              value: btoa(JSON.stringify([indexedTx]))
+            }
+          }
+        })
+    })) as unknown as typeof fetch;
+
+    const client = new XianRpcClient("http://127.0.0.1:26657");
+    await expect(client.getTransactionHistory("addr")).resolves.toEqual([indexedTx]);
+  });
+
   it("treats malformed transaction-history RPC responses as empty activity", async () => {
     global.fetch = jest.fn(async () => ({
       ok: true,

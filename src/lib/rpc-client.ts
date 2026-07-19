@@ -52,7 +52,7 @@ interface AbciResult {
 }
 
 export interface TxHistoryRecord {
-  hash: string;
+  tx_hash: string;
   block_height?: number | null;
   block_hash?: string | null;
   block_time?: string | number | null;
@@ -66,18 +66,20 @@ export interface TxHistoryRecord {
   chi_used?: number | null;
   created_at?: string | null;
   result?: unknown;
-  payload?: {
-    sender?: string;
-    nonce?: number;
-    contract?: string;
-    function?: string;
-    kwargs?: Record<string, unknown>;
-    [key: string]: unknown;
-  } | null;
+  payload?: TxHistoryPayload | string | null;
   envelope?: unknown;
   /** Wallet-local fallback row for nodes without indexed transaction history. */
   local?: boolean;
   local_status?: "accepted" | "finalized";
+}
+
+export interface TxHistoryPayload {
+  sender?: string;
+  nonce?: number;
+  contract?: string;
+  function?: string;
+  kwargs?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 export class XianRpcClient {
