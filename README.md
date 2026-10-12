@@ -2,8 +2,9 @@
 
 `xian-wallet-mobile` is the official mobile wallet app for Xian. It is an
 Expo / React Native app (Android first, iOS supported) that talks to Xian
-nodes through `@xian-tech/client`, signs transactions locally with
-Ed25519, and stores secrets in the platform secure store.
+nodes through `@xian-tech/client`, and signs ordinary Ed25519 or enrolled
+hybrid transactions locally. Persistent wallet credentials are encrypted in
+AsyncStorage; the platform secure store holds wrapped session material.
 
 This repo is the *mobile product*. It depends on the `xian-js` SDK
 workspace as a sibling checkout. The browser wallet product lives in the
@@ -206,3 +207,27 @@ npm run ios
 - [`../xian-wallet-browser/README.md`](../xian-wallet-browser/README.md) — browser wallet product workspace
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — mobile wallet component boundaries and runtime flow
 - [docs/BACKLOG.md](docs/BACKLOG.md) — repo-local follow-ups
+
+### Hybrid account backups
+
+**Settings → Hybrid account security** saves one master backup and requires
+reopening it before enrollment, key replacement or recovery. It restores both
+spending and recovery at the original address. Password encryption is optional;
+the plaintext file is the secret and belongs offline. The everyday vault and
+full wallet export contain only active/pending/retained credentials, not master
+or recovery secrets. Older role backups remain importable. See the
+[recovery guide](../xian-docs-web/concepts/hybrid-account-recovery.md).
+Enrollment is disabled in the checked-in node policies.
+
+## HD accounts and backup scope
+
+Mnemonic wallets derive multiple indexed accounts. Browser and mobile wallets
+use the same derivation as Python's `Wallet.from_mnemonic(phrase, account_index=n)`.
+The phrase and account index restore the original address.
+
+Hybrid authorization uses an independently generated master for each account
+and chain. Keep that account's verified master backup after enrollment; the
+original mnemonic does not recreate its active or recovery keys. Key replacement
+creates a new master backup while preserving the address and balances. An
+encrypted full-wallet export holds everyday credentials and settings, but does
+not replace the offline master backup.

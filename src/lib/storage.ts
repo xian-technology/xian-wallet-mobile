@@ -84,6 +84,8 @@ export interface StoredWalletEncryption {
 }
 
 export interface StoredWalletState {
+  encryptedAccountVault?: string;
+  accountVaultRevision?: number;
   publicKey: string;
   encryptedPrivateKey: string;
   encryptedMnemonic?: string;
@@ -181,8 +183,18 @@ export async function loadWalletState(): Promise<StoredWalletState | null> {
   }
 }
 
+let walletStateTail = Promise.resolve();
 export async function saveWalletState(state: StoredWalletState): Promise<void> {
-  await AsyncStorage.setItem(WALLET_STATE_KEY, JSON.stringify(state));
+  const previous = walletStateTail;
+  let release!: () => void;
+  walletStateTail = new Promise<void>(resolve => { release = resolve; });
+  await previous;
+  try {
+    const current = await loadWalletState();
+    const next = current && JSON.stringify(current.walletEncryption) === JSON.stringify(state.walletEncryption) && (current.accountVaultRevision ?? 0) > (state.accountVaultRevision ?? 0)
+      ? { ...state, encryptedAccountVault: current.encryptedAccountVault, accountVaultRevision: current.accountVaultRevision } : state;
+    await AsyncStorage.setItem(WALLET_STATE_KEY, JSON.stringify(next));
+  } finally { release(); }
 }
 
 export async function clearWalletState(): Promise<void> {

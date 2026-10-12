@@ -384,6 +384,7 @@ async function executeXianRequest(
       if (isUnsafeMessageToSign(message)) {
         throw new Error("refusing to sign a transaction-like payload as a plain message");
       }
+      if (await rpc.getState("_accounts", "records", [state.publicKey]) !== null) throw new Error("legacy message signing is unavailable for hybrid accounts");
       return signer.signMessage(
         createXianMessageSigningPayload({
           account: state.publicKey,

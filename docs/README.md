@@ -8,4 +8,4 @@ Files:
 - `BACKLOG.md`: repo-local follow-ups and open product/engineering work
 
 The root `README.md` is the current public entrypoint for setup, workflows,
-validation, and release notes.
+validation, and release procedures.

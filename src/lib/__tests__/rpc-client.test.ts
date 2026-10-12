@@ -36,6 +36,11 @@ jest.mock("@xian-tech/client", () => ({
   }
 }));
 
+jest.mock("../wallet-controller", () => ({
+  loadUnlockedWalletMaterial: async () => ({ privateKey: "11".repeat(32), state: { publicKey: "addr-11111111" } }),
+  signWalletTransaction: (...args: unknown[]) => mockSignTx(...args.slice(2))
+}));
+
 import { XianRpcClient } from "../rpc-client";
 
 describe("XianRpcClient", () => {
@@ -101,8 +106,7 @@ describe("XianRpcClient", () => {
       chi: 75_000
     });
     expect(mockSignTx).toHaveBeenCalledWith(
-      expect.objectContaining({ payload: expect.objectContaining({ nonce: 7 }) }),
-      expect.objectContaining({ address: "addr-11111111" })
+      expect.objectContaining({ payload: expect.objectContaining({ nonce: 7 }) })
     );
     expect(mockBroadcastTx).toHaveBeenCalledWith(
       expect.objectContaining({ metadata: { signature: "sig" } }),
@@ -136,7 +140,7 @@ describe("XianRpcClient", () => {
 
     const client = new XianRpcClient("http://127.0.0.1:26657");
     const result = await client.sendTransaction({
-      privateKey: "22".repeat(32),
+      privateKey: "11".repeat(32),
       contract: "currency",
       function: "transfer",
       kwargs: { to: "alice", amount: 5 },

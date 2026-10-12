@@ -1,3 +1,8 @@
+import {
+  WALLET_KDF_ITERATIONS,
+  MIN_WALLET_KDF_ITERATIONS,
+  MAX_WALLET_KDF_ITERATIONS
+} from "./wallet-kdf";
 import type { AssetNetworkStates } from "./storage";
 import {
   aesGcmDecrypt,
@@ -7,15 +12,16 @@ import {
 
 const ENCODER = new TextEncoder();
 const DECODER = new TextDecoder();
-export const WALLET_BACKUP_KDF_ITERATIONS = 600_000;
-export const MIN_WALLET_BACKUP_KDF_ITERATIONS = 250_000;
+export const WALLET_BACKUP_KDF_ITERATIONS = WALLET_KDF_ITERATIONS;
+export const MIN_WALLET_BACKUP_KDF_ITERATIONS = MIN_WALLET_KDF_ITERATIONS;
 
 export interface WalletBackupPayload {
+  accountVault?: import("@xian-tech/client").AccountVaultState;
   version: 1;
   type: "privateKey" | "mnemonic";
   mnemonic?: string;
   privateKey?: string;
-  accounts?: Array<{ index: number; name: string }>;
+  accounts?: Array<{ index: number; name: string; publicKey?: string; privateKey?: string }>;
   activeAccountIndex?: number;
   activeNetworkId?: string;
   networkPresets?: Array<{
@@ -42,7 +48,7 @@ export interface WalletBackupPayload {
 }
 
 export interface EncryptedWalletBackup {
-  version: 2;
+  version: 2 | 3;
   kind: "xian-wallet-backup";
   encryption: {
     algorithm: "AES-256-GCM";
@@ -88,7 +94,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isEncryptedWalletBackup(value: unknown): value is EncryptedWalletBackup {
   return (
     isRecord(value) &&
-    value.version === 2 &&
+    (value.version === 2 || value.version === 3) &&
     value.kind === "xian-wallet-backup" &&
     isRecord(value.encryption) &&
     value.encryption.algorithm === "AES-256-GCM" &&
@@ -121,9 +127,9 @@ export async function encryptWalletBackupPayload(
     salt,
     WALLET_BACKUP_KDF_ITERATIONS
   );
-  const ciphertext = aesGcmEncrypt(key, iv, ENCODER.encode(JSON.stringify(backup)));
+  const ciphertext = aesGcmEncrypt(key, iv, ENCODER.encode(JSON.stringify(backup, (_key, value) => typeof value === "bigint" ? { __big_int__: value.toString() } : value)));
   return {
-    version: 2,
+    version: backup.accountVault ? 3 : 2,
     kind: "xian-wallet-backup",
     encryption: {
       algorithm: "AES-256-GCM",
@@ -141,28 +147,38 @@ export async function decryptWalletBackup(
   password: string
 ): Promise<WalletBackupPayload> {
   if (
+    !isEncryptedWalletBackup(backup) ||
     !Number.isSafeInteger(backup.encryption.iterations) ||
-    backup.encryption.iterations < MIN_WALLET_BACKUP_KDF_ITERATIONS
+    backup.encryption.iterations < MIN_WALLET_BACKUP_KDF_ITERATIONS ||
+    backup.encryption.iterations > MAX_WALLET_KDF_ITERATIONS
   ) {
+    throw new Error("invalid wallet backup encryption parameters");
+  }
+  const salt = base64ToBytes(backup.encryption.salt);
+  const iv = base64ToBytes(backup.encryption.iv);
+  const ciphertext = base64ToBytes(backup.ciphertext);
+  if (salt.length !== 16 || iv.length !== 12 || ciphertext.length < 16) {
     throw new Error("invalid wallet backup encryption parameters");
   }
   const key = await pbkdf2DeriveKey(
     ENCODER.encode(password),
-    base64ToBytes(backup.encryption.salt),
+    salt,
     backup.encryption.iterations
   );
   let plaintext: Uint8Array;
   try {
     plaintext = aesGcmDecrypt(
       key,
-      base64ToBytes(backup.encryption.iv),
-      base64ToBytes(backup.ciphertext)
+      iv,
+      ciphertext
     );
   } catch {
     throw new Error("invalid password");
   }
   try {
-    return assertPlainWalletBackup(JSON.parse(DECODER.decode(plaintext)));
+    const payload = assertPlainWalletBackup(JSON.parse(DECODER.decode(plaintext), (_key, value) => value && typeof value === "object" && Object.keys(value).length === 1 && typeof value.__big_int__ === "string" ? BigInt(value.__big_int__) : value));
+    if ((backup.version === 3) !== Boolean(payload.accountVault)) throw new Error("wallet backup version does not match account custody data");
+    return payload;
   } catch {
     throw new Error("invalid wallet backup");
   }

@@ -102,7 +102,7 @@ jest.mock("../crypto-polyfill", () => ({
       require("node:crypto").pbkdf2Sync(
         Buffer.from(password),
         Buffer.from(salt),
-        Math.min(iterations, 10_000),
+        iterations,
         32,
         "sha256"
       )
@@ -137,6 +137,8 @@ jest.mock("@xian-tech/client", () => ({
         .slice(0, 64);
     }
   },
+  encodeRuntime: (v: unknown) => JSON.stringify(v),
+  decodeRuntime: (v: string) => JSON.parse(v),
   isValidEd25519Key: (value: string) => /^[0-9a-f]{64}$/.test(value),
   shieldedSyncHintFromViewingPrivateKey: () => "0xsync"
 }));
@@ -203,6 +205,46 @@ describe("wallet-controller", () => {
     mockStore.clearBiometricSessionKey.mockImplementation(async () => {
       mockStoredBiometricSession = null;
     });
+  });
+
+  it("keeps a lock effective when an older session save finishes late", async () => {
+    const controller = createWalletController();
+    await controller.createWallet({ password: "secret123", privateKey: VALID_PRIVATE_KEY });
+    await controller.lock();
+    let release!: () => void, entered!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const waiting = new Promise<void>(resolve => { entered = resolve; });
+    mockStore.saveUnlockedSession.mockImplementationOnce(async (...args: unknown[]) => {
+      entered(); await gate; mockStoredSession = args[0] as StoredUnlockedSession;
+    });
+    const unlocking = controller.unlock("secret123");
+    const rejected = expect(unlocking).rejects.toThrow(/locked|changed/);
+    await waiting;
+    const locking = controller.lock();
+    release();
+    await Promise.all([rejected, locking]);
+    expect(mockStoredSession).toBeNull();
+    await expect(loadUnlockedWalletMaterial()).resolves.toBeNull();
+    await controller.unlock("secret123");
+    expect(await loadUnlockedWalletMaterial()).not.toBeNull();
+  });
+
+  it("rejects a stale session read after another controller locks the wallet", async () => {
+    const controller = createWalletController();
+    await controller.createWallet({ password: "secret123", privateKey: VALID_PRIVATE_KEY });
+    const stale = mockStoredSession;
+    let release!: () => void, entered!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const waiting = new Promise<void>(resolve => { entered = resolve; });
+    mockStore.loadUnlockedSession.mockImplementationOnce(async () => {
+      entered(); await gate; return stale;
+    });
+    const restoring = loadUnlockedWalletMaterial();
+    await waiting;
+    await createWalletController().lock();
+    release();
+    await expect(restoring).resolves.toBeNull();
+    expect(mockStoredSession).toBeNull();
   });
 
   it("persists only versioned session material, never raw wallet secrets", async () => {
@@ -534,5 +576,118 @@ describe("wallet-controller", () => {
         })
       )
     ).toThrow("invalid wallet backup");
+  });
+});
+
+
+describe("vault work factor migration", () => {
+  async function legacyWallet() {
+    mockStoredState = null;
+    mockStoredSession = null;
+    mockStoredBiometricSession = null;
+    const controller = createWalletController();
+    await controller.createWallet({ password: "secret123", mnemonic: VALID_MNEMONIC });
+    await controller.addAccount();
+    await controller.saveShieldedWalletSnapshot(SHIELDED_STATE_SNAPSHOT);
+    const state = JSON.parse(JSON.stringify(mockStoredState)) as StoredWalletState;
+    const currentKey = Buffer.from(mockStoredSession!.sessionKey, "base64");
+    const { pbkdf2Sync, createCipheriv, createDecipheriv, randomBytes } = require("node:crypto");
+    const legacyKey = pbkdf2Sync("secret123", Buffer.from(state.walletEncryption.salt, "base64"), 250_000, 32, "sha256");
+    function reencrypt(value: string): string {
+      const payload = JSON.parse(value);
+      const ciphertext = Buffer.from(payload.ciphertext, "base64");
+      const decipher = createDecipheriv("aes-256-gcm", currentKey, Buffer.from(payload.iv, "base64"));
+      decipher.setAuthTag(ciphertext.subarray(-16));
+      const plaintext = Buffer.concat([decipher.update(ciphertext.subarray(0, -16)), decipher.final()]);
+      const iv = randomBytes(12);
+      const cipher = createCipheriv("aes-256-gcm", legacyKey, iv);
+      const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final(), cipher.getAuthTag()]);
+      return JSON.stringify({ algorithm: "AES-GCM", keySource: "wallet-session-key", iv: iv.toString("base64"), ciphertext: encrypted.toString("base64") });
+    }
+    state.encryptedPrivateKey = reencrypt(state.encryptedPrivateKey);
+    state.encryptedMnemonic = reencrypt(state.encryptedMnemonic!);
+    for (const account of state.accounts!) account.encryptedPrivateKey = reencrypt(account.encryptedPrivateKey);
+    for (const snapshot of state.shieldedWalletSnapshots!) snapshot.encryptedStateSnapshot = reencrypt(snapshot.encryptedStateSnapshot);
+    state.walletEncryption.iterations = 250_000;
+    await controller.lock();
+    mockStoredState = state;
+    mockStoredBiometricSession = { publicKey: state.publicKey, sessionKey: legacyKey.toString("base64"), enabledAt: Date.now() };
+    return { controller, state };
+  }
+
+  it("migrates accounts, mnemonic and snapshots, then unlocks again", async () => {
+    const { controller, state } = await legacyWallet();
+    await controller.unlock("secret123");
+    expect(mockStoredState!.walletEncryption.iterations).toBe(600_000);
+    expect(mockStoredState!.publicKey).toBe(state.publicKey);
+    expect(mockStoredBiometricSession).toBeNull();
+    await expect(controller.revealMnemonic("secret123")).resolves.toBe(VALID_MNEMONIC);
+    const backup = await controller.exportWallet("backup-pass");
+    const { decryptWalletBackup } = require("../wallet-backup");
+    const payload = await decryptWalletBackup(backup, "backup-pass");
+    expect(payload.shieldedStateSnapshots).toHaveLength(1);
+    expect(payload.accounts).toHaveLength(2);
+    await controller.switchAccount(0);
+    await expect(controller.revealPrivateKey("secret123")).resolves.toBe("b3aee0ed179a18a754136d3d134c03e9c1ad97eb2e9912401dc2d9ffc96882e0");
+    await controller.lock();
+    await controller.unlock("secret123");
+  });
+
+  it("keeps the stored vault intact on authentication or secondary ciphertext failure", async () => {
+    const { controller, state } = await legacyWallet();
+    await expect(controller.unlock("wrong")).rejects.toThrow();
+    expect(mockStoredState).toEqual(state);
+    state.accounts![0]!.encryptedPrivateKey = "corrupt";
+    const before = JSON.parse(JSON.stringify(state));
+    await expect(controller.unlock("secret123")).rejects.toThrow();
+    expect(mockStoredState).toEqual(before);
+    expect(mockStoredSession).toBeNull();
+  });
+
+  it("preserves legacy ciphertext after a failed save and permits retry", async () => {
+    const { controller, state } = await legacyWallet();
+    mockStore.saveState.mockImplementationOnce(async () => { throw new Error("disk full"); });
+    await expect(controller.unlock("secret123")).rejects.toThrow("disk full");
+    expect(mockStoredState).toEqual(state);
+    expect(mockStoredSession).toBeNull();
+    await controller.unlock("secret123");
+    expect(mockStoredState!.walletEncryption.iterations).toBe(600_000);
+  });
+
+  it("does not absorb a user lock into the internal KDF migration session reset", async () => {
+    const { controller } = await legacyWallet();
+    let release!: () => void, entered!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const waiting = new Promise<void>(resolve => { entered = resolve; });
+    mockStore.clearUnlockedSession.mockImplementationOnce(async () => {
+      entered(); await gate; mockStoredSession = null;
+    });
+    const unlocking = controller.unlock("secret123");
+    const rejected = expect(unlocking).rejects.toThrow(/locked|changed/);
+    await waiting;
+    const locking = controller.lock();
+    release();
+    await Promise.all([rejected, locking]);
+    expect(mockStoredSession).toBeNull();
+    await expect(loadUnlockedWalletMaterial()).resolves.toBeNull();
+    await controller.unlock("secret123");
+    expect(await loadUnlockedWalletMaterial()).not.toBeNull();
+  });
+
+  it("rejects excessive work and malformed salts in imported backups", async () => {
+    const { controller } = await legacyWallet();
+    await controller.unlock("secret123");
+    const backup = await controller.exportWallet("backup-pass");
+    backup.encryption.iterations = 2_000_001;
+    await expect(controller.importWalletBackup(backup, "backup-pass")).rejects.toThrow("invalid wallet backup encryption parameters");
+    backup.encryption.iterations = 600_000;
+    backup.encryption.salt = "AA==";
+    await expect(controller.importWalletBackup(backup, "backup-pass")).rejects.toThrow("invalid wallet backup encryption parameters");
+  });
+
+  it.each([2_000_001, 1.5, Infinity])("rejects an excessive or malformed stored work factor %s", async (iterations) => {
+    const { controller, state } = await legacyWallet();
+    state.walletEncryption.iterations = iterations;
+    await expect(controller.unlock("secret123")).rejects.toThrow("invalid wallet encryption parameters");
   });
 });

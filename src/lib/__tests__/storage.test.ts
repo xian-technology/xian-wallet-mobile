@@ -56,6 +56,9 @@ jest.mock(
 );
 
 import {
+  saveWalletState,
+  loadWalletState,
+  type StoredWalletState,
   clearUnlockedSession,
   loadDexAvailability,
   loadBiometricSessionKey,
@@ -67,6 +70,20 @@ import {
 describe("secure storage adapter", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it("preserves candidate keys across an overlapping stale settings write", async () => {
+    let saved: string | null = null;
+    mockAsyncStorage.getItem.mockImplementation(async () => saved);
+    mockAsyncStorage.setItem.mockImplementation(async (...args: unknown[]) => { saved = String(args[1]); });
+    const stale = { publicKey: "a".repeat(64), walletEncryption: { salt: "salt", iterations: 600000 }, encryptedPrivateKey: "cipher" } as StoredWalletState;
+    await Promise.all([
+      saveWalletState({ ...stale, encryptedAccountVault: "future-keys", accountVaultRevision: 1 }),
+      saveWalletState(stale)
+    ]);
+    expect((await loadWalletState())!.encryptedAccountVault).toBe("future-keys");
+    expect((await loadWalletState())!.accountVaultRevision).toBe(1);
+    mockAsyncStorage.getItem.mockReset(); mockAsyncStorage.setItem.mockReset();
   });
 
   it("treats SecureStore read failures as an absent unlocked session", async () => {

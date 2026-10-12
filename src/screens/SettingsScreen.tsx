@@ -1,3 +1,4 @@
+import { AccountSecurity } from "../components/AccountSecurity";
 import React, { useEffect, useState } from "react";
 import {
   View,
@@ -433,7 +434,7 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
   const handleRemoveAccount = (index: number) => {
     setConfirmDialog({
       title: "Remove Account",
-      message: "You can re-derive it later from the seed.",
+      message: "Keep a full wallet backup and any hybrid account backups before removing it.",
       confirmTitle: "Remove",
       onConfirm: async () => {
         if (!controller) return;
@@ -603,9 +604,10 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
+        <AccountSecurity />
         {/* Accounts */}
-        {isMnemonic && (
-          <Card title="Accounts" subtitle={`${state.accounts.length} derived from recovery seed.`}>
+        {(isMnemonic || state.accounts.length > 1) && (
+          <Card title="Accounts" subtitle={`${state.accounts.length} stored accounts.`}>
             {accountLoading && (
               <View style={styles.loadingOverlay}>
                 <ActivityIndicator size="small" color={colors.accent} />
@@ -665,7 +667,7 @@ export function SettingsScreen({ navigation }: HomeTabScreenProps<"Settings">) {
               variant="secondary"
               onPress={handleAddAccount}
               loading={accountLoading}
-              disabled={accountLoading}
+              disabled={accountLoading || !isMnemonic}
             />
           </Card>
         )}

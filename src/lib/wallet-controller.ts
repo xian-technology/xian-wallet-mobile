@@ -1,3 +1,9 @@
+import { AccountVault, MasterAccountTransitionDraft, XianClient, canonicalAccountJson, decodeRuntime, readAccountCredential, parseAccountVault, type AccountBackup, type AccountKeyRole, type AccountOperation, type XianUnsignedTransaction } from "@xian-tech/client";
+import {
+  WALLET_KDF_ITERATIONS,
+  MIN_WALLET_KDF_ITERATIONS,
+  MAX_WALLET_KDF_ITERATIONS
+} from "./wallet-kdf";
 /**
  * Mobile wallet controller — portable business logic.
  * This keeps wallet storage semantics aligned with wallet-core while using
@@ -33,7 +39,7 @@ import {
 import { assertRpcTransportAllowed } from "./network-security";
 
 const ENCODER = new TextEncoder();
-export const WALLET_STATE_KDF_ITERATIONS = 250_000;
+export const WALLET_STATE_KDF_ITERATIONS = WALLET_KDF_ITERATIONS;
 
 const WALLET_STATE_KDF_ALGORITHM = "PBKDF2-SHA256";
 const WALLET_STATE_KDF_VERSION = 1;
@@ -221,7 +227,8 @@ function decodeWalletEncryptionSalt(walletEncryption: unknown): Uint8Array {
     algorithm !== WALLET_STATE_KDF_ALGORITHM ||
     typeof iterations !== "number" ||
     !Number.isSafeInteger(iterations) ||
-    iterations < WALLET_STATE_KDF_ITERATIONS ||
+    iterations < MIN_WALLET_KDF_ITERATIONS ||
+    iterations > MAX_WALLET_KDF_ITERATIONS ||
     typeof saltValue !== "string"
   ) {
     throw new Error("invalid wallet encryption parameters");
@@ -233,7 +240,7 @@ function decodeWalletEncryptionSalt(walletEncryption: unknown): Uint8Array {
   } catch {
     throw new Error("invalid wallet encryption parameters");
   }
-  if (salt.length < WALLET_STATE_KDF_SALT_BYTES) {
+  if (salt.length !== WALLET_STATE_KDF_SALT_BYTES) {
     throw new Error("invalid wallet encryption parameters");
   }
   return salt;
@@ -342,14 +349,84 @@ export interface UnlockedWalletMaterial {
   expiresAt: number;
 }
 
+async function validateAccountIdentity(state: StoredWalletState, privateKey: string, sessionKey: string): Promise<void> {
+  if (getPublicKey(privateKey) === state.publicKey) return;
+  const vault = state.encryptedAccountVault ? parseAccountVault(decodeRuntime(decryptWithKey(state.encryptedAccountVault, sessionKeyBytes(sessionKey)))) : null;
+  if (!vault || ![...vault.active, ...(vault.retained ?? []), ...vault.pending.map(p => p.candidate)].some(b => b.sender === state.publicKey && b.secret.ed25519_seed === privateKey)) throw new Error("private key does not match stored account");
+}
+
+let accountSessionGeneration = 0;
+let sessionOperationTail = Promise.resolve();
+async function sessionExclusive<T>(action: () => Promise<T>): Promise<T> {
+  const next = sessionOperationTail.then(action);
+  sessionOperationTail = next.then(() => undefined, () => undefined);
+  return next;
+}
+async function clearStoredSession(generation: number): Promise<void> {
+  await sessionExclusive(async () => {
+    if (generation === accountSessionGeneration) await store.clearUnlockedSession();
+  });
+}
+function accountContext(state: StoredWalletState): string {
+  return JSON.stringify([state.walletEncryption, state.publicKey, state.activeNetworkId, state.rpcUrl]);
+}
+export function mobileAccountVault(material: UnlockedWalletMaterial, client: XianClient): AccountVault {
+  const generation = accountSessionGeneration;
+  const assertContext = async () => {
+    const [state, session] = await Promise.all([store.loadState(), store.loadUnlockedSession()]);
+    if (generation !== accountSessionGeneration || !state || !session || session.expiresAt <= Date.now() ||
+        session.sessionKey !== material.sessionKey || session.publicKey !== material.state.publicKey ||
+        accountContext(state) !== accountContext(material.state))
+      throw new Error("wallet locked or changed during account operation");
+    return state;
+  };
+  return new AccountVault({
+    load: async () => {
+      const state = await assertContext();
+      return state.encryptedAccountVault ? parseAccountVault(decodeRuntime(decryptWithKey(state.encryptedAccountVault, sessionKeyBytes(material.sessionKey)))) : null;
+    },
+    save: async vault => {
+      const encryptedAccountVault = encryptWithKey(canonicalAccountJson(vault), sessionKeyBytes(material.sessionKey));
+      const state = await assertContext();
+      await store.saveState({ ...state, encryptedAccountVault, accountVaultRevision: (state.accountVaultRevision ?? 0) + 1 });
+    }
+  }, {
+    getChainId: () => client.getChainId(),
+    getNonce: sender => client.getNonce(sender),
+    getState: (contract, variable, keys) => client.getState(contract, variable, keys),
+    broadcastTx: async tx => { await assertContext(); return client.broadcastTx(tx); }
+  });
+}
+
+let accountOperationTail = Promise.resolve();
+async function accountExclusive<T>(action: () => Promise<T>): Promise<T> {
+  const previous = accountOperationTail;
+  let release!: () => void;
+  accountOperationTail = new Promise<void>(resolve => { release = resolve; });
+  await previous;
+  try { return await action(); } finally { release(); }
+}
+
+export async function signWalletTransaction(client: XianClient, privateKey: string, tx: XianUnsignedTransaction) {
+  return accountExclusive(async () => {
+    const material = await loadUnlockedWalletMaterial();
+    if (!material || material.privateKey !== privateKey || material.state.publicKey !== tx.payload.sender) throw new Error("wallet locked or selected account changed");
+    return mobileAccountVault(material, client).sign(tx, new Ed25519Signer(privateKey));
+  });
+}
+
 export async function loadUnlockedWalletMaterial(): Promise<UnlockedWalletMaterial | null> {
+  const generation = accountSessionGeneration;
+  await sessionOperationTail;
+  if (generation !== accountSessionGeneration) return null;
   const [state, session] = await Promise.all([
     store.loadState(),
     store.loadUnlockedSession(),
   ]);
-  if (!state || !session) {
+  if (generation !== accountSessionGeneration) return null;
+  if (!state || !session || session.expiresAt <= Date.now()) {
     if (session) {
-      await store.clearUnlockedSession();
+      await clearStoredSession(generation);
     }
     return null;
   }
@@ -362,15 +439,14 @@ export async function loadUnlockedWalletMaterial(): Promise<UnlockedWalletMateri
       state.encryptedPrivateKey,
       session.sessionKey
     );
-    if (getPublicKey(privateKey) !== state.publicKey) {
-      throw new Error("unlocked session does not match stored wallet");
-    }
+    await validateAccountIdentity(state, privateKey, session.sessionKey);
     const mnemonic = state.encryptedMnemonic
       ? await decryptMnemonicWithSessionKey(
           state.encryptedMnemonic,
           session.sessionKey
         )
       : undefined;
+    if (generation !== accountSessionGeneration) return null;
     return {
       state,
       privateKey,
@@ -379,12 +455,14 @@ export async function loadUnlockedWalletMaterial(): Promise<UnlockedWalletMateri
       expiresAt: session.expiresAt,
     };
   } catch {
-    await store.clearUnlockedSession();
+    await clearStoredSession(generation);
     return null;
   }
 }
 
 export function createWalletController() {
+  let accountDraft: { context: string; draft: MasterAccountTransitionDraft; operation: AccountOperation; authority: string | AccountBackup } | null = null;
+  let accountBusy = false;
   let unlockedPrivateKey: string | null = null;
   let unlockedMnemonic: string | null = null;
   let unlockedSessionKey: string | null = null;
@@ -393,21 +471,30 @@ export function createWalletController() {
     if (!unlockedPrivateKey || !unlockedSessionKey) {
       throw new Error("cannot persist a locked wallet session");
     }
-    const session: StoredUnlockedSession = {
-      version: 2,
-      publicKey: getPublicKey(unlockedPrivateKey),
-      sessionKey: unlockedSessionKey,
-      expiresAt: Date.now() + SESSION_TIMEOUT_MS
-    };
-    await store.saveUnlockedSession(session);
+    const generation = accountSessionGeneration;
+    const privateKey = unlockedPrivateKey, sessionKey = unlockedSessionKey;
+    const isCurrent = () => generation === accountSessionGeneration &&
+      unlockedPrivateKey === privateKey && unlockedSessionKey === sessionKey;
+    await sessionExclusive(async () => {
+      const state = await store.loadState();
+      if (!isCurrent()) throw new Error("wallet locked or changed during session save");
+      await store.saveUnlockedSession({ version: 2,
+        publicKey: state?.publicKey ?? getPublicKey(privateKey), sessionKey,
+        expiresAt: Date.now() + SESSION_TIMEOUT_MS });
+      if (!isCurrent()) {
+        await store.clearUnlockedSession();
+        throw new Error("wallet locked or changed during session save");
+      }
+    });
   }
 
   async function restoreSession(): Promise<boolean> {
-    if (unlockedPrivateKey) {
-      return true;
-    }
+    const generation = accountSessionGeneration;
+    // In-memory secrets do not extend a persisted session's authorization.
     const material = await loadUnlockedWalletMaterial();
+    if (generation !== accountSessionGeneration) return false;
     if (!material) {
+      await clearSession();
       return false;
     }
     unlockedPrivateKey = material.privateKey;
@@ -417,10 +504,12 @@ export function createWalletController() {
   }
 
   async function clearSession(): Promise<void> {
+    accountSessionGeneration++;
+    accountDraft = null;
     unlockedPrivateKey = null;
     unlockedMnemonic = null;
     unlockedSessionKey = null;
-    await store.clearUnlockedSession();
+    await sessionExclusive(() => store.clearUnlockedSession());
   }
 
   async function sessionKeyForState(
@@ -455,34 +544,34 @@ export function createWalletController() {
 
   async function unlockWithSessionKeyForState(
     state: StoredWalletState,
-    sessionKey: string
+    sessionKey: string,
+    generation = accountSessionGeneration
   ): Promise<void> {
     const privateKey = await decryptPrivateKeyWithSessionKey(
       state.encryptedPrivateKey,
       sessionKey
     );
 
-    const pubKey = getPublicKey(privateKey);
-    if (pubKey !== state.publicKey) {
-      throw new Error("decrypted key does not match stored wallet");
-    }
+    await validateAccountIdentity(state, privateKey, sessionKey);
 
-    unlockedPrivateKey = privateKey;
-    unlockedSessionKey = sessionKey;
-
+    let mnemonic: string | null = null;
     if (state.encryptedMnemonic) {
       try {
-        unlockedMnemonic = await decryptMnemonicWithSessionKey(
+        mnemonic = await decryptMnemonicWithSessionKey(
           state.encryptedMnemonic,
           sessionKey
         );
       } catch {
-        unlockedMnemonic = null;
+        mnemonic = null;
       }
     } else {
-      unlockedMnemonic = null;
+      mnemonic = null;
     }
 
+    if (generation !== accountSessionGeneration) throw new Error("wallet locked during unlock");
+    unlockedPrivateKey = privateKey;
+    unlockedSessionKey = sessionKey;
+    unlockedMnemonic = mnemonic;
     await persistSession();
   }
 
@@ -548,6 +637,74 @@ export function createWalletController() {
   }
 
   return {
+    async accountSecurity(input: { action: "begin" | "export" | "verify" | "submit" | "status" | "retry" | "restore" | "activate" | "archive"; operation?: AccountOperation; role?: AccountKeyRole; file?: string; password?: string; sender?: string }): Promise<unknown> {
+      if (accountBusy) throw new Error("account operation in progress");
+      accountBusy = true;
+      return accountExclusive(async () => { try {
+        const generation = accountSessionGeneration;
+        const material = await loadUnlockedWalletMaterial();
+        if (!material) throw new Error("wallet is locked");
+        const state = material.state;
+        const preset = state.networkPresets.find(p => p.id === state.activeNetworkId);
+        assertRpcTransportAllowed(state.rpcUrl, preset?.allowInsecureHttp);
+        const client = new XianClient({ rpcUrl: state.rpcUrl });
+        const vault = mobileAccountVault(material, client), sender = input.sender || state.publicKey;
+        if (input.action === "begin") {
+          const operation = input.operation ?? "enroll";
+          if (operation === "enroll" && sender !== state.publicKey) throw new Error("enrollment must use the exact selected account address");
+          let authority: string | AccountBackup = material.privateKey;
+          if (operation === "recover") authority = await readAccountCredential(input.file ?? "", input.password ?? "", "recovery");
+          if (operation === "rotate") authority = await vault.active(sender);
+          const target = typeof authority === "string" ? sender : authority.sender;
+          if (typeof authority !== "string" && authority.chain_id !== await client.getChainId()) throw new Error("backup belongs to another chain");
+          if (typeof authority !== "string" && (authority.role !== (operation === "recover" ? "recovery" : "active") || canonicalAccountJson(authority.record) !== canonicalAccountJson(await vault.record(target)))) throw new Error("backup is not the current authority for this account");
+          const draft = await vault.begin(target, operation);
+          const latest = await loadUnlockedWalletMaterial();
+          if (generation !== accountSessionGeneration || !latest || latest.sessionKey !== material.sessionKey || accountContext(latest.state) !== accountContext(state)) throw new Error("wallet locked or changed during account operation");
+          accountDraft = { context: accountContext(state), draft, operation, authority };
+          return { sender: target, ready: false };
+        }
+        if (input.action === "status") return { sender, status: await vault.reconcile(sender) };
+        if (input.action === "retry") return vault.retry(sender);
+        if (input.action === "archive") { await vault.archivePending(sender); return { sender, status: "attempt archived; its keys are retained in case it commits later" }; }
+        if (input.action === "restore" || input.action === "activate") {
+          const backup = input.action === "restore" ? await readAccountCredential(input.file ?? "", input.password ?? "", "active") : await vault.active(sender);
+          if (input.action === "restore") await vault.importActive(backup);
+          const latest = (await store.loadState())!;
+          const accounts = latest.accounts ?? [];
+          let account = accounts.find(a => a.publicKey === backup.sender);
+          if (!account) { account = { index: Math.max(0, ...accounts.map(a => a.index)) + 1, name: "Recovered account", publicKey: backup.sender, encryptedPrivateKey: await encryptPrivateKeyWithSessionKey(backup.secret.ed25519_seed, material.sessionKey) }; accounts.push(account); }
+          const next = { ...latest, accounts, publicKey: account.publicKey, encryptedPrivateKey: account.encryptedPrivateKey, activeAccountIndex: account.index };
+          if (generation !== accountSessionGeneration || accountContext(latest) !== accountContext(state)) throw new Error("wallet locked or changed during account activation");
+          await store.saveState(next);
+          await store.clearBiometricSessionKey();
+          await unlockWithSessionKeyForState(next, material.sessionKey, generation);
+          return { sender: backup.sender, status: "active" };
+        }
+        const current = accountDraft;
+        if (!current) throw new Error("start a new transition; no transaction was submitted");
+        if (current.context !== accountContext(state)) throw new Error("wallet changed during backup verification; start a new transition");
+        if (current.draft.active.chain_id !== await client.getChainId()) throw new Error("network changed during backup verification");
+        const assertDraftContext = async () => {
+          const latest = await loadUnlockedWalletMaterial();
+          if (generation !== accountSessionGeneration || accountDraft !== current || !latest ||
+              latest.sessionKey !== material.sessionKey || accountContext(latest.state) !== current.context)
+            throw new Error("wallet locked or changed during master backup operation");
+        };
+        if (input.action === "export") {
+          const file = await current.draft.exportMasterBackup(input.password ?? "");
+          await assertDraftContext();
+          return file;
+        }
+        if (input.action === "verify") {
+          await current.draft.verifyMasterBackup(input.file ?? "", input.password ?? "");
+          await assertDraftContext();
+          return { ready: current.draft.ready };
+        }
+        if (input.action === "submit") { try { return await vault.submit(current.draft, current.operation, current.authority); } finally { accountDraft = null; } }
+        throw new Error("unsupported account action");
+      } finally { accountBusy = false; } });
+    },
     async createWallet(opts: {
       password: string;
       mnemonic?: string;
@@ -669,16 +826,52 @@ export function createWalletController() {
     },
 
     async unlock(password: string): Promise<void> {
-      const state = await store.loadState();
+      let generation = accountSessionGeneration;
+      let state = await store.loadState();
       if (!state) {
         throw new Error("no wallet configured");
       }
-
-      const sessionKey = await sessionKeyForState(state, password);
-      await unlockWithSessionKeyForState(state, sessionKey);
+      const originalState = JSON.stringify(state);
+      let sessionKey = await sessionKeyForState(state, password);
+      const privateKey = await decryptPrivateKeyWithSessionKey(state.encryptedPrivateKey, sessionKey);
+      await validateAccountIdentity(state, privateKey, sessionKey);
+      if (state.walletEncryption.iterations < WALLET_STATE_KDF_ITERATIONS) {
+        const material = await createWalletSessionKey(password);
+        const reencrypt = async (value: string) => encryptWithKey(
+          decryptWithKey(value, sessionKeyBytes(sessionKey)), sessionKeyBytes(material.sessionKey)
+        );
+        // Prepare all ciphertexts before persisting a single replacement record.
+        const nextState: StoredWalletState = {
+          ...state,
+          walletEncryption: material.walletEncryption,
+          encryptedPrivateKey: await reencrypt(state.encryptedPrivateKey),
+          encryptedMnemonic: state.encryptedMnemonic ? await reencrypt(state.encryptedMnemonic) : undefined,
+          encryptedAccountVault: state.encryptedAccountVault ? await reencrypt(state.encryptedAccountVault) : undefined,
+          accounts: await Promise.all((state.accounts ?? []).map(async (account) => ({
+            ...account, encryptedPrivateKey: await reencrypt(account.encryptedPrivateKey)
+          }))),
+          shieldedWalletSnapshots: await Promise.all((state.shieldedWalletSnapshots ?? []).map(async (snapshot) => ({
+            ...snapshot, encryptedStateSnapshot: await reencrypt(snapshot.encryptedStateSnapshot)
+          })))
+        };
+        if (JSON.stringify(await store.loadState()) !== originalState) {
+          throw new Error("wallet changed during unlock; please retry");
+        }
+        if (generation !== accountSessionGeneration) throw new Error("wallet locked during unlock");
+        generation++;
+        await clearSession();
+        // A biometric record contains the old key. Password unlock remains the
+        // recovery path if persistence is interrupted; biometrics can be re-enabled.
+        await store.clearBiometricSessionKey();
+        await store.saveState(nextState);
+        state = nextState;
+        sessionKey = material.sessionKey;
+      }
+      await unlockWithSessionKeyForState(state, sessionKey, generation);
     },
 
     async unlockWithBiometrics(): Promise<void> {
+      const generation = accountSessionGeneration;
       const state = await store.loadState();
       if (!state) {
         throw new Error("no wallet configured");
@@ -687,7 +880,7 @@ export function createWalletController() {
       if (!biometricSession || biometricSession.publicKey !== state.publicKey) {
         throw new Error("biometric unlock is not enabled");
       }
-      await unlockWithSessionKeyForState(state, biometricSession.sessionKey);
+      await unlockWithSessionKeyForState(state, biometricSession.sessionKey, generation);
     },
 
     async isBiometricUnlockEnabled(): Promise<boolean> {
@@ -770,7 +963,7 @@ export function createWalletController() {
       }
 
       if (unlockedMnemonic) {
-        const privateKey = await derivePrivateKeyFromMnemonic(unlockedMnemonic, index);
+        const privateKey = await decryptPrivateKeyWithSessionKey(target.encryptedPrivateKey, unlockedSessionKey!);
         unlockedPrivateKey = privateKey;
         state.publicKey = target.publicKey;
         state.encryptedPrivateKey = target.encryptedPrivateKey;
@@ -824,11 +1017,9 @@ export function createWalletController() {
         state.activeAccountIndex = primary.index;
 
         if (unlockedMnemonic && unlockedSessionKey) {
-          const privateKey = await derivePrivateKeyFromMnemonic(
-            unlockedMnemonic,
-            primary.index
-          );
+          const privateKey = await decryptPrivateKeyWithSessionKey(primary.encryptedPrivateKey, unlockedSessionKey);
           unlockedPrivateKey = privateKey;
+          await store.saveState(state);
           await persistSession();
         } else if (unlockedPrivateKey) {
           await clearSession();
@@ -867,10 +1058,8 @@ export function createWalletController() {
       const backup: WalletBackupPayload = {
         version: 1,
         type: state.seedSource,
-        accounts: (state.accounts ?? []).map((account) => ({
-          index: account.index,
-          name: account.name
-        })),
+        accounts: await Promise.all((state.accounts ?? []).map(async account => ({ index: account.index, name: account.name, publicKey: account.publicKey, privateKey: await decryptPrivateKeyWithSessionKey(account.encryptedPrivateKey, sessionKey) }))),
+        accountVault: state.encryptedAccountVault ? parseAccountVault(decodeRuntime(decryptWithKey(state.encryptedAccountVault, sessionKeyBytes(sessionKey)))) : undefined,
         activeAccountIndex: state.activeAccountIndex ?? 0,
         activeNetworkId: state.activeNetworkId,
         networkPresets: state.networkPresets.filter((preset) => !preset.builtin),
@@ -931,16 +1120,18 @@ export function createWalletController() {
         throw new Error("backup must contain at least one account");
       }
 
+      const encryptedAccountVault = decryptedBackup.accountVault ? encryptWithKey(canonicalAccountJson(parseAccountVault(decryptedBackup.accountVault)), sessionKeyBytes(sessionKey)) : undefined;
       const accounts: StoredWalletState["accounts"] = [];
       const privateKeysByIndex = new Map<number, string>();
       for (const entry of accountEntries) {
-        const key = mnemonic
+        const key = entry.privateKey ?? (mnemonic
           ? await derivePrivateKeyFromMnemonic(mnemonic, entry.index)
-          : primaryKey;
+          : primaryKey);
+        await validateAccountIdentity({ publicKey: entry.publicKey ?? getPublicKey(key), encryptedAccountVault } as StoredWalletState, key, sessionKey);
         privateKeysByIndex.set(entry.index, key);
         accounts.push({
           index: entry.index,
-          publicKey: getPublicKey(key),
+          publicKey: entry.publicKey ?? getPublicKey(key),
           encryptedPrivateKey: await encryptPrivateKeyWithSessionKey(
             key,
             sessionKey
@@ -999,6 +1190,7 @@ export function createWalletController() {
       await store.saveState({
         publicKey: activeAccount.publicKey,
         encryptedPrivateKey: activeAccount.encryptedPrivateKey,
+        encryptedAccountVault,
         encryptedMnemonic,
         walletEncryption,
         seedSource: decryptedBackup.type,

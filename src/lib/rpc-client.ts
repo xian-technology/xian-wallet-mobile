@@ -1,3 +1,4 @@
+import { loadUnlockedWalletMaterial, signWalletTransaction } from "./wallet-controller";
 /**
  * Mobile RPC wrapper built on top of the shared Xian JS client.
  * Custom methods remain only for endpoints that are not yet modeled there.
@@ -332,7 +333,8 @@ export class XianRpcClient {
     privateKey: string,
     tx: XianUnsignedTransaction
   ): Promise<XianSignedTransaction> {
-    return this.client.signTx(tx, new Ed25519Signer(privateKey));
+    this.assertTransportAllowed();
+    return signWalletTransaction(this.client, privateKey, tx);
   }
 
   async broadcastSignedTransaction(
@@ -362,15 +364,16 @@ export class XianRpcClient {
     message?: string;
   }> {
     this.assertTransportAllowed();
-    const signer = new Ed25519Signer(opts.privateKey);
+    const material = await loadUnlockedWalletMaterial();
+    if (!material || material.privateKey !== opts.privateKey) throw new Error("wallet is locked");
     const tx = await this.client.buildTx({
-      sender: signer.address,
+      sender: material.state.publicKey,
       contract: opts.contract,
       function: opts.function,
       kwargs: opts.kwargs,
       chi: opts.chi
     });
-    const signedTx = await this.client.signTx(tx, signer);
+    const signedTx = await this.signTransaction(opts.privateKey, tx);
     const submission = await this.client.broadcastTx(signedTx, {
       mode: "checktx"
     });
