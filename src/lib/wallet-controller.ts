@@ -31,9 +31,11 @@ import {
   type WalletBackupPayload
 } from "./wallet-backup";
 import { assertRpcTransportAllowed } from "./network-security";
+import { OperationQueue } from "./operation-queue";
+import { WALLET_KDF_ITERATIONS, assertWalletKdfIterations } from "./wallet-kdf";
 
 const ENCODER = new TextEncoder();
-export const WALLET_STATE_KDF_ITERATIONS = 250_000;
+export const WALLET_STATE_KDF_ITERATIONS = WALLET_KDF_ITERATIONS;
 
 const WALLET_STATE_KDF_ALGORITHM = "PBKDF2-SHA256";
 const WALLET_STATE_KDF_VERSION = 1;
@@ -216,12 +218,10 @@ function decodeWalletEncryptionSalt(walletEncryption: unknown): Uint8Array {
   }
 
   const { version, algorithm, iterations, salt: saltValue } = walletEncryption;
+  assertWalletKdfIterations(iterations);
   if (
     version !== WALLET_STATE_KDF_VERSION ||
     algorithm !== WALLET_STATE_KDF_ALGORITHM ||
-    typeof iterations !== "number" ||
-    !Number.isSafeInteger(iterations) ||
-    iterations < WALLET_STATE_KDF_ITERATIONS ||
     typeof saltValue !== "string"
   ) {
     throw new Error("invalid wallet encryption parameters");
@@ -233,7 +233,7 @@ function decodeWalletEncryptionSalt(walletEncryption: unknown): Uint8Array {
   } catch {
     throw new Error("invalid wallet encryption parameters");
   }
-  if (salt.length < WALLET_STATE_KDF_SALT_BYTES) {
+  if (salt.length !== WALLET_STATE_KDF_SALT_BYTES) {
     throw new Error("invalid wallet encryption parameters");
   }
   return salt;
@@ -334,6 +334,31 @@ async function decryptMnemonicWithSessionKey(
   return normalized;
 }
 
+/** Prepare every replacement ciphertext before the caller writes the wallet once. */
+function reencryptWalletState(
+  state: StoredWalletState,
+  previousSessionKey: string,
+  material: { walletEncryption: StoredWalletEncryption; sessionKey: string }
+): StoredWalletState {
+  const previousKey = sessionKeyBytes(previousSessionKey);
+  const nextKey = sessionKeyBytes(material.sessionKey);
+  const reencrypt = (value: string) => encryptWithKey(decryptWithKey(value, previousKey), nextKey);
+  return {
+    ...state,
+    walletEncryption: material.walletEncryption,
+    encryptedPrivateKey: reencrypt(state.encryptedPrivateKey),
+    encryptedMnemonic: state.encryptedMnemonic ? reencrypt(state.encryptedMnemonic) : undefined,
+    accounts: state.accounts?.map(account => ({
+      ...account,
+      encryptedPrivateKey: reencrypt(account.encryptedPrivateKey)
+    })),
+    shieldedWalletSnapshots: state.shieldedWalletSnapshots?.map(snapshot => ({
+      ...snapshot,
+      encryptedStateSnapshot: reencrypt(snapshot.encryptedStateSnapshot)
+    }))
+  };
+}
+
 export interface UnlockedWalletMaterial {
   state: StoredWalletState;
   privateKey: string;
@@ -342,44 +367,57 @@ export interface UnlockedWalletMaterial {
   expiresAt: number;
 }
 
+// Shared across controller instances so a lock invalidates every pending reader.
+let sessionGeneration = 0;
+const sessionOperations = new OperationQueue();
+
+async function clearStoredSession(generation: number): Promise<void> {
+  await sessionOperations.run(async () => {
+    if (generation === sessionGeneration) {
+      await store.clearUnlockedSession();
+    }
+  });
+}
+
+async function decryptUnlockedWalletMaterial(
+  state: StoredWalletState,
+  session: StoredUnlockedSession
+): Promise<UnlockedWalletMaterial> {
+  if (session.publicKey !== state.publicKey) {
+    throw new Error("unlocked session belongs to a different account");
+  }
+  const privateKey = await decryptPrivateKeyWithSessionKey(state.encryptedPrivateKey, session.sessionKey);
+  if (getPublicKey(privateKey) !== state.publicKey) {
+    throw new Error("unlocked session does not match stored wallet");
+  }
+  const mnemonic = state.encryptedMnemonic
+    ? await decryptMnemonicWithSessionKey(state.encryptedMnemonic, session.sessionKey)
+    : undefined;
+  return { state, privateKey, mnemonic, sessionKey: session.sessionKey, expiresAt: session.expiresAt };
+}
+
 export async function loadUnlockedWalletMaterial(): Promise<UnlockedWalletMaterial | null> {
+  const generation = sessionGeneration;
+  await sessionOperations.settled();
+  if (generation !== sessionGeneration) return null;
   const [state, session] = await Promise.all([
     store.loadState(),
     store.loadUnlockedSession(),
   ]);
-  if (!state || !session) {
+  if (generation !== sessionGeneration) return null;
+  if (!state || !session || session.expiresAt <= Date.now()) {
     if (session) {
-      await store.clearUnlockedSession();
+      await clearStoredSession(generation);
     }
     return null;
   }
 
   try {
-    if (session.publicKey !== state.publicKey) {
-      throw new Error("unlocked session belongs to a different account");
-    }
-    const privateKey = await decryptPrivateKeyWithSessionKey(
-      state.encryptedPrivateKey,
-      session.sessionKey
-    );
-    if (getPublicKey(privateKey) !== state.publicKey) {
-      throw new Error("unlocked session does not match stored wallet");
-    }
-    const mnemonic = state.encryptedMnemonic
-      ? await decryptMnemonicWithSessionKey(
-          state.encryptedMnemonic,
-          session.sessionKey
-        )
-      : undefined;
-    return {
-      state,
-      privateKey,
-      mnemonic,
-      sessionKey: session.sessionKey,
-      expiresAt: session.expiresAt,
-    };
+    const material = await decryptUnlockedWalletMaterial(state, session);
+    if (generation !== sessionGeneration) return null;
+    return material;
   } catch {
-    await store.clearUnlockedSession();
+    await clearStoredSession(generation);
     return null;
   }
 }
@@ -393,21 +431,35 @@ export function createWalletController() {
     if (!unlockedPrivateKey || !unlockedSessionKey) {
       throw new Error("cannot persist a locked wallet session");
     }
-    const session: StoredUnlockedSession = {
-      version: 2,
-      publicKey: getPublicKey(unlockedPrivateKey),
-      sessionKey: unlockedSessionKey,
-      expiresAt: Date.now() + SESSION_TIMEOUT_MS
-    };
-    await store.saveUnlockedSession(session);
+    const generation = sessionGeneration;
+    const privateKey = unlockedPrivateKey;
+    const sessionKey = unlockedSessionKey;
+    const isCurrent = () =>
+      generation === sessionGeneration &&
+      unlockedPrivateKey === privateKey &&
+      unlockedSessionKey === sessionKey;
+    await sessionOperations.run(async () => {
+      if (!isCurrent()) throw new Error("wallet locked or changed during session save");
+      await store.saveUnlockedSession({
+        version: 2,
+        publicKey: getPublicKey(privateKey),
+        sessionKey,
+        expiresAt: Date.now() + SESSION_TIMEOUT_MS
+      });
+      if (!isCurrent()) {
+        await store.clearUnlockedSession();
+        throw new Error("wallet locked or changed during session save");
+      }
+    });
   }
 
   async function restoreSession(): Promise<boolean> {
-    if (unlockedPrivateKey) {
-      return true;
-    }
+    const generation = sessionGeneration;
+    // In-memory secrets do not extend a persisted session's authorization.
     const material = await loadUnlockedWalletMaterial();
+    if (generation !== sessionGeneration) return false;
     if (!material) {
+      await clearSession();
       return false;
     }
     unlockedPrivateKey = material.privateKey;
@@ -417,10 +469,11 @@ export function createWalletController() {
   }
 
   async function clearSession(): Promise<void> {
+    sessionGeneration++;
     unlockedPrivateKey = null;
     unlockedMnemonic = null;
     unlockedSessionKey = null;
-    await store.clearUnlockedSession();
+    await sessionOperations.run(() => store.clearUnlockedSession());
   }
 
   async function sessionKeyForState(
@@ -455,34 +508,36 @@ export function createWalletController() {
 
   async function unlockWithSessionKeyForState(
     state: StoredWalletState,
-    sessionKey: string
+    sessionKey: string,
+    generation = sessionGeneration
   ): Promise<void> {
     const privateKey = await decryptPrivateKeyWithSessionKey(
       state.encryptedPrivateKey,
       sessionKey
     );
 
-    const pubKey = getPublicKey(privateKey);
-    if (pubKey !== state.publicKey) {
+    if (getPublicKey(privateKey) !== state.publicKey) {
       throw new Error("decrypted key does not match stored wallet");
     }
 
-    unlockedPrivateKey = privateKey;
-    unlockedSessionKey = sessionKey;
-
+    let mnemonic: string | null = null;
     if (state.encryptedMnemonic) {
       try {
-        unlockedMnemonic = await decryptMnemonicWithSessionKey(
+        mnemonic = await decryptMnemonicWithSessionKey(
           state.encryptedMnemonic,
           sessionKey
         );
       } catch {
-        unlockedMnemonic = null;
+        mnemonic = null;
       }
     } else {
-      unlockedMnemonic = null;
+      mnemonic = null;
     }
 
+    if (generation !== sessionGeneration) throw new Error("wallet locked during unlock");
+    unlockedPrivateKey = privateKey;
+    unlockedSessionKey = sessionKey;
+    unlockedMnemonic = mnemonic;
     await persistSession();
   }
 
@@ -658,7 +713,7 @@ export function createWalletController() {
       };
 
       await store.clearBiometricSessionKey();
-      await store.saveState(state);
+      await store.replaceState(state);
 
       unlockedPrivateKey = privateKey;
       unlockedMnemonic = mnemonic ?? null;
@@ -669,16 +724,41 @@ export function createWalletController() {
     },
 
     async unlock(password: string): Promise<void> {
-      const state = await store.loadState();
+      let generation = sessionGeneration;
+      let state = await store.loadState();
       if (!state) {
         throw new Error("no wallet configured");
       }
-
-      const sessionKey = await sessionKeyForState(state, password);
-      await unlockWithSessionKeyForState(state, sessionKey);
+      const originalState = JSON.stringify(state);
+      let sessionKey = await sessionKeyForState(state, password);
+      const privateKey = await decryptPrivateKeyWithSessionKey(state.encryptedPrivateKey, sessionKey);
+      if (getPublicKey(privateKey) !== state.publicKey) {
+        throw new Error("decrypted key does not match stored wallet");
+      }
+      if (state.walletEncryption.iterations < WALLET_STATE_KDF_ITERATIONS) {
+        const material = await createWalletSessionKey(password);
+        const nextState = reencryptWalletState(state, sessionKey, material);
+        if (JSON.stringify(await store.loadState()) !== originalState) {
+          throw new Error("wallet changed during unlock; please retry");
+        }
+        if (generation !== sessionGeneration) throw new Error("wallet locked during unlock");
+        generation++;
+        await clearSession();
+        // A biometric record contains the old key. Password unlock remains the
+        // recovery path if persistence is interrupted; biometrics can be re-enabled.
+        await store.clearBiometricSessionKey();
+        if (generation !== sessionGeneration) throw new Error("wallet locked during unlock");
+        if (!(await store.replaceStateIfUnchanged(originalState, nextState))) {
+          throw new Error("wallet changed during unlock; please retry");
+        }
+        state = nextState;
+        sessionKey = material.sessionKey;
+      }
+      await unlockWithSessionKeyForState(state, sessionKey, generation);
     },
 
     async unlockWithBiometrics(): Promise<void> {
+      const generation = sessionGeneration;
       const state = await store.loadState();
       if (!state) {
         throw new Error("no wallet configured");
@@ -687,7 +767,7 @@ export function createWalletController() {
       if (!biometricSession || biometricSession.publicKey !== state.publicKey) {
         throw new Error("biometric unlock is not enabled");
       }
-      await unlockWithSessionKeyForState(state, biometricSession.sessionKey);
+      await unlockWithSessionKeyForState(state, biometricSession.sessionKey, generation);
     },
 
     async isBiometricUnlockEnabled(): Promise<boolean> {
@@ -996,7 +1076,7 @@ export function createWalletController() {
 
       await clearSession();
       await store.clearBiometricSessionKey();
-      await store.saveState({
+      await store.replaceState({
         publicKey: activeAccount.publicKey,
         encryptedPrivateKey: activeAccount.encryptedPrivateKey,
         encryptedMnemonic,

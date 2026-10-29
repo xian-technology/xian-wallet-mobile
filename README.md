@@ -106,6 +106,13 @@ npm run test
   device-wrapped session key, and expiry; raw private keys and mnemonics are
   decrypted only in process memory. Invalid or legacy raw-secret sessions fail
   closed to the locked state.
+- **Password protection preserves existing wallets.** Vaults and encrypted
+  backups use AES-256-GCM with PBKDF2-SHA256 at 600,000 iterations. Password
+  unlock upgrades older 250,000-iteration vaults by preparing every encrypted
+  secret before replacing the stored wallet. Concurrent wallet changes abort
+  that replacement and require a retry. Re-enable biometric unlock after a
+  password-based upgrade. Imports accept work factors from 250,000 through
+  2,000,000 and validate encryption parameters before deriving a key.
 - **Dapp authority is explicit.** WalletConnect approves only required Xian
   methods/events on the active chain, never silently grants optional scope, and
   rechecks the live session method, chain, and account before every request.

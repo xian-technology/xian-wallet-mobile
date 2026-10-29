@@ -1,3 +1,4 @@
+import { OperationQueue } from "./operation-queue";
 /**
  * Mobile storage adapter that implements the WalletControllerStore interface.
  * Uses expo-secure-store for sensitive data and AsyncStorage for general state.
@@ -181,12 +182,41 @@ export async function loadWalletState(): Promise<StoredWalletState | null> {
   }
 }
 
+const walletStateWrites = new OperationQueue();
+
 export async function saveWalletState(state: StoredWalletState): Promise<void> {
-  await AsyncStorage.setItem(WALLET_STATE_KEY, JSON.stringify(state));
+  const serialized = JSON.stringify(state);
+  const encryption = JSON.stringify(state.walletEncryption);
+  await walletStateWrites.run(async () => {
+    const current = await loadWalletState();
+    if (!current || JSON.stringify(current.walletEncryption) !== encryption) {
+      throw new Error("wallet changed before saving; reload and retry");
+    }
+    await AsyncStorage.setItem(WALLET_STATE_KEY, serialized);
+  });
+}
+
+/** Explicit wallet creation/import may replace the previous encryption context. */
+export async function replaceWalletState(state: StoredWalletState): Promise<void> {
+  const serialized = JSON.stringify(state);
+  await walletStateWrites.run(() => AsyncStorage.setItem(WALLET_STATE_KEY, serialized));
 }
 
 export async function clearWalletState(): Promise<void> {
-  await AsyncStorage.removeItem(WALLET_STATE_KEY);
+  await walletStateWrites.run(() => AsyncStorage.removeItem(WALLET_STATE_KEY));
+}
+
+/** Replace a captured wallet snapshot only while it is still the stored state. */
+export function replaceWalletStateIfUnchanged(
+  expectedSnapshot: string,
+  state: StoredWalletState
+): Promise<boolean> {
+  const serialized = JSON.stringify(state);
+  return walletStateWrites.run(async () => {
+    if (JSON.stringify(await loadWalletState()) !== expectedSnapshot) return false;
+    await AsyncStorage.setItem(WALLET_STATE_KEY, serialized);
+    return true;
+  });
 }
 
 function normalizeDexAvailability(value: unknown): StoredDexAvailability | null {
@@ -546,6 +576,8 @@ export function createMobileStore() {
   return {
     loadState: loadWalletState,
     saveState: saveWalletState,
+    replaceState: replaceWalletState,
+    replaceStateIfUnchanged: replaceWalletStateIfUnchanged,
     clearState: clearWalletState,
     loadUnlockedSession,
     saveUnlockedSession,

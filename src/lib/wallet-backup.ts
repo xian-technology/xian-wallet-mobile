@@ -1,3 +1,8 @@
+import {
+  WALLET_KDF_ITERATIONS,
+  MIN_WALLET_KDF_ITERATIONS,
+  assertWalletKdfIterations
+} from "./wallet-kdf";
 import type { AssetNetworkStates } from "./storage";
 import {
   aesGcmDecrypt,
@@ -7,8 +12,8 @@ import {
 
 const ENCODER = new TextEncoder();
 const DECODER = new TextDecoder();
-export const WALLET_BACKUP_KDF_ITERATIONS = 600_000;
-export const MIN_WALLET_BACKUP_KDF_ITERATIONS = 250_000;
+export const WALLET_BACKUP_KDF_ITERATIONS = WALLET_KDF_ITERATIONS;
+export const MIN_WALLET_BACKUP_KDF_ITERATIONS = MIN_WALLET_KDF_ITERATIONS;
 
 export interface WalletBackupPayload {
   version: 1;
@@ -90,13 +95,19 @@ function isEncryptedWalletBackup(value: unknown): value is EncryptedWalletBackup
     isRecord(value) &&
     value.version === 2 &&
     value.kind === "xian-wallet-backup" &&
-    isRecord(value.encryption) &&
-    value.encryption.algorithm === "AES-256-GCM" &&
-    value.encryption.kdf === "PBKDF2-SHA256" &&
-    typeof value.encryption.iterations === "number" &&
-    typeof value.encryption.salt === "string" &&
-    typeof value.encryption.iv === "string" &&
+    isBackupEncryption(value.encryption) &&
     typeof value.ciphertext === "string"
+  );
+}
+
+function isBackupEncryption(value: unknown): value is EncryptedWalletBackup["encryption"] {
+  return (
+    isRecord(value) &&
+    value.algorithm === "AES-256-GCM" &&
+    value.kdf === "PBKDF2-SHA256" &&
+    typeof value.iterations === "number" &&
+    typeof value.salt === "string" &&
+    typeof value.iv === "string"
   );
 }
 
@@ -140,23 +151,30 @@ export async function decryptWalletBackup(
   backup: WalletBackup,
   password: string
 ): Promise<WalletBackupPayload> {
-  if (
-    !Number.isSafeInteger(backup.encryption.iterations) ||
-    backup.encryption.iterations < MIN_WALLET_BACKUP_KDF_ITERATIONS
-  ) {
+  if (!isEncryptedWalletBackup(backup)) {
+    throw new Error("invalid wallet backup encryption parameters");
+  }
+  assertWalletKdfIterations(
+    backup.encryption.iterations,
+    "invalid wallet backup encryption parameters"
+  );
+  const salt = base64ToBytes(backup.encryption.salt);
+  const iv = base64ToBytes(backup.encryption.iv);
+  const ciphertext = base64ToBytes(backup.ciphertext);
+  if (salt.length !== 16 || iv.length !== 12 || ciphertext.length < 16) {
     throw new Error("invalid wallet backup encryption parameters");
   }
   const key = await pbkdf2DeriveKey(
     ENCODER.encode(password),
-    base64ToBytes(backup.encryption.salt),
+    salt,
     backup.encryption.iterations
   );
   let plaintext: Uint8Array;
   try {
     plaintext = aesGcmDecrypt(
       key,
-      base64ToBytes(backup.encryption.iv),
-      base64ToBytes(backup.ciphertext)
+      iv,
+      ciphertext
     );
   } catch {
     throw new Error("invalid password");

@@ -56,6 +56,12 @@ jest.mock(
 );
 
 import {
+  clearWalletState,
+  loadWalletState,
+  replaceWalletState,
+  replaceWalletStateIfUnchanged,
+  saveWalletState,
+  type StoredWalletState,
   clearUnlockedSession,
   loadDexAvailability,
   loadBiometricSessionKey,
@@ -63,6 +69,68 @@ import {
   saveDexAvailability,
   saveUnlockedSession,
 } from "../storage";
+
+describe("wallet state replacement", () => {
+  let saved: string | null;
+  const initial = { publicKey: "initial" } as StoredWalletState;
+  const replacement = { publicKey: "replacement" } as StoredWalletState;
+
+  beforeEach(() => {
+    saved = JSON.stringify(initial);
+    mockAsyncStorage.getItem.mockImplementation(async () => saved);
+    mockAsyncStorage.setItem.mockImplementation(async (...args: unknown[]) => { saved = String(args[1]); });
+    mockAsyncStorage.removeItem.mockImplementation(async () => { saved = null; });
+  });
+
+  it.each(["save", "clear"])("does not overwrite a preceding %s", async (operation) => {
+    const change = operation === "save" ? saveWalletState(replacement) : clearWalletState();
+    const migration = replaceWalletStateIfUnchanged(JSON.stringify(initial), initial);
+    await change;
+    await expect(migration).resolves.toBe(false);
+    expect(await loadWalletState()).toEqual(operation === "save" ? replacement : null);
+  });
+
+  it("queues removal after an in-flight replacement write", async () => {
+    let release!: () => void, entered!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const waiting = new Promise<void>(resolve => { entered = resolve; });
+    mockAsyncStorage.setItem.mockImplementationOnce(async (...args: unknown[]) => {
+      entered(); await gate; saved = String(args[1]);
+    });
+    const migration = replaceWalletStateIfUnchanged(JSON.stringify(initial), replacement);
+    await waiting;
+    const removal = clearWalletState();
+    release();
+    await expect(migration).resolves.toBe(true);
+    await removal;
+    expect(await loadWalletState()).toBeNull();
+  });
+
+  it("permits retry after a failed write without poisoning the queue", async () => {
+    mockAsyncStorage.setItem.mockImplementationOnce(async () => { throw new Error("disk full"); });
+    await expect(replaceWalletStateIfUnchanged(JSON.stringify(initial), replacement)).rejects.toThrow("disk full");
+    expect(await loadWalletState()).toEqual(initial);
+    await expect(replaceWalletStateIfUnchanged(JSON.stringify(initial), replacement)).resolves.toBe(true);
+    expect(await loadWalletState()).toEqual(replacement);
+  });
+
+  it("rejects a stale settings save after encryption migration", async () => {
+    const migrated = { ...initial, walletEncryption: { salt: "new-salt", iterations: 600_000 } } as StoredWalletState;
+    await expect(replaceWalletStateIfUnchanged(JSON.stringify(initial), migrated)).resolves.toBe(true);
+    await expect(saveWalletState({ ...initial, rpcUrl: "stale-settings" })).rejects.toThrow("wallet changed");
+    expect(await loadWalletState()).toEqual(migrated);
+    await saveWalletState({ ...migrated, rpcUrl: "fresh-settings" });
+    expect((await loadWalletState())!.rpcUrl).toBe("fresh-settings");
+  });
+
+  it("rejects a stale save after removal and permits explicit replacement", async () => {
+    await clearWalletState();
+    await expect(saveWalletState(initial)).rejects.toThrow("wallet changed");
+    expect(await loadWalletState()).toBeNull();
+    await replaceWalletState(replacement);
+    expect(await loadWalletState()).toEqual(replacement);
+  });
+});
 
 describe("secure storage adapter", () => {
   beforeEach(() => {
