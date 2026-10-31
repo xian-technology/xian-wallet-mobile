@@ -23,3 +23,11 @@ describe("network security", () => {
     expect(() => assertRpcTransportAllowed(rpcUrl, true)).not.toThrow();
   });
 });
+
+it.each(["file:///tmp/rpc", "ftp://node.example", "ws://localhost:26657", "javascript:alert(1)", "data:application/json,{}"])("rejects unsupported RPC protocol %s even with HTTP opt-in", rpcUrl => {
+  expect(() => assertRpcTransportAllowed(rpcUrl, true)).toThrow(/HTTP or HTTPS/);
+  expect(() => assertRpcTransportAllowed(rpcUrl, false)).toThrow(/HTTP or HTTPS/);
+});
+it("accepts HTTPS endpoints", () => {
+  expect(() => assertRpcTransportAllowed("https://node.example", false)).not.toThrow();
+});
