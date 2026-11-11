@@ -26,6 +26,8 @@ import { Input } from "../components/Input";
 import { colors } from "../theme/colors";
 import { useWallet } from "../lib/wallet-context";
 import { removeTrustedDappPolicy } from "../lib/storage";
+import { revealHiddenCharacters } from "../lib/signing-policy";
+import type { WalletConnectVerification } from "../lib/walletconnect-policy";
 import {
   approveWalletConnectProposal,
   approveWalletConnectRequest,
@@ -60,12 +62,47 @@ function requestTitle(request: DappSessionRequest): string {
   return request.request.method;
 }
 
-function requestPayload(request: DappSessionRequest): string {
+const HIDDEN_CHARACTERS_WARNING =
+  "This request contains invisible or text-direction characters. They are shown as [U+XXXX] markers.";
+
+function paramsText(params: unknown): string {
   try {
-    return JSON.stringify(request.request.params ?? {}, null, 2);
+    return JSON.stringify(params ?? {}, null, 2);
   } catch {
-    return String(request.request.params ?? "");
+    return String(params);
   }
+}
+
+function requestPayload(request: DappSessionRequest): { text: string; revealed: boolean } {
+  return revealHiddenCharacters(paramsText(request.request.params));
+}
+
+function verificationNotice(verification: WalletConnectVerification | undefined): {
+  text: string;
+  tone: "ok" | "warning" | "danger";
+} {
+  const origin = verification?.origin ?? "an unknown site";
+  switch (verification?.status) {
+    case "verified":
+      return { text: `Verified domain: ${origin}`, tone: "ok" };
+    case "scam":
+      return { text: `Known scam domain: ${origin}. Do not connect.`, tone: "danger" };
+    case "mismatch":
+      return {
+        text: `Domain mismatch: this request came from ${origin}, not the site the app claims to be.`,
+        tone: "danger",
+      };
+    default:
+      return {
+        text: "Unverified domain: WalletConnect could not confirm which site this is.",
+        tone: "warning",
+      };
+  }
+}
+
+function VerificationNotice({ verification }: { verification?: WalletConnectVerification }) {
+  const notice = verificationNotice(verification);
+  return <Text style={[styles.checkNotice, styles[`checkNotice_${notice.tone}`]]}>{notice.text}</Text>;
 }
 
 function policySessionName(
@@ -139,6 +176,7 @@ export function AppsScreen() {
 
   const activeProposal = wcState.proposals[0];
   const activeRequest = wcState.requests[0];
+  const activePayload = activeRequest ? requestPayload(activeRequest) : null;
 
   useEffect(() => {
     setTrustScope(null);
@@ -464,6 +502,7 @@ export function AppsScreen() {
       >
         {activeProposal ? (
           <View style={styles.dialogStack}>
+            <VerificationNotice verification={activeProposal.verification} />
             <Text style={styles.meta}>{activeProposal.url}</Text>
             <Text style={styles.dialogLabel}>Chains</Text>
             <Text style={styles.dialogValue}>
@@ -502,12 +541,19 @@ export function AppsScreen() {
       >
         {activeRequest ? (
           <View style={styles.dialogStack}>
+            <VerificationNotice verification={activeRequest.verification} />
             <Text style={styles.dialogLabel}>Request</Text>
             <Text style={styles.dialogValue}>{requestTitle(activeRequest)}</Text>
             <Text style={styles.dialogLabel}>Network</Text>
             <Text style={styles.dialogValue}>
               {activeRequest.chainId ?? "Active wallet network"}
             </Text>
+            {activeRequest.chi !== undefined ? (
+              <>
+                <Text style={styles.dialogLabel}>Chi</Text>
+                <Text style={styles.dialogValue}>{activeRequest.chi ?? "Not estimated"}</Text>
+              </>
+            ) : null}
             {activeRequest.trustSuggestion ? (
               <View style={styles.trustChoiceStack}>
                 <View style={styles.trustRow}>
@@ -544,8 +590,11 @@ export function AppsScreen() {
                 </View>
               </View>
             ) : null}
+            {activePayload?.revealed ? (
+              <Text style={[styles.checkNotice, styles.checkNotice_danger]}>{HIDDEN_CHARACTERS_WARNING}</Text>
+            ) : null}
             <Text style={styles.dialogLabel}>Payload</Text>
-            <Text style={styles.payload}>{requestPayload(activeRequest)}</Text>
+            <Text style={styles.payload}>{activePayload?.text}</Text>
           </View>
         ) : null}
       </AppDialog>
@@ -762,6 +811,26 @@ const styles = StyleSheet.create({
   trustText: {
     flex: 1,
     gap: 3,
+  },
+  checkNotice: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "600",
+    padding: 10,
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  checkNotice_ok: {
+    color: colors.fg,
+    backgroundColor: colors.bg2,
+  },
+  checkNotice_warning: {
+    color: colors.warning,
+    backgroundColor: colors.warningSoft,
+  },
+  checkNotice_danger: {
+    color: colors.danger,
+    backgroundColor: colors.dangerSoft,
   },
   payload: {
     color: colors.fg,

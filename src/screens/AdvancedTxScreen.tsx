@@ -54,7 +54,7 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
   const [chi, setChi] = useState("");
   const [chiRate, setChiRate] = useState<number | null>(null);
   const [estimating, setEstimating] = useState(false);
-  const [estimate, setEstimate] = useState<{ estimated: number } | null>(null);
+  const [estimate, setEstimate] = useState<{ estimated: number; suggested: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [methods, setMethods] = useState<ContractMethod[]>([]);
   const [methodsLoading, setMethodsLoading] = useState(false);
@@ -146,7 +146,7 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
       const material = await loadUnlockedWalletMaterial();
       if (!material) throw new Error("Wallet is locked");
       const kw = parseKwargs(args);
-      const s = chi ? parsePositiveIntegerInput(chi) : estimate?.estimated ?? 50000;
+      const s = chi ? parsePositiveIntegerInput(chi) : estimate?.suggested ?? 50000;
       if (s == null) throw new Error("Chi must be a positive integer");
       const r = await rpc.sendTransaction({ privateKey: material.privateKey, contract: contract.trim(), function: func.trim(), kwargs: kw, chi: s });
       const sentShown = showTransactionSentToast(showToast, state.dashboardUrl, r);
@@ -184,7 +184,7 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
     const kw = parseKwargs(args);
     const kwEntries = Object.entries(kw);
     const manualChi = chi.trim() ? parsePositiveIntegerInput(chi.trim()) : null;
-    const chiValue = formatChi(manualChi ?? estimate?.estimated ?? null, chiRate);
+    const chiValue = formatChi(manualChi ?? estimate?.suggested ?? null, chiRate);
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scroll}>

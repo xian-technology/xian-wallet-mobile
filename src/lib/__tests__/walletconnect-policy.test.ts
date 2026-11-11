@@ -31,6 +31,7 @@ jest.mock(
 
 import {
   authorizeXianWalletConnectRequest,
+  walletConnectVerification,
   buildRequiredXianApprovedNamespaces,
   type WalletConnectProposalScope,
 } from "../walletconnect-policy";
@@ -167,5 +168,31 @@ describe("WalletConnect least-privilege policy", () => {
         method: "xian_signMessage",
       })
     ).toThrow(expect.objectContaining({ reason: "UNSUPPORTED_CHAINS" }));
+  });
+});
+
+describe("WalletConnect domain verification", () => {
+  const context = (validation: string, isScam?: boolean) => ({
+    verified: { origin: "https://app.example", validation, verifyUrl: "", isScam },
+  });
+
+  it("reports a verified domain", () => {
+    expect(walletConnectVerification(context("VALID"))).toEqual({
+      status: "verified",
+      origin: "https://app.example",
+    });
+  });
+
+  it("flags known scam domains before anything else", () => {
+    expect(walletConnectVerification(context("VALID", true))).toMatchObject({ status: "scam" });
+  });
+
+  it("flags a domain that does not match the app metadata", () => {
+    expect(walletConnectVerification(context("INVALID"))).toMatchObject({ status: "mismatch" });
+  });
+
+  it("treats unknown or missing verification as unverified", () => {
+    expect(walletConnectVerification(context("UNKNOWN"))).toMatchObject({ status: "unverified" });
+    expect(walletConnectVerification(undefined)).toEqual({ status: "unverified" });
   });
 });

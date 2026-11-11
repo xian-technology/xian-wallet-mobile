@@ -188,3 +188,44 @@ export function authorizeXianWalletConnectRequest(input: {
     `request chain was not approved for this session: ${input.caipChainId}`
   );
 }
+
+export type WalletConnectVerificationStatus =
+  | "verified"
+  | "unverified"
+  | "mismatch"
+  | "scam";
+
+export interface WalletConnectVerification {
+  status: WalletConnectVerificationStatus;
+  origin?: string;
+}
+
+interface WalletConnectVerifyContext {
+  verified?: {
+    origin?: string;
+    validation?: string;
+    isScam?: boolean;
+  };
+}
+
+/** Summarize WalletConnect Verify: the domain that actually opened the connection. */
+export function walletConnectVerification(
+  context: WalletConnectVerifyContext | undefined
+): WalletConnectVerification {
+  const verified = context?.verified;
+  if (!verified) {
+    return { status: "unverified" };
+  }
+  const origin = verified.origin || undefined;
+  if (verified.isScam) {
+    return { status: "scam", origin };
+  }
+  if (verified.validation === "VALID") {
+    return { status: "verified", origin };
+  }
+  if (verified.validation === "INVALID") {
+    return { status: "mismatch", origin };
+  }
+  return { status: "unverified", origin };
+}
+

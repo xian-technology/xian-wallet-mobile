@@ -48,8 +48,10 @@ import {
   authorizeXianWalletConnectRequest,
   buildRequiredXianApprovedNamespaces,
   WalletConnectScopeError,
+  walletConnectVerification,
   type WalletConnectApprovedNamespace,
   type WalletConnectSessionNamespace,
+  type WalletConnectVerification,
 } from "./walletconnect-policy";
 
 const WALLETCONNECT_NATIVE_REDIRECT = "xianwallet://";
@@ -96,6 +98,7 @@ export interface DappSessionProposal {
   icon?: string;
   requiredChains: string[];
   requiredMethods: string[];
+  verification: WalletConnectVerification;
   raw: WalletKitTypes.SessionProposal;
 }
 
@@ -107,6 +110,10 @@ export interface DappSessionRequest {
   caipChainId?: string;
   chainId?: string;
   request: XianProviderRequest;
+  verification: WalletConnectVerification;
+  // Chi limit a transaction request will sign: null when unknown, undefined
+  // for requests that do not send a transaction.
+  chi?: string | null;
   trustSuggestion?: {
     label: string;
     description: string;
@@ -133,6 +140,8 @@ let linkingAttached = false;
 let linkingSubscription: { remove(): void } | null = null;
 let proposals: DappSessionProposal[] = [];
 let requests: DappSessionRequest[] = [];
+// Proposals whose approval or rejection is underway; same rule as requests.
+const proposalsInFlight = new Set<number>();
 // Requests whose approval or rejection is underway. A request is answered at
 // most once, so a second resolution (double tap, back gesture during approval)
 // must not execute or answer it again.
@@ -537,18 +546,20 @@ function proposalSummary(
     icon: metadata.icons?.[0],
     requiredChains,
     requiredMethods,
+    verification: walletConnectVerification(proposal.verifyContext),
     raw: proposal
   };
 }
 
 function requestSummary(
-  event: WalletKitTypes.SessionRequest
+  event: WalletKitTypes.SessionRequest,
+  request: XianProviderRequest = event.params.request as XianProviderRequest
 ): DappSessionRequest {
   const chainId = xianChainIdFromCaip2(event.params.chainId);
-  const request = event.params.request as XianProviderRequest;
   const action = parseXianDappAction(request);
+  // An auto-approval rule needs a chi cap, so none is offered without one.
   const target =
-    action?.contract && action.function
+    action?.contract && action.function && hasChi(action.chi)
       ? `${action.contract}.${action.function}`
       : undefined;
   return {
@@ -559,6 +570,8 @@ function requestSummary(
     caipChainId: event.params.chainId,
     chainId: chainId ?? undefined,
     request,
+    verification: walletConnectVerification(event.verifyContext),
+    chi: action ? (hasChi(action.chi) ? String(action.chi) : null) : undefined,
     trustSuggestion: target
       ? {
           label: `Auto-approve this exact ${target}`,
@@ -573,6 +586,59 @@ function requestSummary(
           broadScope: "any"
         }
       : undefined
+  };
+}
+
+function hasChi(chi: unknown): boolean {
+  return chi != null && chi !== "";
+}
+
+function chiLessSendCall(
+  request: XianProviderRequest
+): { params: Record<string, unknown>; intent: Record<string, unknown> } | null {
+  const params = firstParamObject(request.params);
+  const intent = isRecord(params.intent) ? params.intent : null;
+  const needsChi =
+    request.method === "xian_sendCall" &&
+    intent != null &&
+    !hasChi(intent.chi) &&
+    !hasChi(intent.chiSupplied);
+  return needsChi ? { params, intent } : null;
+}
+
+async function estimateIntentChi(intent: Record<string, unknown>): Promise<number | null> {
+  try {
+    const state = await loadWalletState();
+    if (!state || typeof intent.contract !== "string" || typeof intent.function !== "string") {
+      return null;
+    }
+    const { suggested } = await rpcClientForState(state).estimateChi({
+      sender: state.publicKey,
+      contract: intent.contract,
+      function: intent.function,
+      kwargs: isRecord(intent.kwargs) ? intent.kwargs : {},
+    });
+    return Number.isSafeInteger(suggested) && suggested > 0 ? suggested : null;
+  } catch {
+    return null;
+  }
+}
+
+// Fill in the chi a send-call will use so the user reviews (and signs) it.
+async function requestWithEstimatedChi(
+  request: XianProviderRequest
+): Promise<XianProviderRequest> {
+  const call = chiLessSendCall(request);
+  const chi = call ? await estimateIntentChi(call.intent) : null;
+  if (!call || chi == null) {
+    return request;
+  }
+  const nextParams = { ...call.params, intent: { ...call.intent, chi } };
+  return {
+    ...request,
+    params: Array.isArray(request.params)
+      ? [nextParams, ...request.params.slice(1)]
+      : nextParams,
   };
 }
 
@@ -605,6 +671,9 @@ async function createPolicyForRequest(
   pending: DappSessionRequest,
   argumentScope: XianDappPolicyArgumentScope
 ): Promise<XianDappPolicy | null> {
+  if (!hasChi(parseXianDappAction(pending.request)?.chi)) {
+    return null;
+  }
   const state = await loadWalletState();
   if (!state) {
     return null;
@@ -642,7 +711,8 @@ async function tryAutoApproveRequest(
   const rpc = rpcClientForState(state);
   const chainId = await activeChainIdForState(state, rpc);
   const match = findMatchingXianDappPolicy(
-    state.trustedDappPolicies ?? [],
+    // Rules without a chi cap predate the cap requirement and are not honoured.
+    (state.trustedDappPolicies ?? []).filter((policy) => policy.maxChi != null),
     {
       origin: pending.origin,
       account: state.publicKey,
@@ -697,7 +767,7 @@ function attachListeners(client: WalletKitClient): void {
 
   client.on("session_request", (event) => {
     void (async () => {
-      const pending = requestSummary(event);
+      let pending = requestSummary(event);
       try {
         authorizePendingRequest(client, pending);
       } catch (error) {
@@ -705,6 +775,7 @@ function attachListeners(client: WalletKitClient): void {
         emitChange();
         return;
       }
+      pending = requestSummary(event, await requestWithEstimatedChi(pending.request));
       if (await tryAutoApproveRequest(client, pending)) {
         emitChange();
         return;
@@ -882,23 +953,40 @@ export function startWalletConnectLinking(): () => void {
   };
 }
 
+function claimPendingProposal(id: number): DappSessionProposal {
+  const pending = proposals.find((entry) => entry.id === id);
+  if (!pending) {
+    throw new Error("WalletConnect proposal not found");
+  }
+  if (proposalsInFlight.has(id)) {
+    throw new Error("WalletConnect proposal is already being processed");
+  }
+  proposalsInFlight.add(id);
+  return pending;
+}
+
+function removeAnsweredProposal(id: number): void {
+  proposals = proposals.filter((entry) => entry.id !== id);
+  emitChange();
+}
+
 export async function approveWalletConnectProposal(id: number): Promise<void> {
   await initializeWalletConnect();
   if (!walletKit) {
     throw new Error("WalletConnect project id is not configured");
   }
-  const pending = proposals.find((entry) => entry.id === id);
-  if (!pending) {
-    throw new Error("WalletConnect proposal not found");
+  const pending = claimPendingProposal(id);
+  try {
+    const approvedNamespaces = await requiredNamespacesForProposal(pending.raw);
+    const session = await walletKit.approveSession({
+      id,
+      namespaces: approvedNamespaces
+    });
+    await updateWalletConnectOrigin(session.topic, true);
+    removeAnsweredProposal(id);
+  } finally {
+    proposalsInFlight.delete(id);
   }
-  const approvedNamespaces = await requiredNamespacesForProposal(pending.raw);
-  const session = await walletKit.approveSession({
-    id,
-    namespaces: approvedNamespaces
-  });
-  await updateWalletConnectOrigin(session.topic, true);
-  proposals = proposals.filter((entry) => entry.id !== id);
-  emitChange();
 }
 
 export async function rejectWalletConnectProposal(id: number): Promise<void> {
@@ -906,12 +994,21 @@ export async function rejectWalletConnectProposal(id: number): Promise<void> {
   if (!walletKit) {
     return;
   }
-  await walletKit.rejectSession({
-    id,
-    reason: getSdkError("USER_REJECTED")
-  });
-  proposals = proposals.filter((entry) => entry.id !== id);
-  emitChange();
+  try {
+    claimPendingProposal(id);
+  } catch {
+    // Unknown proposals need no answer; in-flight ones are answered by their owner.
+    return;
+  }
+  try {
+    await walletKit.rejectSession({
+      id,
+      reason: getSdkError("USER_REJECTED")
+    });
+    removeAnsweredProposal(id);
+  } finally {
+    proposalsInFlight.delete(id);
+  }
 }
 
 function claimPendingRequest(id: number): DappSessionRequest {

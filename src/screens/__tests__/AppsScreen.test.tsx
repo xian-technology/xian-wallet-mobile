@@ -137,4 +137,83 @@ describe("AppsScreen", () => {
       })
     );
   });
+
+  function stateWith(partial: Record<string, unknown>) {
+    mockGetWalletConnectState.mockImplementation(() => ({
+      configured: true,
+      sessions: [],
+      proposals: [],
+      requests: [],
+      ...partial,
+    }));
+  }
+
+  it.each([
+    [{ status: "scam", origin: "https://evil.example" }, "Known scam domain: https://evil.example. Do not connect."],
+    [{ status: "mismatch", origin: "https://evil.example" }, "Domain mismatch: this request came from https://evil.example, not the site the app claims to be."],
+    [{ status: "unverified" }, "Unverified domain: WalletConnect could not confirm which site this is."],
+    [{ status: "verified", origin: "https://app.example" }, "Verified domain: https://app.example"],
+  ])("shows the proposal domain check %j", async (verification, notice) => {
+    stateWith({
+      proposals: [{
+        id: 3,
+        name: "Dapp",
+        url: "https://app.example",
+        requiredChains: ["xian:xian-local"],
+        requiredMethods: ["xian_sendCall"],
+        verification,
+      }],
+    });
+
+    const screen = await render(<AppsScreen />);
+
+    await waitFor(() => expect(screen.getByText(notice)).toBeTruthy());
+  });
+
+  it("shows the request domain check, chi and revealed hidden characters", async () => {
+    stateWith({
+      requests: [{
+        id: 8,
+        topic: "topic-1",
+        origin: "wc:topic-1",
+        sessionName: "Swap dapp",
+        chainId: "xian-local",
+        chi: null,
+        verification: { status: "mismatch", origin: "https://evil.example" },
+        request: { method: "xian_signMessage", params: { message: "pay alice\u202Eecilab" } },
+      }],
+    });
+
+    const screen = await render(<AppsScreen />);
+
+    await waitFor(() => expect(screen.getByText("Not estimated")).toBeTruthy());
+    expect(screen.getByText(/pay alice\[U\+202E\]ecilab/)).toBeTruthy();
+    expect(
+      screen.getByText("This request contains invisible or text-direction characters. They are shown as [U+XXXX] markers.")
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Domain mismatch: this request came from https://evil.example, not the site the app claims to be.")
+    ).toBeTruthy();
+  });
+
+  it("shows the chi a transaction request will use", async () => {
+    stateWith({
+      requests: [{
+        id: 9,
+        topic: "topic-1",
+        origin: "wc:topic-1",
+        sessionName: "Swap dapp",
+        chainId: "xian-local",
+        chi: "777",
+        verification: { status: "verified", origin: "https://app.example" },
+        request: { method: "xian_sendCall", params: { intent: {} } },
+      }],
+    });
+
+    const screen = await render(<AppsScreen />);
+
+    await waitFor(() => expect(screen.getByText("777")).toBeTruthy());
+    expect(screen.queryByText(/invisible or text-direction/)).toBeNull();
+  });
 });
+

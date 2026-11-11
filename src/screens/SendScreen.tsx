@@ -47,7 +47,7 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [estimating, setEstimating] = useState(false);
-  const [estimate, setEstimate] = useState<{ estimated: number } | null>(null);
+  const [estimate, setEstimate] = useState<{ estimated: number; suggested: number } | null>(null);
   const [chiRate, setChiRate] = useState<number | null>(null);
   const [showContacts, setShowContacts] = useState(false);
   const [unrecognizedRecipient, setUnrecognizedRecipient] = useState<string | null>(null);
@@ -111,7 +111,7 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
       const parsedAmount = parseAmountInput(amount);
       if (parsedAmount == null) throw new Error("Enter a valid amount");
       const kwargs = { to: to.trim(), amount: parsedAmount };
-      const r = await rpc.sendTransaction({ privateKey: material.privateKey, contract: activeToken, function: "transfer", kwargs, chi: estimate?.estimated ?? 50000 });
+      const r = await rpc.sendTransaction({ privateKey: material.privateKey, contract: activeToken, function: "transfer", kwargs, chi: estimate?.suggested ?? 50000 });
       const sentShown = showTransactionSentToast(showToast, state.dashboardUrl, r);
       scheduleTransactionStatusToast(showToast, state.dashboardUrl, r, sentShown ? 1600 : 0);
       const ok = transactionSucceeded(r);
@@ -239,7 +239,7 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
 
   // ── Review ──────────────────────────────────────────────────
   if (step === "review") {
-    const chiValue = formatChi(estimate?.estimated ?? null, chiRate);
+    const chiValue = formatChi(estimate?.suggested ?? null, chiRate);
     const parsedAmount = parseAmountInput(amount);
     const amountValue = `${formatRuntimeInput(parsedAmount) || amount.trim()} ${tokenSymbol}`;
     return (

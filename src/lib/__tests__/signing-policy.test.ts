@@ -1,4 +1,4 @@
-import { isUnsafeMessageToSign } from "../signing-policy";
+import { isUnsafeMessageToSign, revealHiddenCharacters } from "../signing-policy";
 
 describe("message signing policy", () => {
   it("allows ordinary text messages", () => {
@@ -28,5 +28,21 @@ describe("message signing policy", () => {
 
   it("allows non-object JSON values", () => {
     expect(isUnsafeMessageToSign(JSON.stringify("hello"))).toBe(false);
+  });
+});
+
+describe("hidden character reveal", () => {
+  it("marks invisible and direction-changing characters", () => {
+    expect(revealHiddenCharacters("pay alice\u202Eecilab\u200B\u2066")).toEqual({
+      text: "pay alice[U+202E]ecilab[U+200B][U+2066]",
+      revealed: true,
+    });
+  });
+
+  it("keeps ordinary text, line breaks and tabs", () => {
+    expect(revealHiddenCharacters("line one\nline two\ttabbed — ünïcode")).toEqual({
+      text: "line one\nline two\ttabbed — ünïcode",
+      revealed: false,
+    });
   });
 });

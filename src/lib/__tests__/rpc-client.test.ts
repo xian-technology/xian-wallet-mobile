@@ -121,6 +121,16 @@ describe("XianRpcClient", () => {
     });
   });
 
+  it("reports the chi to supply alongside the bare estimate", async () => {
+    const client = new XianRpcClient("http://127.0.0.1:26657");
+    const request = { sender: "a".repeat(64), contract: "currency", function: "transfer", kwargs: {} };
+
+    mockEstimateChi.mockImplementationOnce(async () => ({ estimated: 1000, suggested: 1050 }));
+    await expect(client.estimateChi(request)).resolves.toEqual({ estimated: 1000, suggested: 1050 });
+    mockEstimateChi.mockImplementationOnce(async () => ({ estimated: 1000 }));
+    await expect(client.estimateChi(request)).resolves.toEqual({ estimated: 1000, suggested: 1000 });
+  });
+
   it("returns submission failures without fabricating a receipt", async () => {
     mockBuildTx.mockImplementation(async () => ({ payload: { nonce: 1 } }));
     mockSignTx.mockImplementation(async () => ({

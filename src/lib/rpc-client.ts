@@ -294,7 +294,7 @@ export class XianRpcClient {
     contract: string;
     function: string;
     kwargs: Record<string, unknown>;
-  }): Promise<{ estimated: number }> {
+  }): Promise<{ estimated: number; suggested: number }> {
     this.assertTransportAllowed();
     const result = await this.client.estimateChi({
       sender: opts.sender,
@@ -302,8 +302,11 @@ export class XianRpcClient {
       function: opts.function,
       kwargs: opts.kwargs
     });
+    // `suggested` (estimate plus headroom) is the chi to supply; `estimated`
+    // is the bare simulation result.
     return {
-      estimated: result.estimated
+      estimated: result.estimated,
+      suggested: result.suggested ?? result.estimated
     };
   }
 
