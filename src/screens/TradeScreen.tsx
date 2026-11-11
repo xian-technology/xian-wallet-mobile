@@ -1,3 +1,5 @@
+import { fixedUnits } from "@xian-tech/dex";
+import { fixed } from "@xian-tech/client";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -30,7 +32,6 @@ import {
   type DexQuote,
   loadDexSnapshot,
   minReceived,
-  runtimeFixedFromNumber,
   runtimeFixedFromString,
   sortedDexTokens,
   tokenByContract,
@@ -60,7 +61,8 @@ type PickerKind = "from" | "to";
 const SLIPPAGE_OPTIONS = [50, 100, 300, 500];
 const DEADLINE_OPTIONS = [10, 20, 30, 60];
 
-function formatTradeNumber(value: number): string {
+function formatTradeNumber(value: number | string): string {
+  if (typeof value === "string") return value;
   if (!Number.isFinite(value)) {
     return "-";
   }
@@ -208,8 +210,8 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
     if (!snapshot?.available) {
       return { quote: null as DexQuote | null, error: null as string | null };
     }
-    const parsed = Number(amount);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
+    const parsed = runtimeFixedFromString(amount);
+    if (!parsed || parsed.__fixed__ === "0") {
       return { quote: null, error: null };
     }
     if (!fromToken || !toToken) {
@@ -218,7 +220,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
     if (fromToken === toToken) {
       return { quote: null, error: "Tokens must differ." };
     }
-    const quote = buildDexQuote(snapshot, fromToken, toToken, parsed);
+    const quote = buildDexQuote(snapshot, fromToken, toToken, parsed.__fixed__);
     return quote
       ? { quote, error: null }
       : { quote: null, error: "No route exists between these tokens." };
@@ -229,18 +231,13 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
   const blocked = snapshot && quoteState.quote
     ? blockedIntermediateToken(snapshot, quoteState.quote)
     : null;
-  const needsApproval = Boolean(from && quoteState.quote && from.allowance < quoteState.quote.amountIn);
-  const insufficient = Boolean(from && quoteState.quote && from.balance < quoteState.quote.amountIn);
+  const needsApproval = Boolean(from && quoteState.quote && fixedUnits(from.allowance) < fixedUnits(quoteState.quote.amountIn));
+  const insufficient = Boolean(from && quoteState.quote && fixedUnits(from.balance) < fixedUnits(quoteState.quote.amountIn));
   const canReview = Boolean(quoteState.quote && !blocked && !needsApproval && !insufficient);
 
   const buildSwapKwargs = (quote: DexQuote): Record<string, unknown> => ({
-    amountIn:
-      runtimeFixedFromString(amount) ??
-      runtimeFixedFromNumber(quote.amountIn),
-    amountOutMin: runtimeFixedFromNumber(
-      minReceived(quote, slippageBps),
-      { floor: true }
-    ),
+    amountIn: fixed(quote.amountIn),
+    amountOutMin: fixed(minReceived(quote, slippageBps)),
     path: quote.path,
     src: fromToken,
     to: state.publicKey,
@@ -278,9 +275,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
       const material = await loadUnlockedWalletMaterial();
       if (!material) throw new Error("Wallet is locked");
       const kwargs = {
-        amount:
-          runtimeFixedFromString(amount) ??
-          runtimeFixedFromNumber(quoteState.quote.amountIn),
+        amount: fixed(quoteState.quote.amountIn),
         to: DEX_ROUTER,
       };
       const approvalEstimate = await rpc.estimateChi({
@@ -360,11 +355,11 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
       setError(quoteState.error ?? "Enter a valid trade amount.");
       return;
     }
-    if (from && from.balance < quote.amountIn) {
+    if (from && fixedUnits(from.balance) < fixedUnits(quote.amountIn)) {
       setError(`Insufficient ${tokenSymbol(from)} balance.`);
       return;
     }
-    if (from && from.allowance < quote.amountIn) {
+    if (from && fixedUnits(from.allowance) < fixedUnits(quote.amountIn)) {
       setError(`Approve ${tokenSymbol(from)} first.`);
       return;
     }
@@ -552,7 +547,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
   if (step === "review" && reviewQuote && reviewKwargs && snapshot) {
     const reviewFrom = tokenByContract(snapshot, fromToken);
     const reviewTo = tokenByContract(snapshot, toToken);
-    const minOut = Number(reviewKwargs.amountOutMin);
+    const minOut = (reviewKwargs.amountOutMin as { __fixed__: string }).__fixed__;
     const fn = tradeSwapFunction(snapshot, reviewQuote);
     return (
       <View style={styles.container}>
@@ -561,7 +556,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
             <Row label="From" value={`${formatTradeNumber(reviewQuote.amountIn)} ${tokenSymbol(reviewFrom)}`} />
             <Row label="To" value={`~${formatTradeNumber(reviewQuote.amountOut)} ${tokenSymbol(reviewTo)}`} />
             <Row label="Minimum received" value={`${formatTradeNumber(minOut)} ${tokenSymbol(reviewTo)}`} />
-            <Row label="Price impact" value={formatPriceImpact(reviewQuote.priceImpact * 100)} tone={reviewQuote.priceImpact >= 0.05 ? "danger" : undefined} />
+            <Row label="Price impact" value={formatPriceImpact(Number(reviewQuote.priceImpact) * 100)} tone={Number(reviewQuote.priceImpact) >= 0.05 ? "danger" : undefined} />
             <View style={styles.sectionLabelWrap}>
               <Text style={styles.sectionLabel}>Route</Text>
             </View>
@@ -612,7 +607,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
               : "Review Swap";
 
   const quote = quoteState.quote;
-  const priceImpact = quote ? quote.priceImpact * 100 : 0;
+  const priceImpact = quote ? Number(quote.priceImpact) * 100 : 0;
   const useSupporting = snapshot && quote ? useSupportingFeeRoute(snapshot, quote) : false;
 
   return (
@@ -707,7 +702,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
           {quoteState.error && <InlineBanner tone="warning" text={quoteState.error} />}
           {quote && (
             <View style={styles.quoteBox}>
-              <Row label="Rate" value={`1 ${tokenSymbol(from)} ~ ${formatTradeNumber(quote.amountOut / Math.max(quote.amountIn, 1e-12))} ${tokenSymbol(to)}`} />
+              <Row label="Rate" value={`1 ${tokenSymbol(from)} ~ ${formatTradeNumber(Number(quote.amountOut) / Number(quote.amountIn))} ${tokenSymbol(to)}`} />
               <Row label={`Min received (${formatBps(slippageBps)})`} value={`${formatTradeNumber(minReceived(quote, slippageBps))} ${tokenSymbol(to)}`} />
               <Row label="Price impact" value={formatPriceImpact(priceImpact)} tone={priceImpact >= 5 ? "danger" : priceImpact >= 1.5 ? "warning" : undefined} />
               <Row label="DEX fee" value={formatBps(quote.feeBps)} />

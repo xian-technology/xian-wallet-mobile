@@ -4,7 +4,6 @@ import {
   buildDexQuote,
   loadDexSnapshot,
   minReceived,
-  runtimeFixedFromNumber,
   runtimeFixedFromString,
   sortedDexTokens,
   type WalletDexSnapshot,
@@ -26,8 +25,8 @@ function snapshot(): WalletDexSnapshot {
         logoUrl: null,
         logoSvg: null,
         precision: 8,
-        balance: 100,
-        allowance: 100,
+        balance: "100",
+        allowance: "100",
         feeOnTransfer: false,
       },
       {
@@ -37,8 +36,8 @@ function snapshot(): WalletDexSnapshot {
         logoUrl: null,
         logoSvg: null,
         precision: 8,
-        balance: 0,
-        allowance: 0,
+        balance: "0",
+        allowance: "0",
         feeOnTransfer: false,
       },
       {
@@ -48,8 +47,8 @@ function snapshot(): WalletDexSnapshot {
         logoUrl: null,
         logoSvg: null,
         precision: 8,
-        balance: 0,
-        allowance: 0,
+        balance: "0",
+        allowance: "0",
         feeOnTransfer: false,
       },
     ],
@@ -58,9 +57,9 @@ function snapshot(): WalletDexSnapshot {
         id: 1,
         token0: "currency",
         token1: "con_b",
-        reserve0: 100,
-        reserve1: 100,
-        totalSupply: 100,
+        reserve0: "100",
+        reserve1: "100",
+        totalSupply: "100",
         blockTimestampLast: null,
         creationTime: null,
       },
@@ -68,9 +67,9 @@ function snapshot(): WalletDexSnapshot {
         id: 2,
         token0: "currency",
         token1: "con_a",
-        reserve0: 100,
-        reserve1: 300,
-        totalSupply: 100,
+        reserve0: "100",
+        reserve1: "300",
+        totalSupply: "100",
         blockTimestampLast: null,
         creationTime: null,
       },
@@ -78,9 +77,9 @@ function snapshot(): WalletDexSnapshot {
         id: 3,
         token0: "con_a",
         token1: "con_b",
-        reserve0: 300,
-        reserve1: 300,
-        totalSupply: 100,
+        reserve0: "300",
+        reserve1: "300",
+        totalSupply: "100",
         blockTimestampLast: null,
         creationTime: null,
       },
@@ -90,12 +89,12 @@ function snapshot(): WalletDexSnapshot {
 
 describe("DEX helpers", () => {
   it("chooses the best multi-hop route and applies slippage", () => {
-    const quote = buildDexQuote(snapshot(), "currency", "con_b", 10);
+    const quote = buildDexQuote(snapshot(), "currency", "con_b", "10");
 
     expect(quote).not.toBeNull();
     expect(quote?.path).toEqual([2, 3]);
-    expect(quote?.amountOut).toBeGreaterThan(20);
-    expect(minReceived(quote!, 100)).toBeCloseTo(quote!.amountOut * 0.99);
+    expect(Number(quote?.amountOut)).toBeGreaterThan(20);
+    expect(Number(minReceived(quote!, 100))).toBeCloseTo(Number(quote!.amountOut) * 0.99);
   });
 
   it("sorts currency first and then by token symbol", () => {
@@ -106,11 +105,11 @@ describe("DEX helpers", () => {
     ]);
   });
 
-  it("encodes DEX decimal amounts as fixed runtime values", () => {
-    expect(runtimeFixedFromString("001.2300")).toEqual({ __fixed__: "1.23" });
-    expect(runtimeFixedFromNumber(902.2955123456789, { floor: true })).toEqual({
-      __fixed__: "902.295512345678",
-    });
+  it("preserves all 30 decimal places and rejects unrepresentable amounts", () => {
+    const exact = "9007199254740993.000000000000000000000000000001";
+    expect(runtimeFixedFromString(exact)).toEqual({ __fixed__: exact });
+    expect(runtimeFixedFromString("1e-31")).toBeNull();
+    expect(runtimeFixedFromString("0.0000000000000000000000000000001")).toBeNull();
   });
 
   it("loads con_dex market state from RPC", async () => {
@@ -174,8 +173,8 @@ describe("DEX helpers", () => {
       tokens: expect.arrayContaining([
         expect.objectContaining({
           contract: "currency",
-          balance: 12.5,
-          allowance: 10,
+          balance: "12.5",
+          allowance: "10",
         }),
         expect.objectContaining({
           contract: "con_wtt",

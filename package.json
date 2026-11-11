@@ -26,6 +26,7 @@
     "@walletconnect/react-native-compat": "^2.23.9",
     "@walletconnect/utils": "^2.23.9",
     "@xian-tech/client": "file:../xian-js/packages/client",
+    "@xian-tech/dex": "file:../xian-js/packages/dex",
     "@xian-tech/provider": "file:../xian-js/packages/provider",
     "expo": "~57.0.2",
     "expo-camera": "~57.0.0",

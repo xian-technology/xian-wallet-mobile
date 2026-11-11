@@ -79,15 +79,14 @@ function formatAmount(value: unknown): string | null {
   if (typeof value === "string") {
     const trimmed = value.trim();
     if (!trimmed) return null;
-    const num = Number(trimmed);
-    if (Number.isFinite(num)) {
-      return num.toLocaleString(undefined, { maximumFractionDigits: 8 });
-    }
     return trimmed;
   }
   if (typeof value === "object" && value && "__fixed__" in (value as Record<string, unknown>)) {
     const fixed = (value as Record<string, unknown>).__fixed__;
     if (typeof fixed === "string" || typeof fixed === "number") return formatAmount(fixed);
+  }
+  if (typeof value === "object" && value && "__big_int__" in value && typeof value.__big_int__ === "string") {
+    return value.__big_int__;
   }
   try {
     return JSON.stringify(value);
@@ -104,6 +103,9 @@ function formatArgValue(value: unknown): string {
   if (typeof value === "object" && "__fixed__" in (value as Record<string, unknown>)) {
     const fixed = (value as Record<string, unknown>).__fixed__;
     if (typeof fixed === "string" || typeof fixed === "number") return String(fixed);
+  }
+  if (typeof value === "object" && value && "__big_int__" in value && typeof value.__big_int__ === "string") {
+    return value.__big_int__;
   }
   try {
     return JSON.stringify(value);

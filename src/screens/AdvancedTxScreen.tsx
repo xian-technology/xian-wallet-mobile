@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from "react-native";
+import { encodeRuntime } from "@xian-tech/client";
 import { Feather } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import { Button } from "../components/Button";
@@ -109,6 +110,13 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
 
   const handleReview = async () => {
     if (!contract.trim() || !func.trim()) { setError("Contract and function are required."); return; }
+    let kw: Record<string, unknown>;
+    try {
+      kw = parseKwargs(args);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Invalid contract arguments.");
+      return;
+    }
     const manualChi = chi.trim();
     if (manualChi) {
       const parsedChi = parsePositiveIntegerInput(manualChi);
@@ -126,7 +134,6 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
 
     setError(null); setEstimating(true);
     try {
-      const kw = parseKwargs(args);
       const est = await rpc.estimateChi({ sender: state.publicKey!, contract: contract.trim(), function: func.trim(), kwargs: kw });
       setEstimate(est); loadChiRate(); lightTap(); setStep("review");
     } catch (e) { setError(e instanceof Error ? e.message : "Estimation failed"); }
@@ -188,7 +195,7 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
               <Text style={styles.sectionLabel}>Arguments</Text>
             </View>
             {kwEntries.length > 0
-              ? kwEntries.map(([k, v]) => <Row key={k} label={k} value={String(v)} mono />)
+              ? kwEntries.map(([k, v]) => <Row key={k} label={k} value={v && typeof v === "object" ? encodeRuntime(v, "xian_vm_v2") : String(v)} mono />)
               : <Text style={styles.emptyRow}>No arguments</Text>}
           </Card>
 

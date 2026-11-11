@@ -9,6 +9,10 @@ This repo is the *mobile product*. It depends on the `xian-js` SDK
 workspace as a sibling checkout. The browser wallet product lives in the
 sibling [`xian-wallet-browser`](../xian-wallet-browser) repo.
 
+Transfers and contract calls target `xian_vm_v2`. Enter exact amounts as decimal
+text. The trade screen uses the SDK's fixed-point quotes, compares balances
+and allowances exactly, and displays the minimum amount included in the swap.
+
 ## Product Shape
 
 ```mermaid
@@ -28,7 +32,7 @@ flowchart LR
 
 ## Quick Start
 
-This repo consumes `@xian-tech/client` from the sibling `xian-js`
+This repo consumes `@xian-tech/client` and `@xian-tech/dex` from the sibling `xian-js`
 checkout. The expected local layout is:
 
 ```text

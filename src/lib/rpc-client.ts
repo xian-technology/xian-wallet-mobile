@@ -88,13 +88,13 @@ export class XianRpcClient {
 
   constructor(private rpcUrl: string, options: { allowInsecureHttp?: boolean } = {}) {
     this.allowInsecureHttp = options.allowInsecureHttp === true;
-    this.client = new XianClient({ rpcUrl });
+    this.client = new XianClient({ rpcUrl, vmProfile: "xian_vm_v2" });
   }
 
   setRpcUrl(url: string, options: { allowInsecureHttp?: boolean } = {}): void {
     this.allowInsecureHttp = options.allowInsecureHttp === true;
     this.rpcUrl = url;
-    this.client = new XianClient({ rpcUrl: url });
+    this.client = new XianClient({ rpcUrl: url, vmProfile: "xian_vm_v2" });
   }
 
   private assertTransportAllowed(): void {

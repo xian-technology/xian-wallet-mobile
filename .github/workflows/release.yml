@@ -25,8 +25,15 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           repository: ${{ github.repository_owner }}/xian-js
-          ref: main
+          ref: 39812da81a19a8d58584ea0f544c13d57c98b6e7
           path: xian-js
+
+      - name: Check out xian-contracting
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: ${{ github.repository_owner }}/xian-contracting
+          ref: 12b1c31f98d535a278b0c00e40dd90584f6b52f4
+          path: xian-contracting
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6

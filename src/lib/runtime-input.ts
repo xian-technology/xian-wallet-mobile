@@ -1,8 +1,9 @@
+import { fixed, parseContractJson } from "@xian-tech/client";
+
 export type RuntimeFixed = { __fixed__: string };
 export type RuntimeNumeric = number | bigint | RuntimeFixed;
 
 const INTEGER_PATTERN = /^-?\d+$/;
-const DECIMAL_PATTERN = /^-?(?:\d+\.?\d*|\.\d+)$/;
 const XIAN_ADDRESS_PATTERN = /^[0-9a-fA-F]{64}$/;
 const XIAN_CONTRACT_NAME_PATTERN = /^(?:currency|con_[a-z0-9_]+)$/;
 
@@ -16,16 +17,12 @@ function normalizeDecimalText(value: string): string {
   return value.trim().replace(",", ".");
 }
 
-function fixed(value: string): RuntimeFixed {
-  return { __fixed__: value };
-}
-
 function parseFixedInput(value: string): RuntimeFixed | null {
-  const trimmed = normalizeDecimalText(value);
-  if (!DECIMAL_PATTERN.test(trimmed)) {
+  try {
+    return fixed(normalizeDecimalText(value));
+  } catch {
     return null;
   }
-  return Number.isFinite(Number(trimmed)) ? fixed(trimmed) : null;
 }
 
 export function isRuntimeFixed(value: unknown): value is RuntimeFixed {
@@ -54,7 +51,8 @@ export function parseIntegerInput(value: string): number | bigint | null {
   if (!INTEGER_PATTERN.test(trimmed)) {
     return null;
   }
-  return safeBigIntToNumber(BigInt(trimmed));
+  const parsed = BigInt(trimmed);
+  return parsed <= -(1n << 512n) || parsed >= (1n << 512n) ? null : safeBigIntToNumber(parsed);
 }
 
 export function parsePositiveIntegerInput(value: string): number | bigint | null {
@@ -73,11 +71,8 @@ export function parseAmountInput(value: string): RuntimeNumeric | null {
   if (INTEGER_PATTERN.test(trimmed)) {
     return parsePositiveIntegerInput(trimmed);
   }
-  if (!DECIMAL_PATTERN.test(trimmed)) {
-    return null;
-  }
   const parsed = parseFixedInput(trimmed);
-  if (parsed == null || Number(parsed.__fixed__) <= 0) {
+  if (parsed == null || parsed.__fixed__ === "0" || parsed.__fixed__.startsWith("-")) {
     return null;
   }
   return parsed;
@@ -86,20 +81,19 @@ export function parseAmountInput(value: string): RuntimeNumeric | null {
 export function parseTypedInput(value: string, type: string): unknown {
   const trimmed = value.trim();
   switch (type) {
-    case "int":
-      return parseIntegerInput(trimmed) ?? trimmed;
-    case "float": {
-      return parseFixedInput(trimmed) ?? trimmed;
+    case "int": {
+      const integer = parseIntegerInput(trimmed);
+      if (integer == null) throw new Error("Enter an integer within the 512-bit limit.");
+      return integer;
+    }
+    case "decimal": {
+      return fixed(normalizeDecimalText(trimmed));
     }
     case "bool":
       return trimmed === "true";
     case "dict":
     case "list":
-      try {
-        return JSON.parse(trimmed);
-      } catch {
-        return trimmed;
-      }
+      return parseContractJson(trimmed);
     default:
       return trimmed;
   }

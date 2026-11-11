@@ -25,12 +25,17 @@ describe("runtime-input", () => {
 
   it("parses typed contract inputs conservatively", () => {
     expect(parseTypedInput("9007199254740993", "int")).toBe(9007199254740993n);
-    expect(parseTypedInput("0.5", "float")).toEqual({ __fixed__: "0.5" });
-    expect(parseTypedInput("5", "float")).toEqual({ __fixed__: "5" });
+    expect(parseTypedInput("0.5", "decimal")).toEqual({ __fixed__: "0.5" });
+    expect(parseTypedInput("5", "decimal")).toEqual({ __fixed__: "5" });
     expect(parseTypedInput("true", "bool")).toBe(true);
     expect(parseTypedInput("{\"mode\":\"fast\"}", "dict")).toEqual({ mode: "fast" });
     expect(parseTypedInput("[1,2,3]", "list")).toEqual([1, 2, 3]);
     expect(parseTypedInput("hello", "str")).toBe("hello");
+  });
+
+  it("preserves nested contract numbers before JSON can round them", () => {
+    const nested = parseTypedInput('[1.000000000000000000000000000001,9007199254740993,"1.23"]', "list");
+    expect(nested).toEqual([{ __fixed__: "1.000000000000000000000000000001" }, { __big_int__: "9007199254740993" }, "1.23"]);
   });
 
   it("recognizes normal Xian recipients without requiring extra confirmation", () => {

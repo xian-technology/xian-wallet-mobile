@@ -67,7 +67,7 @@ describe("AdvancedTxScreen", () => {
         name: "mint",
         arguments: [
           { name: "count", type: "int" },
-          { name: "amount", type: "float" },
+          { name: "amount", type: "decimal" },
           { name: "config", type: "dict" },
           { name: "flag", type: "bool" }
         ]
@@ -95,7 +95,7 @@ describe("AdvancedTxScreen", () => {
     await waitFor(() => expect(screen.getByText("mint")).toBeTruthy());
     await fireEvent.press(screen.getByText("mint"));
     await fireEvent.changeText(screen.getByPlaceholderText("int value"), "9007199254740993");
-    await fireEvent.changeText(screen.getByPlaceholderText("float value"), "12.5");
+    await fireEvent.changeText(screen.getByPlaceholderText("decimal value"), "12.5");
     await fireEvent.changeText(
       screen.getByPlaceholderText("dict value"),
       "{\"mode\":\"fast\"}"

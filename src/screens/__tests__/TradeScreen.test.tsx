@@ -178,6 +178,7 @@ describe("TradeScreen", () => {
 
     await fireEvent.press(screen.getByText("Review Swap"));
     await waitFor(() => expect(screen.getByText("Swap summary")).toBeTruthy());
+    expect(screen.getByText("1.95457289 WTT")).toBeTruthy();
     await fireEvent.press(screen.getByText("Send Swap"));
 
     await waitFor(() =>
@@ -187,7 +188,7 @@ describe("TradeScreen", () => {
         function: "swapExactTokensForTokens",
         kwargs: expect.objectContaining({
           amountIn: { __fixed__: "1" },
-          amountOutMin: expect.objectContaining({ __fixed__: expect.any(String) }),
+          amountOutMin: { __fixed__: "1.95457289" },
           path: [1],
           src: "currency",
           to: "sender",
