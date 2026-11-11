@@ -133,6 +133,10 @@ let linkingAttached = false;
 let linkingSubscription: { remove(): void } | null = null;
 let proposals: DappSessionProposal[] = [];
 let requests: DappSessionRequest[] = [];
+// Requests whose approval or rejection is underway. A request is answered at
+// most once, so a second resolution (double tap, back gesture during approval)
+// must not execute or answer it again.
+const requestsInFlight = new Set<number>();
 
 function configuredProjectId(): string | null {
   const extra = Constants.expoConfig?.extra as
@@ -910,6 +914,34 @@ export async function rejectWalletConnectProposal(id: number): Promise<void> {
   emitChange();
 }
 
+function claimPendingRequest(id: number): DappSessionRequest {
+  const pending = requests.find((entry) => entry.id === id);
+  if (!pending) {
+    throw new Error("WalletConnect request not found");
+  }
+  if (requestsInFlight.has(id)) {
+    throw new Error("WalletConnect request is already being processed");
+  }
+  requestsInFlight.add(id);
+  return pending;
+}
+
+function finishPendingRequest(id: number): void {
+  requestsInFlight.delete(id);
+  requests = requests.filter((entry) => entry.id !== id);
+  emitChange();
+}
+
+async function trustApprovedRequest(
+  pending: DappSessionRequest,
+  trust: XianDappPolicyArgumentScope | undefined
+): Promise<void> {
+  const policy = trust ? await createPolicyForRequest(pending, trust) : null;
+  if (policy) {
+    await upsertTrustedDappPolicy(policy);
+  }
+}
+
 export async function approveWalletConnectRequest(
   id: number,
   options?: { trust?: XianDappPolicyArgumentScope }
@@ -918,10 +950,7 @@ export async function approveWalletConnectRequest(
   if (!walletKit) {
     throw new Error("WalletConnect project id is not configured");
   }
-  const pending = requests.find((entry) => entry.id === id);
-  if (!pending) {
-    throw new Error("WalletConnect request not found");
-  }
+  const pending = claimPendingRequest(id);
   try {
     const authorization = authorizePendingRequest(walletKit, pending);
     const result = await executeXianRequest(
@@ -930,18 +959,12 @@ export async function approveWalletConnectRequest(
       authorization.account
     );
     await respondWithResult(walletKit, pending, result);
-    if (options?.trust) {
-      const policy = await createPolicyForRequest(pending, options.trust);
-      if (policy) {
-        await upsertTrustedDappPolicy(policy);
-      }
-    }
+    await trustApprovedRequest(pending, options?.trust);
   } catch (error) {
     await respondWithError(walletKit, pending, error);
     throw error;
   } finally {
-    requests = requests.filter((entry) => entry.id !== id);
-    emitChange();
+    finishPendingRequest(id);
   }
 }
 
@@ -950,13 +973,18 @@ export async function rejectWalletConnectRequest(id: number): Promise<void> {
   if (!walletKit) {
     return;
   }
-  const pending = requests.find((entry) => entry.id === id);
-  if (!pending) {
+  let pending: DappSessionRequest;
+  try {
+    pending = claimPendingRequest(id);
+  } catch {
+    // Unknown requests need no answer; in-flight ones are answered by their owner.
     return;
   }
-  await respondWithError(walletKit, pending, "User rejected.");
-  requests = requests.filter((entry) => entry.id !== id);
-  emitChange();
+  try {
+    await respondWithError(walletKit, pending, "User rejected.");
+  } finally {
+    finishPendingRequest(id);
+  }
 }
 
 export async function disconnectWalletConnectSession(topic: string): Promise<void> {
