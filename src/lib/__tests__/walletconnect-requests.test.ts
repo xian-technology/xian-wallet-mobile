@@ -346,9 +346,15 @@ describe("WalletConnect request resolution", () => {
     mockBroadcast.mockImplementation(async () => ({ accepted: true, finalized: false }));
     const id = await queueSendCall();
 
+    const policy = { id: "rule-1", maxChi: 5000 };
+    mockProvider.createXianDappPolicyForRequest.mockImplementationOnce((() => policy) as never);
+
     await approveWalletConnectRequest(id, { trust: "exact" });
 
-    expect(mockProvider.createXianDappPolicyForRequest).toHaveBeenCalledTimes(1);
+    expect(mockProvider.createXianDappPolicyForRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ argumentScope: "exact", origin: expect.any(String) })
+    );
+    expect(mockStorage.upsertTrustedDappPolicy).toHaveBeenCalledWith(policy);
   });
 
   it("ignores stored trust rules that have no chi cap", async () => {
@@ -592,6 +598,31 @@ describe("WalletConnect proposal resolution", () => {
     expect(mockStorage.saveWalletState).toHaveBeenCalledWith(
       expect.objectContaining({ connectedOrigins: ["wc:new-topic"] })
     );
+    expect(getWalletConnectState().proposals.some((proposal) => proposal.id === id)).toBe(false);
+  });
+
+  it("rejects a pending proposal the user declines and forgets it", async () => {
+    const id = await queueProposal();
+
+    await rejectWalletConnectProposal(id);
+    await rejectWalletConnectProposal(id);
+
+    expect(mockRejectSession).toHaveBeenCalledTimes(1);
+    expect(mockRejectSession).toHaveBeenCalledWith({ id, reason: expect.anything() });
+    expect(getWalletConnectState().proposals.some((proposal) => proposal.id === id)).toBe(false);
+  });
+
+  it("keeps a declined proposal answerable when sending the rejection fails", async () => {
+    const id = await queueProposal();
+    mockRejectSession.mockImplementationOnce(async () => {
+      throw new Error("relay offline");
+    });
+
+    await expect(rejectWalletConnectProposal(id)).rejects.toThrow("relay offline");
+    expect(getWalletConnectState().proposals.some((proposal) => proposal.id === id)).toBe(true);
+
+    await rejectWalletConnectProposal(id);
+    expect(mockRejectSession).toHaveBeenCalledTimes(2);
     expect(getWalletConnectState().proposals.some((proposal) => proposal.id === id)).toBe(false);
   });
 
