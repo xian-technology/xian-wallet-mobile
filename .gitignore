@@ -53,3 +53,7 @@ yarn-error.*
 /android/app/*.pem
 xian-wallet-mobile-v*.apk
 graphify-out/
+
+# Quality-tool output (crapper, dryer, mutator)
+.metrics/
+target/
