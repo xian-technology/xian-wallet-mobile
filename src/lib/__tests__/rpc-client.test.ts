@@ -36,7 +36,15 @@ jest.mock("@xian-tech/client", () => ({
   }
 }));
 
-import { XianRpcClient } from "../rpc-client";
+import { FALLBACK_CHI, XianRpcClient, chiToSupply } from "../rpc-client";
+
+describe("chiToSupply", () => {
+  it("supplies the suggested chi, else the shared fallback", () => {
+    expect(chiToSupply({ suggested: 1050 })).toBe(1050);
+    expect(chiToSupply(null)).toBe(FALLBACK_CHI);
+    expect(chiToSupply(undefined)).toBe(50_000);
+  });
+});
 
 describe("XianRpcClient", () => {
   const originalFetch = global.fetch;

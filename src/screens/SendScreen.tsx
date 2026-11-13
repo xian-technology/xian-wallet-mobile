@@ -19,6 +19,7 @@ import { Input } from "../components/Input";
 import { Card } from "../components/Card";
 import { TokenAvatar } from "../components/TokenAvatar";
 import { AppDialog } from "../components/AppDialog";
+import { chiToSupply } from "../lib/rpc-client";
 import { useWallet } from "../lib/wallet-context";
 import { loadUnlockedWalletMaterial } from "../lib/wallet-controller";
 import { visibleAssetsForActiveNetwork } from "../lib/assets";
@@ -111,7 +112,7 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
       const parsedAmount = parseAmountInput(amount);
       if (parsedAmount == null) throw new Error("Enter a valid amount");
       const kwargs = { to: to.trim(), amount: parsedAmount };
-      const r = await rpc.sendTransaction({ privateKey: material.privateKey, contract: activeToken, function: "transfer", kwargs, chi: estimate?.suggested ?? 50000 });
+      const r = await rpc.sendTransaction({ privateKey: material.privateKey, contract: activeToken, function: "transfer", kwargs, chi: chiToSupply(estimate) });
       const sentShown = showTransactionSentToast(showToast, state.dashboardUrl, r);
       scheduleTransactionStatusToast(showToast, state.dashboardUrl, r, sentShown ? 1600 : 0);
       const ok = transactionSucceeded(r);

@@ -82,6 +82,14 @@ export interface TxHistoryPayload {
   [key: string]: unknown;
 }
 
+/** Chi a screen supplies when it has no estimate for the transaction it sends. */
+export const FALLBACK_CHI = 50_000;
+
+/** The chi to supply: the estimate's suggestion, else {@link FALLBACK_CHI}. */
+export function chiToSupply(estimate: { suggested: number } | null | undefined): number {
+  return estimate?.suggested ?? FALLBACK_CHI;
+}
+
 export class XianRpcClient {
   private client: XianClient;
   private allowInsecureHttp: boolean;

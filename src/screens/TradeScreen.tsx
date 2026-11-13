@@ -40,6 +40,7 @@ import {
   type WalletDexSnapshot,
   type WalletDexTokenInfo,
 } from "../lib/dex";
+import { chiToSupply } from "../lib/rpc-client";
 import { useWallet } from "../lib/wallet-context";
 import {
   loadDexAvailability,
@@ -408,7 +409,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
         contract: DEX_ROUTER,
         function: fn,
         kwargs: reviewKwargs,
-        chi: estimate?.suggested ?? 50_000,
+        chi: chiToSupply(estimate),
       });
       const sentShown = showTransactionSentToast(showToast, state.dashboardUrl, result, {
         sent: "Swap transaction sent.",
