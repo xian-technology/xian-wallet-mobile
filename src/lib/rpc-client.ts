@@ -83,13 +83,14 @@ export interface TxHistoryPayload {
 }
 
 /**
- * The chi to supply: the suggestion from simulating the transaction. Screens
- * only reach review after a successful simulation (or with a manual chi), so a
- * missing estimate is a bug; guessing a budget would lock funds for nothing.
+ * The chi to supply: exactly the simulated chi, since execution charges what
+ * the simulation reports for the same state. Screens only reach review after a
+ * successful simulation (or with a manual chi), so a missing estimate is a bug;
+ * guessing a budget would lock funds for nothing.
  */
-export function chiToSupply(estimate: { suggested: number } | null | undefined): number {
+export function chiToSupply(estimate: { estimated: number } | null | undefined): number {
   if (!estimate) throw new Error("The transaction has not been simulated yet. Review it again.");
-  return estimate.suggested;
+  return estimate.estimated;
 }
 
 export class XianRpcClient {
@@ -304,20 +305,15 @@ export class XianRpcClient {
     contract: string;
     function: string;
     kwargs: Record<string, unknown>;
-  }): Promise<{ estimated: number; suggested: number }> {
+  }): Promise<{ estimated: number }> {
     this.assertTransportAllowed();
-    const result = await this.client.estimateChi({
+    const { estimated } = await this.client.estimateChi({
       sender: opts.sender,
       contract: opts.contract,
       function: opts.function,
       kwargs: opts.kwargs
     });
-    // `suggested` (estimate plus headroom) is the chi to supply; `estimated`
-    // is the bare simulation result.
-    return {
-      estimated: result.estimated,
-      suggested: result.suggested ?? result.estimated
-    };
+    return { estimated };
   }
 
   async buildTransaction(opts: {

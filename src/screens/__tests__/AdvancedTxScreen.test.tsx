@@ -74,8 +74,7 @@ describe("AdvancedTxScreen", () => {
       }
     ]);
     mockEstimateChi.mockImplementation(async () => ({
-      estimated: 10_000,
-      suggested: 10_500
+      estimated: 10_000
     }));
     mockSendTransaction.mockImplementation(async () => ({
       submitted: true,
@@ -172,11 +171,10 @@ describe("AdvancedTxScreen", () => {
     );
   });
 
-  it("supplies the suggested chi when chi is auto-estimated", async () => {
+  it("supplies the simulated chi when chi is auto-estimated", async () => {
     mockGetContractMethods.mockImplementation(async () => []);
     mockEstimateChi.mockImplementation(async () => ({
-      estimated: 10_000,
-      suggested: 10_500
+      estimated: 10_000
     }));
     mockSendTransaction.mockImplementation(async () => ({
       submitted: true,
@@ -210,7 +208,7 @@ describe("AdvancedTxScreen", () => {
         contract: "currency",
         function: "approve",
         kwargs: {},
-        chi: 10_500
+        chi: 10_000
       })
     );
   });

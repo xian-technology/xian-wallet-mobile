@@ -39,8 +39,8 @@ jest.mock("@xian-tech/client", () => ({
 import { XianRpcClient, chiToSupply } from "../rpc-client";
 
 describe("chiToSupply", () => {
-  it("supplies the simulated suggestion", () => {
-    expect(chiToSupply({ suggested: 1050 })).toBe(1050);
+  it("supplies exactly the simulated chi", () => {
+    expect(chiToSupply({ estimated: 1000 })).toBe(1000);
   });
 
   it("refuses to guess a budget without a simulation", () => {
@@ -132,14 +132,12 @@ describe("XianRpcClient", () => {
     });
   });
 
-  it("reports the chi to supply alongside the bare estimate", async () => {
+  it("reports the simulated chi to supply", async () => {
     const client = new XianRpcClient("http://127.0.0.1:26657");
     const request = { sender: "a".repeat(64), contract: "currency", function: "transfer", kwargs: {} };
 
-    mockEstimateChi.mockImplementationOnce(async () => ({ estimated: 1000, suggested: 1050 }));
-    await expect(client.estimateChi(request)).resolves.toEqual({ estimated: 1000, suggested: 1050 });
-    mockEstimateChi.mockImplementationOnce(async () => ({ estimated: 1000 }));
-    await expect(client.estimateChi(request)).resolves.toEqual({ estimated: 1000, suggested: 1000 });
+    mockEstimateChi.mockImplementationOnce(async () => ({ estimated: 1000, simulation: { chi_used: 1000 } }));
+    await expect(client.estimateChi(request)).resolves.toEqual({ estimated: 1000 });
   });
 
   it("returns submission failures without fabricating a receipt", async () => {

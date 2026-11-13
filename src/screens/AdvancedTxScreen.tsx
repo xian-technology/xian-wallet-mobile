@@ -55,7 +55,7 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
   const [chi, setChi] = useState("");
   const [chiRate, setChiRate] = useState<number | null>(null);
   const [estimating, setEstimating] = useState(false);
-  const [estimate, setEstimate] = useState<{ estimated: number; suggested: number } | null>(null);
+  const [estimate, setEstimate] = useState<{ estimated: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [methods, setMethods] = useState<ContractMethod[]>([]);
   const [methodsLoading, setMethodsLoading] = useState(false);
@@ -185,7 +185,7 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
     const kw = parseKwargs(args);
     const kwEntries = Object.entries(kw);
     const manualChi = chi.trim() ? parsePositiveIntegerInput(chi.trim()) : null;
-    const chiValue = formatChi(manualChi ?? estimate?.suggested ?? null, chiRate);
+    const chiValue = formatChi(manualChi ?? estimate?.estimated ?? null, chiRate);
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scroll}>

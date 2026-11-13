@@ -61,8 +61,7 @@ describe("SendScreen", () => {
 
   it("reviews and sends a transfer using bigint-safe parsing", async () => {
     mockEstimateChi.mockImplementation(async () => ({
-      estimated: 12_000,
-      suggested: 12_600
+      estimated: 12_000
     }));
     mockSendTransaction.mockImplementation(async () => ({
       submitted: true,
@@ -105,7 +104,7 @@ describe("SendScreen", () => {
           to: "ab".repeat(32),
           amount: 9007199254740993n
         },
-        chi: 12_600
+        chi: 12_000
       })
     );
     expect(mockShowToast).toHaveBeenNthCalledWith(
@@ -156,8 +155,7 @@ describe("SendScreen", () => {
 
   it("reviews and sends decimal transfers as runtime fixed values", async () => {
     mockEstimateChi.mockImplementation(async () => ({
-      estimated: 12_000,
-      suggested: 12_600
+      estimated: 12_000
     }));
     mockSendTransaction.mockImplementation(async () => ({
       submitted: true,
@@ -197,15 +195,14 @@ describe("SendScreen", () => {
           to: "ab".repeat(32),
           amount: { __fixed__: "12.5" }
         },
-        chi: 12_600
+        chi: 12_000
       })
     );
   });
 
   it("allows unrecognized recipients after explicit in-app confirmation", async () => {
     mockEstimateChi.mockImplementation(async () => ({
-      estimated: 12_000,
-      suggested: 12_600
+      estimated: 12_000
     }));
 
     const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof SendScreen>["navigation"];

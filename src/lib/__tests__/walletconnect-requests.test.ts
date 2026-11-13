@@ -309,7 +309,7 @@ describe("WalletConnect request resolution", () => {
   }
 
   it("estimates chi for a send-call before asking the user", async () => {
-    mockEstimateChi.mockImplementation(async () => ({ estimated: 700, suggested: 777 }));
+    mockEstimateChi.mockImplementation(async () => ({ estimated: 777 }));
 
     const id = await queueSendCall({ contract: "currency", function: "transfer", kwargs: { to: "bob" } });
 
@@ -416,7 +416,7 @@ describe("WalletConnect request resolution", () => {
   });
 
   it("estimates chi for array-wrapped params and keeps them wrapped", async () => {
-    mockEstimateChi.mockImplementation(async () => ({ estimated: 40, suggested: 42 }));
+    mockEstimateChi.mockImplementation(async () => ({ estimated: 42 }));
 
     const id = await queueSendCall({ contract: "currency", function: "transfer" }, undefined, true);
 
@@ -427,8 +427,8 @@ describe("WalletConnect request resolution", () => {
 
   it.each([0, 1.5, Number.MAX_SAFE_INTEGER + 2])(
     "leaves chi unset when the estimate is unusable (%s)",
-    async (suggested) => {
-      mockEstimateChi.mockImplementation(async () => ({ estimated: 1, suggested }));
+    async (estimated) => {
+      mockEstimateChi.mockImplementation(async () => ({ estimated }));
 
       const id = await queueSendCall({ contract: "currency", function: "transfer", kwargs: {} });
 
@@ -501,7 +501,7 @@ describe("WalletConnect request resolution", () => {
   });
 
   it("accepts the smallest positive chi estimate", async () => {
-    mockEstimateChi.mockImplementation(async () => ({ estimated: 1, suggested: 1 }));
+    mockEstimateChi.mockImplementation(async () => ({ estimated: 1 }));
 
     const id = await queueSendCall({ contract: "currency", function: "transfer" });
 

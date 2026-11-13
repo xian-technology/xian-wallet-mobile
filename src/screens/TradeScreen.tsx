@@ -141,7 +141,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
   const [deadlineMinutes, setDeadlineMinutes] = useState(DEFAULT_DEADLINE_MINUTES);
   const [pickerKind, setPickerKind] = useState<PickerKind | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [estimate, setEstimate] = useState<{ estimated: number; suggested: number } | null>(null);
+  const [estimate, setEstimate] = useState<{ estimated: number } | null>(null);
   const [chiRate, setChiRate] = useState<number | null>(null);
   const [reviewQuote, setReviewQuote] = useState<DexQuote | null>(null);
   const [reviewKwargs, setReviewKwargs] = useState<Record<string, unknown> | null>(null);
@@ -290,7 +290,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
         contract: from.contract,
         function: "approve",
         kwargs,
-        chi: approvalEstimate.suggested,
+        chi: chiToSupply(approvalEstimate),
       });
       const sentShown = showTransactionSentToast(showToast, state.dashboardUrl, result, {
         sent: "Approval transaction sent.",
@@ -580,7 +580,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
           </Card>
 
           <Card title="Transaction fee">
-            <Row label="Chi" value={formatChi(estimate?.suggested ?? null, chiRate)} />
+            <Row label="Chi" value={formatChi(estimate?.estimated ?? null, chiRate)} />
           </Card>
 
           {error && <View style={styles.errorBanner}><Text style={styles.errorText}>{error}</Text></View>}

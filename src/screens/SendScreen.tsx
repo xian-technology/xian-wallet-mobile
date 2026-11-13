@@ -48,7 +48,7 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [estimating, setEstimating] = useState(false);
-  const [estimate, setEstimate] = useState<{ estimated: number; suggested: number } | null>(null);
+  const [estimate, setEstimate] = useState<{ estimated: number } | null>(null);
   const [chiRate, setChiRate] = useState<number | null>(null);
   const [showContacts, setShowContacts] = useState(false);
   const [unrecognizedRecipient, setUnrecognizedRecipient] = useState<string | null>(null);
@@ -240,7 +240,7 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
 
   // ── Review ──────────────────────────────────────────────────
   if (step === "review") {
-    const chiValue = formatChi(estimate?.suggested ?? null, chiRate);
+    const chiValue = formatChi(estimate?.estimated ?? null, chiRate);
     const parsedAmount = parseAmountInput(amount);
     const amountValue = `${formatRuntimeInput(parsedAmount) || amount.trim()} ${tokenSymbol}`;
     return (
