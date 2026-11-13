@@ -39,6 +39,13 @@ describe("hidden character reveal", () => {
     });
   });
 
+  it("labels control and astral tag characters by code point", () => {
+    expect(revealHiddenCharacters("a\u0000b\u{E0041}")).toEqual({
+      text: "a[U+0000]b[U+E0041]",
+      revealed: true,
+    });
+  });
+
   it("keeps ordinary text, line breaks and tabs", () => {
     expect(revealHiddenCharacters("line one\nline two\ttabbed — ünïcode")).toEqual({
       text: "line one\nline two\ttabbed — ünïcode",

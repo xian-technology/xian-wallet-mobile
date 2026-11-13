@@ -146,7 +146,7 @@ jest.mock("../local-activity", () => ({
 jest.mock("../signing-policy", () => ({ isUnsafeMessageToSign: () => false }));
 jest.mock("../walletconnect-policy", () => ({
   ...(jest.requireActual("../walletconnect-policy") as object),
-  authorizeXianWalletConnectRequest: () => ({ account: MOCK_ACCOUNT, chainId: MOCK_CHAIN_ID }),
+  authorizeXianWalletConnectRequest: jest.fn(() => ({ account: MOCK_ACCOUNT, chainId: MOCK_CHAIN_ID })),
   buildRequiredXianApprovedNamespaces: jest.fn(() => ({})),
 }));
 
@@ -162,6 +162,7 @@ import {
 const mockStorage = jest.requireMock("../storage") as Record<string, jest.Mock>;
 const mockProvider = jest.requireMock("@xian-tech/provider") as Record<string, jest.Mock>;
 const mockController = jest.requireMock("../wallet-controller") as Record<string, jest.Mock>;
+const mockPolicy = jest.requireMock("../walletconnect-policy") as Record<string, jest.Mock>;
 
 const WALLET_STATE = {
   publicKey: MOCK_ACCOUNT,
@@ -354,7 +355,48 @@ describe("WalletConnect request resolution", () => {
     expect(mockProvider.createXianDappPolicyForRequest).toHaveBeenCalledWith(
       expect.objectContaining({ argumentScope: "exact", origin: expect.any(String) })
     );
+    const [{ now, expiresAt }] = mockProvider.createXianDappPolicyForRequest.mock.calls[0] as [
+      { now: number; expiresAt: number },
+    ];
+    expect(expiresAt - now).toBe(30 * 24 * 60 * 60 * 1000);
     expect(mockStorage.upsertTrustedDappPolicy).toHaveBeenCalledWith(policy);
+  });
+
+  it("queues a request for review while the wallet is locked", async () => {
+    mockController.loadUnlockedWalletMaterial.mockImplementationOnce(async () => null);
+
+    const id = await queueSendCall();
+
+    expect(getWalletConnectState().requests.some((request) => request.id === id)).toBe(true);
+    expect(mockProvider.findMatchingXianDappPolicy).not.toHaveBeenCalled();
+  });
+
+  it("answers, without queueing, a request whose session lapses while chi is estimated", async () => {
+    mockPolicy.authorizeXianWalletConnectRequest
+      .mockImplementationOnce(() => ({ account: MOCK_ACCOUNT, chainId: MOCK_CHAIN_ID }))
+      .mockImplementationOnce(() => {
+        throw new Error("session no longer authorizes this chain");
+      });
+    await initializeWalletConnect();
+    const id = nextRequestId++;
+    mockHandlers.get("session_request")?.({
+      id,
+      topic: "topic",
+      params: {
+        chainId: `xian:${MOCK_CHAIN_ID}`,
+        request: { method: "xian_sendCall", params: { intent: { contract: "currency", function: "transfer", kwargs: {}, chi: 1000 } } },
+      },
+    });
+    for (let attempt = 0; attempt < 20 && mockRespondSessionRequest.mock.calls.length === 0; attempt += 1) {
+      await flush();
+    }
+    await flush();
+
+    expect(mockRespondSessionRequest).toHaveBeenCalledWith({
+      topic: "topic",
+      response: { id, error: "session no longer authorizes this chain" },
+    });
+    expect(getWalletConnectState().requests.some((request) => request.id === id)).toBe(false);
   });
 
   it("ignores stored trust rules that have no chi cap", async () => {
@@ -508,7 +550,10 @@ describe("WalletConnect proposal resolution", () => {
     mockStorage.loadWalletState.mockImplementation(async () => WALLET_STATE);
   });
 
-  async function queueProposal(verifyContext?: unknown): Promise<number> {
+  async function queueProposal(
+    verifyContext?: unknown,
+    metadata: Record<string, unknown> = { name: "Dapp", url: "https://app.example", icons: ["icon-a", "icon-b"] }
+  ): Promise<number> {
     await initializeWalletConnect();
     const id = nextProposalId++;
     mockHandlers.get("session_proposal")?.({
@@ -517,7 +562,7 @@ describe("WalletConnect proposal resolution", () => {
       params: {
         id,
         proposer: {
-          metadata: { name: "Dapp", url: "https://app.example", icons: ["icon-a", "icon-b"] },
+          metadata,
         },
         requiredNamespaces: {
           xian: { chains: [`xian:${MOCK_CHAIN_ID}`], methods: ["xian_sendCall"] },
@@ -545,6 +590,14 @@ describe("WalletConnect proposal resolution", () => {
       requiredMethods: ["xian_sendCall", "xian_signMessage"],
       verification: { status: "unverified" },
     });
+  });
+
+  it("summarizes a proposal whose dapp names no icon", async () => {
+    const id = await queueProposal(undefined, { name: "Dapp", url: "https://app.example" });
+
+    const proposal = getWalletConnectState().proposals.find((entry) => entry.id === id);
+    expect(proposal?.name).toBe("Dapp");
+    expect(proposal?.icon).toBeUndefined();
   });
 
   it("rejects a proposal the wallet cannot serve", async () => {
