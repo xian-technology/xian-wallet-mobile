@@ -36,13 +36,16 @@ jest.mock("@xian-tech/client", () => ({
   }
 }));
 
-import { FALLBACK_CHI, XianRpcClient, chiToSupply } from "../rpc-client";
+import { XianRpcClient, chiToSupply } from "../rpc-client";
 
 describe("chiToSupply", () => {
-  it("supplies the suggested chi, else the shared fallback", () => {
+  it("supplies the simulated suggestion", () => {
     expect(chiToSupply({ suggested: 1050 })).toBe(1050);
-    expect(chiToSupply(null)).toBe(FALLBACK_CHI);
-    expect(chiToSupply(undefined)).toBe(50_000);
+  });
+
+  it("refuses to guess a budget without a simulation", () => {
+    expect(() => chiToSupply(null)).toThrow("simulated");
+    expect(() => chiToSupply(undefined)).toThrow("simulated");
   });
 });
 
