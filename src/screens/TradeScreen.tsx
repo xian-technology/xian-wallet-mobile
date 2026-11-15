@@ -41,6 +41,7 @@ import {
   type WalletDexTokenInfo,
 } from "../lib/dex";
 import { chiToSupply, type ChiEstimate } from "../lib/rpc-client";
+import { NATIVE_TOKEN_CONTRACT, nativeShortfallMessage, nativeSpendShortfall } from "../lib/native-fee";
 import { useWallet } from "../lib/wallet-context";
 import {
   loadDexAvailability,
@@ -383,6 +384,18 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
         }),
         rpc.getChiRate(),
       ]);
+      const shortfall = from?.contract === NATIVE_TOKEN_CONTRACT
+        ? nativeSpendShortfall({
+            balance: from.balance,
+            amount: quote.amountIn,
+            chi: nextEstimate.estimated,
+            chiRate: nextChiRate,
+          })
+        : null;
+      if (shortfall) {
+        setError(nativeShortfallMessage(shortfall));
+        return;
+      }
       setReviewQuote(quote);
       setReviewKwargs(kwargs);
       setEstimate(nextEstimate);

@@ -41,11 +41,14 @@ describe("TradeScreen", () => {
   const mockShowToast = jest.fn() as jest.Mock;
   const mockNotifyActivityChanged = jest.fn() as jest.Mock;
   let approved = false;
+  // Enough XIAN for the swaps below and their fee (12_000 chi at 20 = 600 XIAN).
+  let xianBalance = "1000";
 
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
     approved = false;
+    xianBalance = "1000";
     mockLoadDexAvailability.mockImplementation(async () => null);
     mockSaveDexAvailability.mockImplementation(async () => undefined);
     mockLoadUnlockedWalletMaterial.mockImplementation(async () => ({
@@ -91,7 +94,7 @@ describe("TradeScreen", () => {
       const [, contract] = args as [string, string];
       return {
         contract,
-        balance: contract === "currency" ? "10" : "0",
+        balance: contract === "currency" ? xianBalance : "0",
         status: "available",
       };
     });
@@ -147,6 +150,26 @@ describe("TradeScreen", () => {
 
   afterEach(() => {
     jest.useRealTimers();
+  });
+
+  // Execution reserves the fee from the XIAN balance first; a swap from XIAN
+  // that leaves nothing for it passes CheckTx, fails on chain and pays the fee.
+  it("refuses a swap from XIAN that leaves no balance for the fee", async () => {
+    xianBalance = "500";
+    approved = true;
+    const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof TradeScreen>["navigation"];
+    const route = {} as unknown as React.ComponentProps<typeof TradeScreen>["route"];
+    const screen = await render(<TradeScreen navigation={navigation} route={route} />);
+
+    await waitFor(() => expect(screen.getByText("Enter amount")).toBeTruthy());
+    await fireEvent.changeText(screen.getAllByPlaceholderText("0.00")[0], "1");
+    await waitFor(() => expect(screen.getByText("Review Swap")).toBeTruthy());
+    await fireEvent.press(screen.getByText("Review Swap"));
+
+    await waitFor(() =>
+      expect(screen.getByText("Your XIAN balance does not cover the network fee (600 XIAN).")).toBeTruthy()
+    );
+    expect(screen.queryByText("Swap summary")).toBeNull();
   });
 
   it("approves the input token and sends the swap through con_dex", async () => {

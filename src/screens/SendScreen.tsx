@@ -20,6 +20,7 @@ import { Card } from "../components/Card";
 import { TokenAvatar } from "../components/TokenAvatar";
 import { AppDialog } from "../components/AppDialog";
 import { chiToSupply, type ChiEstimate } from "../lib/rpc-client";
+import { NATIVE_TOKEN_CONTRACT, nativeShortfallMessage, nativeSpendShortfall } from "../lib/native-fee";
 import { useWallet } from "../lib/wallet-context";
 import { loadUnlockedWalletMaterial } from "../lib/wallet-controller";
 import { visibleAssetsForActiveNetwork } from "../lib/assets";
@@ -77,6 +78,15 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
         rpc.estimateChi({ sender: state.publicKey!, contract: activeToken, function: "transfer", kwargs: { to: trimmedTo, amount: parsedAmount } }),
         rpc.getChiRate(),
       ]);
+      const shortfall = activeToken === NATIVE_TOKEN_CONTRACT
+        ? nativeSpendShortfall({
+            balance: state.assetBalances[NATIVE_TOKEN_CONTRACT],
+            amount: formatRuntimeInput(parsedAmount),
+            chi: est.estimated,
+            chiRate: rate,
+          })
+        : null;
+      if (shortfall) { setError(nativeShortfallMessage(shortfall)); return; }
       setEstimate(est); setChiRate(rate); lightTap(); setStep("review");
     } catch (e) { setError(e instanceof Error ? e.message : "Estimation failed"); }
     finally { setEstimating(false); }

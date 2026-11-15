@@ -35,7 +35,7 @@ describe("SendScreen", () => {
       state: {
         publicKey: "sender",
         watchedAssets: [{ contract: "currency", name: "Xian", symbol: "XIAN" }],
-        assetBalances: { currency: "9007199254740993" },
+        assetBalances: { currency: "9007199254741993" },
         contacts: [],
         dashboardUrl: "http://127.0.0.1:8080"
       },
@@ -57,6 +57,28 @@ describe("SendScreen", () => {
 
   afterEach(() => {
     jest.useRealTimers();
+  });
+
+  // Execution reserves the fee from the XIAN balance first; sending the whole
+  // balance (MAX) cannot also pay it.
+  it("refuses a XIAN send that leaves no balance for the fee, naming the most it can send", async () => {
+    mockEstimateChi.mockImplementation(async () => ({ estimated: 12_000 }));
+    const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof SendScreen>["navigation"];
+    const route = { params: { token: "currency" } } as unknown as React.ComponentProps<typeof SendScreen>["route"];
+    const screen = await render(<SendScreen navigation={navigation} route={route} />);
+
+    await fireEvent.changeText(screen.getByPlaceholderText("Wallet address"), "ab".repeat(32));
+    await fireEvent.press(screen.getByText("MAX"));
+    await fireEvent.press(screen.getByText("Review"));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "The amount plus the network fee (600 XIAN) exceeds your XIAN balance. You can spend at most 9007199254741392.95 XIAN."
+        )
+      ).toBeTruthy()
+    );
+    expect(screen.queryByText("Send Transaction")).toBeNull();
   });
 
   it("reviews and sends a transfer using bigint-safe parsing", async () => {
