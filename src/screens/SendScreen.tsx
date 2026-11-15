@@ -82,7 +82,7 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
         ? nativeSpendShortfall({
             balance: state.assetBalances[NATIVE_TOKEN_CONTRACT],
             amount: formatRuntimeInput(parsedAmount),
-            chi: est.estimated,
+            chi: est.supply,
             chiRate: rate,
           })
         : null;

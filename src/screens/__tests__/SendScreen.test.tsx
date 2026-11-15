@@ -62,7 +62,8 @@ describe("SendScreen", () => {
   // Execution reserves the fee from the XIAN balance first; sending the whole
   // balance (MAX) cannot also pay it.
   it("refuses a XIAN send that leaves no balance for the fee, naming the most it can send", async () => {
-    mockEstimateChi.mockImplementation(async () => ({ estimated: 12_000 }));
+    // The wallet supplies the estimate plus the SDK margin; the reservation is on the supply.
+    mockEstimateChi.mockImplementation(async () => ({ estimated: 12_000, supply: 12_002 }));
     const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof SendScreen>["navigation"];
     const route = { params: { token: "currency" } } as unknown as React.ComponentProps<typeof SendScreen>["route"];
     const screen = await render(<SendScreen navigation={navigation} route={route} />);
@@ -74,7 +75,7 @@ describe("SendScreen", () => {
     await waitFor(() =>
       expect(
         screen.getByText(
-          "The amount plus the network fee (600 XIAN) exceeds your XIAN balance. You can spend at most 9007199254741392.95 XIAN."
+          "The amount plus the network fee (600.1 XIAN) exceeds your XIAN balance. You can spend at most 9007199254741392.85 XIAN."
         )
       ).toBeTruthy()
     );

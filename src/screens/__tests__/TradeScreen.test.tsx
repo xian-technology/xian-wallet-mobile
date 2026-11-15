@@ -41,7 +41,7 @@ describe("TradeScreen", () => {
   const mockShowToast = jest.fn() as jest.Mock;
   const mockNotifyActivityChanged = jest.fn() as jest.Mock;
   let approved = false;
-  // Enough XIAN for the swaps below and their fee (12_000 chi at 20 = 600 XIAN).
+  // Enough XIAN for the swaps below and their fee (12_002 chi supplied at 20 = 600.1 XIAN).
   let xianBalance = "1000";
 
   beforeEach(() => {
@@ -167,7 +167,7 @@ describe("TradeScreen", () => {
     await fireEvent.press(screen.getByText("Review Swap"));
 
     await waitFor(() =>
-      expect(screen.getByText("Your XIAN balance does not cover the network fee (600 XIAN).")).toBeTruthy()
+      expect(screen.getByText("Your XIAN balance does not cover the network fee (600.1 XIAN).")).toBeTruthy()
     );
     expect(screen.queryByText("Swap summary")).toBeNull();
   });

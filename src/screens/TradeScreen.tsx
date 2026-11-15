@@ -388,7 +388,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
         ? nativeSpendShortfall({
             balance: from.balance,
             amount: quote.amountIn,
-            chi: nextEstimate.estimated,
+            chi: nextEstimate.supply,
             chiRate: nextChiRate,
           })
         : null;
