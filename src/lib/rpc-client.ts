@@ -3,6 +3,7 @@
  * Custom methods remain only for endpoints that are not yet modeled there.
  */
 import {
+  chiToSupply as chiForEstimate,
   Ed25519Signer,
   type SimulateRequest,
   type TransactionReceipt,
@@ -82,15 +83,21 @@ export interface TxHistoryPayload {
   [key: string]: unknown;
 }
 
+/** A simulated chi estimate and the chi to supply for it. */
+export interface ChiEstimate {
+  estimated: number;
+  /** The estimate plus the SDK's fixed margin, within the transaction cap. */
+  supply: number;
+}
+
 /**
- * The chi to supply: exactly the simulated chi, since execution charges what
- * the simulation reports for the same state. Screens only reach review after a
- * successful simulation (or with a manual chi), so a missing estimate is a bug;
- * guessing a budget would lock funds for nothing.
+ * The chi to supply for a reviewed transaction. Screens only reach review
+ * after a successful simulation (or with a manual chi), so a missing estimate
+ * is a bug; guessing a budget would lock funds for nothing.
  */
-export function chiToSupply(estimate: { estimated: number } | null | undefined): number {
+export function chiToSupply(estimate: ChiEstimate | null | undefined): number {
   if (!estimate) throw new Error("The transaction has not been simulated yet. Review it again.");
-  return estimate.estimated;
+  return estimate.supply;
 }
 
 export class XianRpcClient {
@@ -305,7 +312,7 @@ export class XianRpcClient {
     contract: string;
     function: string;
     kwargs: Record<string, unknown>;
-  }): Promise<{ estimated: number }> {
+  }): Promise<ChiEstimate> {
     this.assertTransportAllowed();
     const { estimated } = await this.client.estimateChi({
       sender: opts.sender,
@@ -313,7 +320,7 @@ export class XianRpcClient {
       function: opts.function,
       kwargs: opts.kwargs
     });
-    return { estimated };
+    return { estimated, supply: chiForEstimate(estimated) };
   }
 
   async buildTransaction(opts: {

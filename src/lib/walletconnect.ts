@@ -612,13 +612,13 @@ async function estimateIntentChi(intent: Record<string, unknown>): Promise<numbe
     if (!state || typeof intent.contract !== "string" || typeof intent.function !== "string") {
       return null;
     }
-    const { estimated } = await rpcClientForState(state).estimateChi({
+    const { estimated, supply } = await rpcClientForState(state).estimateChi({
       sender: state.publicKey,
       contract: intent.contract,
       function: intent.function,
       kwargs: isRecord(intent.kwargs) ? intent.kwargs : {},
     });
-    return Number.isSafeInteger(estimated) && estimated > 0 ? estimated : null;
+    return Number.isSafeInteger(estimated) && estimated > 0 ? supply : null;
   } catch {
     return null;
   }

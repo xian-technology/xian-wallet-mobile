@@ -40,7 +40,7 @@ import {
   type WalletDexSnapshot,
   type WalletDexTokenInfo,
 } from "../lib/dex";
-import { chiToSupply } from "../lib/rpc-client";
+import { chiToSupply, type ChiEstimate } from "../lib/rpc-client";
 import { useWallet } from "../lib/wallet-context";
 import {
   loadDexAvailability,
@@ -141,7 +141,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
   const [deadlineMinutes, setDeadlineMinutes] = useState(DEFAULT_DEADLINE_MINUTES);
   const [pickerKind, setPickerKind] = useState<PickerKind | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [estimate, setEstimate] = useState<{ estimated: number } | null>(null);
+  const [estimate, setEstimate] = useState<ChiEstimate | null>(null);
   const [chiRate, setChiRate] = useState<number | null>(null);
   const [reviewQuote, setReviewQuote] = useState<DexQuote | null>(null);
   const [reviewKwargs, setReviewKwargs] = useState<Record<string, unknown> | null>(null);

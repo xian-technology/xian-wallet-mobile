@@ -99,9 +99,8 @@ describe("TradeScreen", () => {
     mockGetChiRate.mockImplementation(async () => 20);
     mockEstimateChi.mockImplementation(async (...args: unknown[]) => {
       const [request] = args as [{ contract: string }];
-      return {
-        estimated: request.contract === "con_dex" ? 12_000 : 8_000
-      };
+      const estimated = request.contract === "con_dex" ? 12_000 : 8_000;
+      return { estimated, supply: estimated + 2 };
     });
     mockSendTransaction.mockImplementation(async (...args: unknown[]) => {
       const [request] = args as [{ contract: string }];
@@ -166,7 +165,7 @@ describe("TradeScreen", () => {
         contract: "currency",
         function: "approve",
         kwargs: { amount: { __fixed__: "1" }, to: "con_dex" },
-        chi: 8_000,
+        chi: 8_002,
       })
     );
     await waitFor(() =>
@@ -193,7 +192,7 @@ describe("TradeScreen", () => {
           src: "currency",
           to: "sender",
         }),
-        chi: 12_000,
+        chi: 12_002,
       })
     );
     expect(mockShowToast).toHaveBeenCalledWith(

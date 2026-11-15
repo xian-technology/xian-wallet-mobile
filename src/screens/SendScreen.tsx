@@ -19,7 +19,7 @@ import { Input } from "../components/Input";
 import { Card } from "../components/Card";
 import { TokenAvatar } from "../components/TokenAvatar";
 import { AppDialog } from "../components/AppDialog";
-import { chiToSupply } from "../lib/rpc-client";
+import { chiToSupply, type ChiEstimate } from "../lib/rpc-client";
 import { useWallet } from "../lib/wallet-context";
 import { loadUnlockedWalletMaterial } from "../lib/wallet-controller";
 import { visibleAssetsForActiveNetwork } from "../lib/assets";
@@ -48,7 +48,7 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [estimating, setEstimating] = useState(false);
-  const [estimate, setEstimate] = useState<{ estimated: number } | null>(null);
+  const [estimate, setEstimate] = useState<ChiEstimate | null>(null);
   const [chiRate, setChiRate] = useState<number | null>(null);
   const [showContacts, setShowContacts] = useState(false);
   const [unrecognizedRecipient, setUnrecognizedRecipient] = useState<string | null>(null);

@@ -51,14 +51,14 @@ function transactionAction(dashboardUrl: string | undefined, txHash: string | un
   return url ? { label: "View transaction", url } : undefined;
 }
 
-/** Shown for a transaction that ran out of its exactly estimated chi. */
+/** Shown for a transaction that ran out of its estimated chi (plus margin). */
 export const OUT_OF_CHI_MESSAGE =
   "Out of chi: the chain state changed since the estimate. Review the transaction and try again.";
 
 function failureMessage(result: TransactionNotificationResult): string | undefined {
   const message = typeof result.message === "string" ? result.message.trim() : "";
   if (!message) return undefined;
-  // Wallets supply exactly the simulated chi, so running out of it means the
+  // Wallets supply the simulated chi plus a small margin, so running out of it means the
   // state moved between the estimate and execution.
   return /out of chi/i.test(message) ? OUT_OF_CHI_MESSAGE : message;
 }

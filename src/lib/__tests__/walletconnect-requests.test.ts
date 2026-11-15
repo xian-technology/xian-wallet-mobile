@@ -309,7 +309,7 @@ describe("WalletConnect request resolution", () => {
   }
 
   it("estimates chi for a send-call before asking the user", async () => {
-    mockEstimateChi.mockImplementation(async () => ({ estimated: 777 }));
+    mockEstimateChi.mockImplementation(async () => ({ estimated: 777, supply: 779 }));
 
     const id = await queueSendCall({ contract: "currency", function: "transfer", kwargs: { to: "bob" } });
 
@@ -320,8 +320,8 @@ describe("WalletConnect request resolution", () => {
       kwargs: { to: "bob" },
     });
     const queued = queuedRequest(id);
-    expect((queued?.request.params as { intent: { chi?: number } }).intent.chi).toBe(777);
-    expect(queued?.chi).toBe("777");
+    expect((queued?.request.params as { intent: { chi?: number } }).intent.chi).toBe(779);
+    expect(queued?.chi).toBe("779");
     expect(queued?.trustSuggestion).toBeDefined();
   });
 
@@ -416,19 +416,19 @@ describe("WalletConnect request resolution", () => {
   });
 
   it("estimates chi for array-wrapped params and keeps them wrapped", async () => {
-    mockEstimateChi.mockImplementation(async () => ({ estimated: 42 }));
+    mockEstimateChi.mockImplementation(async () => ({ estimated: 42, supply: 44 }));
 
     const id = await queueSendCall({ contract: "currency", function: "transfer" }, undefined, true);
 
     expect(queuedRequest(id)?.request.params).toEqual([
-      { intent: { contract: "currency", function: "transfer", chi: 42 } },
+      { intent: { contract: "currency", function: "transfer", chi: 44 } },
     ]);
   });
 
   it.each([0, 1.5, Number.MAX_SAFE_INTEGER + 2])(
     "leaves chi unset when the estimate is unusable (%s)",
     async (estimated) => {
-      mockEstimateChi.mockImplementation(async () => ({ estimated }));
+      mockEstimateChi.mockImplementation(async () => ({ estimated, supply: estimated + 2 }));
 
       const id = await queueSendCall({ contract: "currency", function: "transfer", kwargs: {} });
 
@@ -501,11 +501,11 @@ describe("WalletConnect request resolution", () => {
   });
 
   it("accepts the smallest positive chi estimate", async () => {
-    mockEstimateChi.mockImplementation(async () => ({ estimated: 1 }));
+    mockEstimateChi.mockImplementation(async () => ({ estimated: 1, supply: 3 }));
 
     const id = await queueSendCall({ contract: "currency", function: "transfer" });
 
-    expect(queuedRequest(id)?.chi).toBe("1");
+    expect(queuedRequest(id)?.chi).toBe("3");
   });
 
   it("approves a non-transaction request with trust requested but creates no rule", async () => {

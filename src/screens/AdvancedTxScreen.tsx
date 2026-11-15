@@ -15,7 +15,7 @@ import { colors } from "../theme/colors";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Card } from "../components/Card";
-import { chiToSupply } from "../lib/rpc-client";
+import { chiToSupply, type ChiEstimate } from "../lib/rpc-client";
 import { useWallet } from "../lib/wallet-context";
 import { loadUnlockedWalletMaterial } from "../lib/wallet-controller";
 import { lightTap, successTap, errorTap } from "../lib/haptics";
@@ -55,7 +55,7 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
   const [chi, setChi] = useState("");
   const [chiRate, setChiRate] = useState<number | null>(null);
   const [estimating, setEstimating] = useState(false);
-  const [estimate, setEstimate] = useState<{ estimated: number } | null>(null);
+  const [estimate, setEstimate] = useState<ChiEstimate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [methods, setMethods] = useState<ContractMethod[]>([]);
   const [methodsLoading, setMethodsLoading] = useState(false);
