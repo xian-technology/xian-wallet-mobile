@@ -44,12 +44,18 @@ export function assertRpcTransportAllowed(
   }
 }
 
-export function activeNetworkAllowsInsecureHttp(state: {
+/**
+ * The RPC client options of the active network: whether it allows plain
+ * HTTP, and the chain it was configured for (signatures for any other chain
+ * are refused).
+ */
+export function rpcOptionsForState(state: {
   activeNetworkId?: string;
-  networkPresets: Array<{ id: string; allowInsecureHttp?: boolean }>;
-}): boolean {
-  return (
-    state.networkPresets.find((preset) => preset.id === state.activeNetworkId)
-      ?.allowInsecureHttp === true
-  );
+  networkPresets: Array<{ id: string; allowInsecureHttp?: boolean; chainId?: string }>;
+}): { allowInsecureHttp: boolean; expectedChainId: string | undefined } {
+  const preset = state.networkPresets.find((entry) => entry.id === state.activeNetworkId);
+  return {
+    allowInsecureHttp: preset?.allowInsecureHttp === true,
+    expectedChainId: preset?.chainId || undefined,
+  };
 }

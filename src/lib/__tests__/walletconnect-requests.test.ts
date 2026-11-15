@@ -8,6 +8,7 @@ type Handler = (event: unknown) => void;
 const mockHandlers = new Map<string, Handler>();
 const mockRespondSessionRequest = jest.fn(async (_input: unknown) => undefined);
 const mockBroadcast = jest.fn() as jest.Mock;
+const mockSigningChainId = jest.fn(async () => MOCK_CHAIN_ID) as jest.Mock;
 const mockEstimateChi = jest.fn() as jest.Mock;
 const mockApproveSession = jest.fn() as jest.Mock;
 const mockRejectSession = jest.fn() as jest.Mock;
@@ -107,9 +108,13 @@ jest.mock("../wallet-controller", () => ({
   })),
 }));
 jest.mock("../rpc-client", () => ({
+  ChainMismatchError: (jest.requireActual("../rpc-client") as Record<string, unknown>).ChainMismatchError,
   XianRpcClient: class {
     async getChainId() {
       return MOCK_CHAIN_ID;
+    }
+    async signingChainId() {
+      return mockSigningChainId();
     }
     async estimateChi(...args: unknown[]) {
       return mockEstimateChi(...args);
@@ -136,7 +141,7 @@ jest.mock("../rpc-client", () => ({
   },
 }));
 jest.mock("../network-security", () => ({
-  activeNetworkAllowsInsecureHttp: () => true,
+  rpcOptionsForState: () => ({ allowInsecureHttp: true }),
 }));
 jest.mock("../local-activity", () => ({
   submissionExecutionFailed: (jest.requireActual("../local-activity") as Record<string, unknown>)
@@ -153,6 +158,7 @@ jest.mock("../walletconnect-policy", () => ({
 }));
 
 import { SimulationFailedError } from "../simulation";
+import { ChainMismatchError } from "../rpc-client";
 import {
   approveWalletConnectProposal,
   approveWalletConnectRequest,
@@ -270,6 +276,20 @@ describe("WalletConnect request resolution", () => {
         executionFailed: true,
         message: "AssertionError('Not enough coins to send.')",
       })
+    );
+  });
+
+  it("refuses a request when the RPC serves another chain than configured", async () => {
+    const id = await queueSendCall();
+    mockSigningChainId.mockImplementationOnce(async () => {
+      throw new ChainMismatchError("xian-local", "xian-expected");
+    });
+
+    await expect(approveWalletConnectRequest(id)).rejects.toThrow("refusing to sign");
+
+    expect(mockBroadcast).not.toHaveBeenCalled();
+    expect(mockRespondSessionRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ response: expect.objectContaining({ id, error: expect.anything() }) })
     );
   });
 

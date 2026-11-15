@@ -101,19 +101,45 @@ export function chiToSupply(estimate: ChiEstimate | null | undefined): number {
   return estimate.supply;
 }
 
+/** The RPC serves another chain than the active network was configured for. */
+export class ChainMismatchError extends Error {
+  constructor(served: string, configured: string) {
+    super(`the network RPC serves chain ${served}, not the configured ${configured}; refusing to sign`);
+    this.name = "ChainMismatchError";
+  }
+}
+
+export interface RpcClientOptions {
+  allowInsecureHttp?: boolean;
+  /** The chain the network was configured for; signing for another is refused. */
+  expectedChainId?: string;
+}
+
 export class XianRpcClient {
   private client: XianClient;
   private allowInsecureHttp: boolean;
+  private expectedChainId: string | undefined;
 
-  constructor(private rpcUrl: string, options: { allowInsecureHttp?: boolean } = {}) {
+  constructor(private rpcUrl: string, options: RpcClientOptions = {}) {
     this.allowInsecureHttp = options.allowInsecureHttp === true;
+    this.expectedChainId = options.expectedChainId;
     this.client = new XianClient({ rpcUrl, vmProfile: "xian_vm_v2" });
   }
 
-  setRpcUrl(url: string, options: { allowInsecureHttp?: boolean } = {}): void {
+  setRpcUrl(url: string, options: RpcClientOptions = {}): void {
     this.allowInsecureHttp = options.allowInsecureHttp === true;
+    this.expectedChainId = options.expectedChainId;
     this.rpcUrl = url;
     this.client = new XianClient({ rpcUrl: url, vmProfile: "xian_vm_v2" });
+  }
+
+  /** The chain the RPC serves, which every signature is bound to; refused when it is not the configured one. */
+  async signingChainId(): Promise<string> {
+    const chainId = await this.getChainId();
+    if (this.expectedChainId && chainId !== this.expectedChainId) {
+      throw new ChainMismatchError(chainId, this.expectedChainId);
+    }
+    return chainId;
   }
 
   private assertTransportAllowed(): void {
@@ -344,7 +370,7 @@ export class XianRpcClient {
       contract: opts.contract,
       function: opts.function,
       kwargs: opts.kwargs,
-      chainId: opts.chainId,
+      chainId: opts.chainId ?? (await this.signingChainId()),
       chi: opts.chi,
       chiSupplied: opts.chiSupplied
     });
@@ -385,7 +411,9 @@ export class XianRpcClient {
   }> {
     this.assertTransportAllowed();
     const signer = new Ed25519Signer(opts.privateKey);
+    const chainId = await this.signingChainId();
     const tx = await this.client.buildTx({
+      chainId,
       sender: signer.address,
       contract: opts.contract,
       function: opts.function,

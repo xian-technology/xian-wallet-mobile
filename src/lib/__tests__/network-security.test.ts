@@ -3,6 +3,7 @@ import { describe, expect, it } from "@jest/globals";
 import {
   assertRpcTransportAllowed,
   isLoopbackHttpUrl,
+  rpcOptionsForState,
 } from "../network-security";
 
 describe("network security", () => {
@@ -30,4 +31,20 @@ it.each(["file:///tmp/rpc", "ftp://node.example", "ws://localhost:26657", "javas
 });
 it("accepts HTTPS endpoints", () => {
   expect(() => assertRpcTransportAllowed("https://node.example", false)).not.toThrow();
+});
+
+it("gives the RPC client the active network's transport policy and configured chain", () => {
+  const state = {
+    activeNetworkId: "custom",
+    networkPresets: [
+      { id: "local" },
+      { id: "custom", chainId: "xian-expected", allowInsecureHttp: true },
+    ],
+  };
+
+  expect(rpcOptionsForState(state)).toEqual({ allowInsecureHttp: true, expectedChainId: "xian-expected" });
+  expect(rpcOptionsForState({ ...state, activeNetworkId: "local" })).toEqual({
+    allowInsecureHttp: false,
+    expectedChainId: undefined,
+  });
 });

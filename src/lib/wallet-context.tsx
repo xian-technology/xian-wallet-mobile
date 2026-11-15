@@ -31,7 +31,7 @@ import {
   messageFromUnknown,
   updateAssetNetworkState,
 } from "./assets";
-import { activeNetworkAllowsInsecureHttp } from "./network-security";
+import { rpcOptionsForState } from "./network-security";
 
 export type { StoredWalletState, Contact };
 
@@ -227,9 +227,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const contacts = await loadContacts();
 
     if (walletState) {
-      rpcRef.current.setRpcUrl(walletState.rpcUrl, {
-        allowInsecureHttp: activeNetworkAllowsInsecureHttp(walletState),
-      });
+      rpcRef.current.setRpcUrl(walletState.rpcUrl, rpcOptionsForState(walletState));
       walletState = await hydrateWatchedAssetIcons(walletState);
     }
 

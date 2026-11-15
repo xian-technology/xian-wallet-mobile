@@ -174,6 +174,30 @@ describe("XianRpcClient", () => {
     });
   });
 
+  // A network configured with a chain id is the user's statement of which
+  // chain they sign for; an RPC serving another chain must not get signatures.
+  it("refuses to build or send a transaction when the RPC serves another chain than configured", async () => {
+    const client = new XianRpcClient("http://127.0.0.1:26657", { expectedChainId: "xian-expected" });
+    mockGetChainId.mockImplementation(async () => "xian-local");
+    const call = { sender: "a".repeat(64), contract: "currency", function: "transfer", kwargs: {} };
+    const mismatch = "the network RPC serves chain xian-local, not the configured xian-expected; refusing to sign";
+
+    await expect(client.signingChainId()).rejects.toThrow(mismatch);
+    await expect(client.buildTransaction(call)).rejects.toThrow(mismatch);
+    await expect(client.sendTransaction({ ...call, privateKey: "11".repeat(32), chi: 500 })).rejects.toThrow(mismatch);
+    expect(mockBuildTx).not.toHaveBeenCalled();
+  });
+
+  it("builds for the configured chain when the RPC serves it", async () => {
+    const client = new XianRpcClient("http://127.0.0.1:26657", { expectedChainId: "xian-expected" });
+    mockGetChainId.mockImplementation(async () => "xian-expected");
+    mockBuildTx.mockImplementation(async () => ({ payload: {} }));
+
+    await client.buildTransaction({ sender: "a".repeat(64), contract: "currency", function: "transfer", kwargs: {} });
+
+    expect(mockBuildTx).toHaveBeenCalledWith(expect.objectContaining({ chainId: "xian-expected" }));
+  });
+
   it("returns submission failures without fabricating a receipt", async () => {
     mockBuildTx.mockImplementation(async () => ({ payload: { nonce: 1 } }));
     mockSignTx.mockImplementation(async () => ({

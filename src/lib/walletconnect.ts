@@ -37,8 +37,8 @@ import {
   type StoredWalletState,
 } from "./storage";
 import { loadUnlockedWalletMaterial } from "./wallet-controller";
-import { XianRpcClient } from "./rpc-client";
-import { activeNetworkAllowsInsecureHttp } from "./network-security";
+import { ChainMismatchError, XianRpcClient } from "./rpc-client";
+import { rpcOptionsForState } from "./network-security";
 import {
   activityNetworkKey,
   makeLocalActivityTx,
@@ -64,9 +64,7 @@ const TRUSTED_DAPP_POLICY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 type WalletKitClient = Awaited<ReturnType<typeof WalletKit.init>>;
 
 function rpcClientForState(state: StoredWalletState): XianRpcClient {
-  return new XianRpcClient(state.rpcUrl, {
-    allowInsecureHttp: activeNetworkAllowsInsecureHttp(state),
-  });
+  return new XianRpcClient(state.rpcUrl, rpcOptionsForState(state));
 }
 
 interface WalletConnectMetadata {
@@ -279,8 +277,11 @@ async function activeChainIdForState(
   rpc: XianRpcClient
 ): Promise<string> {
   try {
-    return await rpc.getChainId();
-  } catch {
+    return await rpc.signingChainId();
+  } catch (error) {
+    if (error instanceof ChainMismatchError) {
+      throw error;
+    }
     const activePreset =
       state.networkPresets.find((preset) => preset.id === state.activeNetworkId) ??
       state.networkPresets[0];
