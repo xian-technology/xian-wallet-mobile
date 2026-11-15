@@ -397,17 +397,25 @@ describe("WalletConnect request resolution", () => {
     return getWalletConnectState().requests.find((request) => request.id === id);
   }
 
-  it("asks the user about a send-call whose simulation fails, with the reason", async () => {
+  // A chi-less send-call is simulated before the user is asked; one that
+  // fails is answered with the failure and never queued for approval.
+  it("answers a send-call whose simulation fails with the failure, without asking", async () => {
     mockEstimateChi.mockImplementation(async () => {
       throw new SimulationFailedError({ estimated: 130, supply: 132 }, "AssertionError('Not enough coins to send.')");
     });
+    mockRespondSessionRequest.mockClear();
 
-    const id = await queueSendCall({ contract: "currency", function: "transfer", kwargs: { to: "bob" } });
+    await expect(
+      queueSendCall({ contract: "currency", function: "transfer", kwargs: { to: "bob" } })
+    ).rejects.toThrow("request was not queued");
 
-    const queued = queuedRequest(id);
-    expect(queued?.chi).toBe("132");
-    expect(queued?.simulationFailure).toBe("AssertionError('Not enough coins to send.')");
-    expect(queued?.trustSuggestion).toBeUndefined();
+    expect(mockRespondSessionRequest).toHaveBeenCalledWith({
+      topic: "topic",
+      response: expect.objectContaining({
+        error: expect.stringContaining("This transaction would fail: AssertionError('Not enough coins to send.')"),
+      }),
+    });
+    expect(mockBroadcast).not.toHaveBeenCalled();
   });
 
   it("estimates chi for a send-call before asking the user", async () => {
