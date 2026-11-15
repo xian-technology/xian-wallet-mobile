@@ -230,6 +230,70 @@ describe("XianRpcClient", () => {
     });
   });
 
+  async function sendWith(submission: Record<string, unknown>, receipt?: () => Promise<unknown>) {
+    mockBuildTx.mockImplementation(async () => ({ payload: { nonce: 1 } }));
+    mockSignTx.mockImplementation(async () => ({ payload: { nonce: 1 }, metadata: { signature: "sig" } }));
+    mockBroadcastTx.mockImplementation(async () => submission);
+    if (receipt) mockWaitForTx.mockImplementation(receipt);
+    const client = new XianRpcClient("http://127.0.0.1:26657");
+    return client.sendTransaction({
+      privateKey: "22".repeat(32),
+      contract: "currency",
+      function: "transfer",
+      kwargs: { to: "alice", amount: 5 },
+      chi: 50_000
+    });
+  }
+
+  it.each([
+    [
+      "a CheckTx rejection",
+      { submitted: true, accepted: false, txHash: "REJ", message: "Transfer amount exceeds balance" },
+      undefined,
+      { submitted: true, accepted: false, finalized: false, txHash: "REJ", message: "Transfer amount exceeds balance" }
+    ],
+    [
+      "an executed failure",
+      { submitted: true, accepted: true, txHash: "FAIL" },
+      async () => ({ success: false, message: "Out of chi." }),
+      { submitted: true, accepted: true, finalized: false, txHash: "FAIL", message: "Out of chi." }
+    ],
+    [
+      "an executed failure without a message",
+      { submitted: true, accepted: true, txHash: "FAIL" },
+      async () => ({ success: false }),
+      { submitted: true, accepted: true, finalized: false, txHash: "FAIL", message: "Transaction failed" }
+    ],
+    [
+      "an executed failure with an empty message",
+      { submitted: true, accepted: true, txHash: "FAIL" },
+      async () => ({ success: false, message: "" }),
+      { submitted: true, accepted: true, finalized: false, txHash: "FAIL", message: "" }
+    ],
+    [
+      "a finalized success",
+      { submitted: true, accepted: true, txHash: "OK" },
+      async () => ({ success: true }),
+      { submitted: true, accepted: true, finalized: true, txHash: "OK", message: undefined }
+    ],
+    [
+      "a receipt that does not arrive in time",
+      { submitted: true, accepted: true, txHash: "SLOW" },
+      async () => {
+        throw new Error("timed out");
+      },
+      { submitted: true, accepted: true, finalized: false, txHash: "SLOW", message: undefined }
+    ],
+    [
+      "an accepted submission without a hash",
+      { submitted: true, accepted: true },
+      undefined,
+      { submitted: true, accepted: true, finalized: false, txHash: undefined, message: undefined }
+    ]
+  ])("reports %s", async (_case, submission, receipt, outcome) => {
+    expect(await sendWith(submission, receipt)).toEqual(outcome);
+  });
+
   it("falls back to on-chain SVG metadata when no logo URL is set", async () => {
     mockGetTokenMetadata.mockImplementation(async () => ({
       name: "Example",

@@ -559,6 +559,17 @@ function proposalSummary(
   };
 }
 
+// An auto-approval rule needs a chi cap, so none is offered without one;
+// none is offered for a call that fails either.
+function autoApproveTarget(
+  action: ReturnType<typeof parseXianDappAction>,
+  simulationFailure: string | undefined
+): string | undefined {
+  return action?.contract && action.function && hasChi(action.chi) && simulationFailure === undefined
+    ? `${action.contract}.${action.function}`
+    : undefined;
+}
+
 function requestSummary(
   event: WalletKitTypes.SessionRequest,
   request: XianProviderRequest = event.params.request as XianProviderRequest,
@@ -566,12 +577,7 @@ function requestSummary(
 ): DappSessionRequest {
   const chainId = xianChainIdFromCaip2(event.params.chainId);
   const action = parseXianDappAction(request);
-  // An auto-approval rule needs a chi cap, so none is offered without one;
-  // none is offered for a call that fails either.
-  const target =
-    action?.contract && action.function && hasChi(action.chi) && simulationFailure === undefined
-      ? `${action.contract}.${action.function}`
-      : undefined;
+  const target = autoApproveTarget(action, simulationFailure);
   return {
     id: event.id,
     topic: event.topic,

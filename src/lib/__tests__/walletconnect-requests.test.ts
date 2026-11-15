@@ -293,6 +293,51 @@ describe("WalletConnect request resolution", () => {
     );
   });
 
+  it.each([
+    ["sends for the configured chain", [{ id: "net", chainId: MOCK_CHAIN_ID }], null],
+    ["refuses without a configured chain", [{ id: "net" }], "wallet chain is unavailable"],
+  ])("when the RPC chain cannot be read, %s", async (_case, networkPresets, error) => {
+    const id = await queueSendCall();
+    mockSigningChainId.mockImplementationOnce(async () => {
+      throw new Error("RPC down");
+    });
+    mockController.loadUnlockedWalletMaterial.mockImplementationOnce((async () => ({
+      state: { ...WALLET_STATE, activeNetworkId: "net", networkPresets },
+      privateKey: "11".repeat(32),
+    })) as never);
+    mockBroadcast.mockImplementation(async () => ({ txHash: "H", accepted: true, finalized: false }));
+
+    const approval = approveWalletConnectRequest(id);
+
+    if (error) {
+      await expect(approval).rejects.toThrow(error);
+      expect(mockBroadcast).not.toHaveBeenCalled();
+    } else {
+      await approval;
+      expect(mockBroadcast).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it.each([
+    [
+      "a commit broadcast that failed without a message",
+      { txHash: "C", mode: "commit", accepted: true, finalized: false },
+      { executionFailed: true, message: undefined },
+    ],
+    [
+      "a successful receipt that carries a message",
+      { txHash: "S", accepted: true, finalized: true, receipt: { success: true, message: "note" } },
+      { executionFailed: false, message: undefined },
+    ],
+  ])("records %s", async (_case, submission, recorded) => {
+    const id = await queueSendCall();
+    mockBroadcast.mockImplementation(async () => submission);
+
+    await approveWalletConnectRequest(id);
+
+    expect(mockActivity.makeLocalActivityTx).toHaveBeenLastCalledWith(expect.objectContaining(recorded));
+  });
+
   it("executes a request once when approval is triggered twice", async () => {
     const id = await queueSendCall();
     const broadcast = deferred<unknown>();

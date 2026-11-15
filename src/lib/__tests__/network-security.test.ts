@@ -43,6 +43,10 @@ it("gives the RPC client the active network's transport policy and configured ch
   };
 
   expect(rpcOptionsForState(state)).toEqual({ allowInsecureHttp: true, expectedChainId: "xian-expected" });
+  expect(rpcOptionsForState({ ...state, activeNetworkId: "gone" })).toEqual({
+    allowInsecureHttp: false,
+    expectedChainId: undefined,
+  });
   expect(rpcOptionsForState({ ...state, activeNetworkId: "local" })).toEqual({
     allowInsecureHttp: false,
     expectedChainId: undefined,

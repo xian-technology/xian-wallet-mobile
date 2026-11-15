@@ -115,6 +115,26 @@ export interface RpcClientOptions {
   expectedChainId?: string;
 }
 
+/** What a wallet send reports: admission, and execution once its receipt arrived. */
+export interface SendOutcome {
+  submitted: boolean;
+  accepted: boolean;
+  finalized: boolean;
+  txHash?: string;
+  message?: string;
+}
+
+/** An admitted send: finalized by a successful receipt, failed by a failed one, pending without. */
+function executedOutcome(txHash: string | undefined, receipt: TransactionReceipt | null): SendOutcome {
+  return {
+    submitted: true,
+    accepted: true,
+    finalized: receipt?.success === true,
+    txHash,
+    message: receipt && !receipt.success ? String(receipt.message ?? "Transaction failed") : undefined
+  };
+}
+
 export class XianRpcClient {
   private client: XianClient;
   private allowInsecureHttp: boolean;
@@ -349,7 +369,7 @@ export class XianRpcClient {
     });
     const estimate = { estimated, supply: chiForEstimate(estimated) };
     const failure = simulationFailure(simulation);
-    if (failure !== null) {
+    if (failure !== undefined) {
       throw new SimulationFailedError(estimate, failure);
     }
     return estimate;
@@ -402,13 +422,7 @@ export class XianRpcClient {
     function: string;
     kwargs: Record<string, unknown>;
     chi: number | bigint;
-  }): Promise<{
-    submitted: boolean;
-    accepted: boolean;
-    finalized: boolean;
-    txHash?: string;
-    message?: string;
-  }> {
+  }): Promise<SendOutcome> {
     this.assertTransportAllowed();
     const signer = new Ed25519Signer(opts.privateKey);
     const chainId = await this.signingChainId();
@@ -424,45 +438,27 @@ export class XianRpcClient {
     const submission = await this.client.broadcastTx(signedTx, {
       mode: "checktx"
     });
-
-    if (!submission.submitted) {
+    if (!submission.submitted || !submission.accepted) {
       return {
-        submitted: false,
+        submitted: submission.submitted,
         accepted: false,
         finalized: false,
         txHash: submission.txHash,
         message: normalizeMessage(submission.message)
       };
     }
+    return executedOutcome(submission.txHash, await this.receiptWithin(submission.txHash, 10_000));
+  }
 
-    if (!submission.accepted) {
-      return {
-        submitted: true,
-        accepted: false,
-        finalized: false,
-        txHash: submission.txHash,
-        message: normalizeMessage(submission.message)
-      };
+  /** The receipt of an admitted transaction, or null when none arrives in time. */
+  private async receiptWithin(txHash: string | undefined, timeoutMs: number): Promise<TransactionReceipt | null> {
+    if (!txHash) {
+      return null;
     }
-
-    let receipt: TransactionReceipt | null = null;
-    if (submission.txHash) {
-      try {
-        receipt = await this.client.waitForTx(submission.txHash, {
-          timeoutMs: 10_000,
-          pollIntervalMs: 1_000
-        });
-      } catch {
-        receipt = null;
-      }
+    try {
+      return await this.client.waitForTx(txHash, { timeoutMs, pollIntervalMs: 1_000 });
+    } catch {
+      return null;
     }
-
-    return {
-      submitted: true,
-      accepted: true,
-      finalized: receipt?.success ?? false,
-      txHash: submission.txHash,
-      message: receipt && !receipt.success ? String(receipt.message ?? "Transaction failed") : undefined
-    };
   }
 }
