@@ -46,6 +46,7 @@ import {
   submissionExecutionFailed,
 } from "./local-activity";
 import { isUnsafeMessageToSign } from "./signing-policy";
+import { SimulationFailedError } from "./simulation";
 import {
   authorizeXianWalletConnectRequest,
   buildRequiredXianApprovedNamespaces,
@@ -116,6 +117,8 @@ export interface DappSessionRequest {
   // Chi limit a transaction request will sign: null when unknown, undefined
   // for requests that do not send a transaction.
   chi?: string | null;
+  // Why the wallet's simulation of the send-call fails, when it does.
+  simulationFailure?: string;
   trustSuggestion?: {
     label: string;
     description: string;
@@ -557,13 +560,15 @@ function proposalSummary(
 
 function requestSummary(
   event: WalletKitTypes.SessionRequest,
-  request: XianProviderRequest = event.params.request as XianProviderRequest
+  request: XianProviderRequest = event.params.request as XianProviderRequest,
+  simulationFailure?: string
 ): DappSessionRequest {
   const chainId = xianChainIdFromCaip2(event.params.chainId);
   const action = parseXianDappAction(request);
-  // An auto-approval rule needs a chi cap, so none is offered without one.
+  // An auto-approval rule needs a chi cap, so none is offered without one;
+  // none is offered for a call that fails either.
   const target =
-    action?.contract && action.function && hasChi(action.chi)
+    action?.contract && action.function && hasChi(action.chi) && simulationFailure === undefined
       ? `${action.contract}.${action.function}`
       : undefined;
   return {
@@ -576,6 +581,7 @@ function requestSummary(
     request,
     verification: walletConnectVerification(event.verifyContext),
     chi: action ? (hasChi(action.chi) ? String(action.chi) : null) : undefined,
+    simulationFailure,
     trustSuggestion: target
       ? {
           label: `Auto-approve this exact ${target}`,
@@ -610,7 +616,16 @@ function chiLessSendCall(
   return needsChi ? { params, intent } : null;
 }
 
-async function estimateIntentChi(intent: Record<string, unknown>): Promise<number | null> {
+interface IntentEstimate {
+  chi: number;
+  simulationFailure?: string;
+}
+
+function isUsableEstimate(estimated: number): boolean {
+  return Number.isSafeInteger(estimated) && estimated > 0;
+}
+
+async function estimateIntentChi(intent: Record<string, unknown>): Promise<IntentEstimate | null> {
   try {
     const state = await loadWalletState();
     if (!state || typeof intent.contract !== "string" || typeof intent.function !== "string") {
@@ -622,27 +637,33 @@ async function estimateIntentChi(intent: Record<string, unknown>): Promise<numbe
       function: intent.function,
       kwargs: isRecord(intent.kwargs) ? intent.kwargs : {},
     });
-    return Number.isSafeInteger(estimated) && estimated > 0 ? supply : null;
-  } catch {
-    return null;
+    return isUsableEstimate(estimated) ? { chi: supply } : null;
+  } catch (error) {
+    // A failing call is still shown for review, with its chi and the reason.
+    return error instanceof SimulationFailedError && isUsableEstimate(error.estimated)
+      ? { chi: error.supply, simulationFailure: error.failure }
+      : null;
   }
 }
 
 // Fill in the chi a send-call will use so the user reviews (and signs) it.
 async function requestWithEstimatedChi(
   request: XianProviderRequest
-): Promise<XianProviderRequest> {
+): Promise<{ request: XianProviderRequest; simulationFailure?: string }> {
   const call = chiLessSendCall(request);
-  const chi = call ? await estimateIntentChi(call.intent) : null;
-  if (!call || chi == null) {
-    return request;
+  const estimate = call ? await estimateIntentChi(call.intent) : null;
+  if (!call || estimate == null) {
+    return { request };
   }
-  const nextParams = { ...call.params, intent: { ...call.intent, chi } };
+  const nextParams = { ...call.params, intent: { ...call.intent, chi: estimate.chi } };
   return {
-    ...request,
-    params: Array.isArray(request.params)
-      ? [nextParams, ...request.params.slice(1)]
-      : nextParams,
+    request: {
+      ...request,
+      params: Array.isArray(request.params)
+        ? [nextParams, ...request.params.slice(1)]
+        : nextParams,
+    },
+    simulationFailure: estimate.simulationFailure,
   };
 }
 
@@ -779,7 +800,8 @@ function attachListeners(client: WalletKitClient): void {
         emitChange();
         return;
       }
-      pending = requestSummary(event, await requestWithEstimatedChi(pending.request));
+      const estimated = await requestWithEstimatedChi(pending.request);
+      pending = requestSummary(event, estimated.request, estimated.simulationFailure);
       if (await tryAutoApproveRequest(client, pending)) {
         emitChange();
         return;

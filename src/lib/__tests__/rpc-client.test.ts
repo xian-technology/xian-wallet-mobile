@@ -39,6 +39,7 @@ jest.mock("@xian-tech/client", () => ({
 }));
 
 import { XianRpcClient, chiToSupply } from "../rpc-client";
+import { SimulationFailedError } from "../simulation";
 
 describe("chiToSupply", () => {
   it("supplies the chi the estimate carries", () => {
@@ -150,6 +151,27 @@ describe("XianRpcClient", () => {
     await expect(client.estimateChi(request)).resolves.toEqual({ estimated: 199_999, supply: 200_000 });
     mockEstimateChi.mockImplementationOnce(async () => ({ estimated: 200_001, simulation: {} }));
     await expect(client.estimateChi(request)).rejects.toThrow(/exceeds the per-transaction limit/);
+  });
+
+  // The simulator answers a failing call with status 1 and its chi; sending
+  // it anyway executes, fails and pays that chi.
+  it("refuses an estimate whose simulation fails, keeping its chi and reason", async () => {
+    const client = new XianRpcClient("http://127.0.0.1:26657");
+    const request = { sender: "a".repeat(64), contract: "currency", function: "transfer", kwargs: {} };
+    mockEstimateChi.mockImplementationOnce(async () => ({
+      estimated: 130,
+      simulation: { status: 1, chi_used: 130, result: "AssertionError('Not enough coins to send.')" }
+    }));
+
+    const failure = await client.estimateChi(request).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(SimulationFailedError);
+    expect(failure).toMatchObject({
+      message: "This transaction would fail: AssertionError('Not enough coins to send.')",
+      estimated: 130,
+      supply: 132,
+      failure: "AssertionError('Not enough coins to send.')"
+    });
   });
 
   it("returns submission failures without fabricating a receipt", async () => {

@@ -554,6 +554,11 @@ export function AppsScreen() {
                 <Text style={styles.dialogValue}>{activeRequest.chi ?? "Not estimated"}</Text>
               </>
             ) : null}
+            {activeRequest.simulationFailure !== undefined ? (
+              <Text style={[styles.checkNotice, styles.checkNotice_danger]}>
+                {`The wallet simulated this call and it fails: ${activeRequest.simulationFailure}. Approving sends it anyway: it will fail and still pay its chi.`}
+              </Text>
+            ) : null}
             {activeRequest.trustSuggestion ? (
               <View style={styles.trustChoiceStack}>
                 <View style={styles.trustRow}>

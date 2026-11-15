@@ -196,6 +196,32 @@ describe("AppsScreen", () => {
     ).toBeTruthy();
   });
 
+  it("warns that a transaction request fails in simulation", async () => {
+    stateWith({
+      requests: [{
+        id: 10,
+        topic: "topic-1",
+        origin: "wc:topic-1",
+        sessionName: "Swap dapp",
+        chainId: "xian-local",
+        chi: "130",
+        simulationFailure: "AssertionError('Not enough coins to send.')",
+        verification: { status: "verified", origin: "https://app.example" },
+        request: { method: "xian_sendCall", params: { intent: {} } },
+      }],
+    });
+
+    const screen = await render(<AppsScreen />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "The wallet simulated this call and it fails: AssertionError('Not enough coins to send.'). Approving sends it anyway: it will fail and still pay its chi."
+        )
+      ).toBeTruthy()
+    );
+  });
+
   it("shows the chi a transaction request will use", async () => {
     stateWith({
       requests: [{

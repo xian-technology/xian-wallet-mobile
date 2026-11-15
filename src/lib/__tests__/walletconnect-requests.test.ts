@@ -152,6 +152,7 @@ jest.mock("../walletconnect-policy", () => ({
   buildRequiredXianApprovedNamespaces: jest.fn(() => ({})),
 }));
 
+import { SimulationFailedError } from "../simulation";
 import {
   approveWalletConnectProposal,
   approveWalletConnectRequest,
@@ -330,6 +331,19 @@ describe("WalletConnect request resolution", () => {
   function queuedRequest(id: number) {
     return getWalletConnectState().requests.find((request) => request.id === id);
   }
+
+  it("asks the user about a send-call whose simulation fails, with the reason", async () => {
+    mockEstimateChi.mockImplementation(async () => {
+      throw new SimulationFailedError({ estimated: 130, supply: 132 }, "AssertionError('Not enough coins to send.')");
+    });
+
+    const id = await queueSendCall({ contract: "currency", function: "transfer", kwargs: { to: "bob" } });
+
+    const queued = queuedRequest(id);
+    expect(queued?.chi).toBe("132");
+    expect(queued?.simulationFailure).toBe("AssertionError('Not enough coins to send.')");
+    expect(queued?.trustSuggestion).toBeUndefined();
+  });
 
   it("estimates chi for a send-call before asking the user", async () => {
     mockEstimateChi.mockImplementation(async () => ({ estimated: 777, supply: 779 }));

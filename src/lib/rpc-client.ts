@@ -22,6 +22,7 @@ import {
   type WalletAsset,
 } from "./assets";
 import { assertRpcTransportAllowed } from "./network-security";
+import { SimulationFailedError, simulationFailure } from "./simulation";
 
 export interface BalanceResult {
   contract: string;
@@ -314,13 +315,18 @@ export class XianRpcClient {
     kwargs: Record<string, unknown>;
   }): Promise<ChiEstimate> {
     this.assertTransportAllowed();
-    const { estimated } = await this.client.estimateChi({
+    const { estimated, simulation } = await this.client.estimateChi({
       sender: opts.sender,
       contract: opts.contract,
       function: opts.function,
       kwargs: opts.kwargs
     });
-    return { estimated, supply: chiForEstimate(estimated) };
+    const estimate = { estimated, supply: chiForEstimate(estimated) };
+    const failure = simulationFailure(simulation);
+    if (failure !== null) {
+      throw new SimulationFailedError(estimate, failure);
+    }
+    return estimate;
   }
 
   async buildTransaction(opts: {
