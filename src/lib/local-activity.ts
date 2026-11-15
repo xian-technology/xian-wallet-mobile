@@ -14,7 +14,26 @@ export interface SubmittedActivityTx {
   kwargs: Record<string, unknown>;
   accepted: boolean;
   finalized: boolean;
+  /** The transaction executed and failed: never recorded as a success. */
+  executionFailed?: boolean;
   message?: unknown;
+}
+
+/**
+ * Whether a submitted transaction executed and failed (and paid its fee): its
+ * receipt reports a failure, or a commit-mode broadcast was admitted but not
+ * finalized.
+ */
+export function submissionExecutionFailed(submission: {
+  accepted?: boolean | null;
+  finalized?: boolean;
+  mode?: string;
+  receipt?: { success?: boolean } | null;
+}): boolean {
+  return (
+    submission.receipt?.success === false ||
+    (submission.mode === "commit" && submission.accepted === true && submission.finalized !== true)
+  );
 }
 
 export function activityNetworkKey(state: {
@@ -92,7 +111,7 @@ export function makeLocalActivityTx(input: SubmittedActivityTx): TxHistoryRecord
     sender: input.sender,
     contract: input.contract,
     function: input.function,
-    success: input.finalized || input.accepted,
+    success: !input.executionFailed && (input.finalized || input.accepted),
     created_at: new Date().toISOString(),
     payload: {
       sender: input.sender,

@@ -12,7 +12,8 @@ import { getSdkError } from "@walletconnect/utils";
 import { WalletKit, type WalletKitTypes } from "@reown/walletkit";
 import {
   createXianMessageSigningPayload,
-  Ed25519Signer
+  Ed25519Signer,
+  type TransactionSubmission
 } from "@xian-tech/client";
 import {
   createXianDappPolicyForRequest,
@@ -42,6 +43,7 @@ import {
   activityNetworkKey,
   makeLocalActivityTx,
   saveLocalActivityTx,
+  submissionExecutionFailed,
 } from "./local-activity";
 import { isUnsafeMessageToSign } from "./signing-policy";
 import {
@@ -334,8 +336,9 @@ async function executionContext(expectedChainId?: string): Promise<{
 async function recordSubmittedTransaction(
   state: StoredWalletState,
   tx: XianUnsignedTransaction,
-  result: { txHash?: string; accepted: boolean | null; finalized: boolean; message?: unknown }
+  result: TransactionSubmission
 ): Promise<void> {
+  const executionFailed = submissionExecutionFailed(result);
   const localTx = makeLocalActivityTx({
     txHash: result.txHash,
     sender: tx.payload.sender,
@@ -344,7 +347,8 @@ async function recordSubmittedTransaction(
     kwargs: tx.payload.kwargs,
     accepted: result.accepted === true,
     finalized: result.finalized,
-    message: result.message
+    executionFailed,
+    message: executionFailed && result.message === undefined ? result.receipt?.message : result.message
   });
   if (localTx) {
     await saveLocalActivityTx(activityNetworkKey(state), localTx);

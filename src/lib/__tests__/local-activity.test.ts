@@ -5,6 +5,7 @@ import {
   loadLocalActivityTxs,
   makeLocalActivityTx,
   mergeActivityTxs,
+  submissionExecutionFailed,
 } from "../local-activity";
 import type { TxHistoryRecord } from "../rpc-client";
 import { classifyTx, txHistoryKwargs } from "../tx-classify";
@@ -41,6 +42,38 @@ describe("local activity fallback", () => {
       })
     );
     expect(tx ? txHistoryKwargs(tx).amount : null).toBe("9007199254740993");
+  });
+
+  it("records a transaction whose execution failed as failed, with its reason", () => {
+    const tx = makeLocalActivityTx({
+      txHash: "TX-F",
+      sender: "sender",
+      contract: "currency",
+      function: "transfer",
+      kwargs: {},
+      accepted: true,
+      finalized: true,
+      executionFailed: true,
+      message: "AssertionError('Not enough coins to send.')",
+    });
+
+    expect(tx).toEqual(
+      expect.objectContaining({
+        success: false,
+        result: { message: "AssertionError('Not enough coins to send.')" },
+      })
+    );
+  });
+
+  it.each([
+    ["a receipt that reports failure", { accepted: true, finalized: true, receipt: { success: false } }, true],
+    ["a commit broadcast admitted but not finalized", { mode: "commit", accepted: true, finalized: false }, true],
+    ["a successful receipt", { accepted: true, finalized: true, receipt: { success: true } }, false],
+    ["a finalized commit broadcast", { mode: "commit", accepted: true, finalized: true }, false],
+    ["a checktx broadcast still pending", { mode: "checktx", accepted: true, finalized: false }, false],
+    ["a rejected commit broadcast", { mode: "commit", accepted: false, finalized: false }, false],
+  ])("judges a submission with %s", (_case, submission, failed) => {
+    expect(submissionExecutionFailed(submission)).toBe(failed);
   });
 
   it("shows unindexed local rows but lets indexed rows replace them", () => {

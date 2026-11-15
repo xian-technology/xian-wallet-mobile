@@ -139,8 +139,10 @@ jest.mock("../network-security", () => ({
   activeNetworkAllowsInsecureHttp: () => true,
 }));
 jest.mock("../local-activity", () => ({
+  submissionExecutionFailed: (jest.requireActual("../local-activity") as Record<string, unknown>)
+    .submissionExecutionFailed,
   activityNetworkKey: () => "key",
-  makeLocalActivityTx: () => null,
+  makeLocalActivityTx: jest.fn(() => null),
   saveLocalActivityTx: jest.fn(async () => undefined),
 }));
 jest.mock("../signing-policy", () => ({ isUnsafeMessageToSign: () => false }));
@@ -163,6 +165,7 @@ const mockStorage = jest.requireMock("../storage") as Record<string, jest.Mock>;
 const mockProvider = jest.requireMock("@xian-tech/provider") as Record<string, jest.Mock>;
 const mockController = jest.requireMock("../wallet-controller") as Record<string, jest.Mock>;
 const mockPolicy = jest.requireMock("../walletconnect-policy") as Record<string, jest.Mock>;
+const mockActivity = jest.requireMock("../local-activity") as Record<string, jest.Mock>;
 
 const WALLET_STATE = {
   publicKey: MOCK_ACCOUNT,
@@ -247,6 +250,26 @@ describe("WalletConnect request resolution", () => {
       response: { id, result: { txHash: "HASH", accepted: true, finalized: false } },
     });
     expect(getWalletConnectState().requests.some((request) => request.id === id)).toBe(false);
+  });
+
+  it("records a dapp transaction whose execution failed as failed", async () => {
+    const id = await queueSendCall();
+    mockBroadcast.mockImplementation(async () => ({
+      txHash: "FAILED",
+      accepted: true,
+      finalized: true,
+      receipt: { success: false, message: "AssertionError('Not enough coins to send.')" },
+    }));
+
+    await approveWalletConnectRequest(id);
+
+    expect(mockActivity.makeLocalActivityTx).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        txHash: "FAILED",
+        executionFailed: true,
+        message: "AssertionError('Not enough coins to send.')",
+      })
+    );
   });
 
   it("executes a request once when approval is triggered twice", async () => {
