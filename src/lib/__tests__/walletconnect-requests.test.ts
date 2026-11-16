@@ -13,8 +13,8 @@ const mockEstimateChi = jest.fn() as jest.Mock;
 const mockApproveSession = jest.fn() as jest.Mock;
 const mockRejectSession = jest.fn() as jest.Mock;
 
-jest.mock("@walletconnect/react-native-compat", () => ({}), { virtual: true });
-jest.mock("fast-text-encoding", () => ({}), { virtual: true });
+jest.mock("@walletconnect/react-native-compat", () => ({}));
+jest.mock("fast-text-encoding", () => ({}));
 jest.mock("expo-constants", () => ({
   __esModule: true,
   default: { expoConfig: { extra: { walletConnectProjectId: "test-project" } } },
@@ -23,20 +23,16 @@ jest.mock("expo-linking", () => ({
   getInitialURL: jest.fn(async () => null),
   addEventListener: jest.fn(() => ({ remove: jest.fn() })),
 }));
-jest.mock("@walletconnect/core", () => ({ Core: class {} }), { virtual: true });
+jest.mock("@walletconnect/core", () => ({ Core: class {} }));
 jest.mock(
   "@walletconnect/jsonrpc-utils",
   () => ({
     formatJsonRpcResult: (id: number, result: unknown) => ({ id, result }),
     formatJsonRpcError: (id: number, error: unknown) => ({ id, error }),
-  }),
-  { virtual: true }
-);
+  }));
 jest.mock(
   "@walletconnect/utils",
-  () => ({ getSdkError: (reason: string) => ({ code: 0, message: reason }) }),
-  { virtual: true }
-);
+  () => ({ getSdkError: (reason: string) => ({ code: 0, message: reason }) }));
 jest.mock(
   "@reown/walletkit",
   () => ({
@@ -51,9 +47,7 @@ jest.mock(
         rejectSession: (input: unknown) => mockRejectSession(input),
       })),
     },
-  }),
-  { virtual: true }
-);
+  }));
 jest.mock(
   "@xian-tech/client",
   () => ({
@@ -63,9 +57,7 @@ jest.mock(
         return "signature";
       }
     },
-  }),
-  { virtual: true }
-);
+  }));
 jest.mock(
   "@xian-tech/provider",
   () => ({
@@ -88,6 +80,9 @@ jest.mock(
     xianChainIdFromCaip2: (value: string) =>
       value.startsWith("xian:") ? value.slice("xian:".length) : null,
   }),
+  // Jest cannot resolve the package: it exports only an "import" condition.
+  // Every other mocked package resolves, so only this mock is virtual (a
+  // virtual mock of a resolvable package leaks into later test files).
   { virtual: true }
 );
 jest.mock("../storage", () => ({
