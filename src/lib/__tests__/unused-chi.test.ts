@@ -5,6 +5,16 @@ import { formatChiWithXian, unusedChiCost, unusedChiWarning } from "../unused-ch
 // Since execution revision 14 a paid transaction pays the chi it uses plus
 // half of the chi it supplies but leaves unused (rounded down).
 describe("unusedChiCost", () => {
+  it("accepts the minimum one-chi budget and estimate", () => {
+    expect(unusedChiCost({ supplied: 1, estimated: 1 })).toEqual({
+      supplied: 1,
+      estimated: 1,
+      unused: 0,
+      extraChi: 0,
+      severity: "none",
+    });
+  });
+
   it("treats the SDK's 2-chi margin, and an odd 3, as no cost worth a warning", () => {
     expect(unusedChiCost({ supplied: 257, estimated: 255 })).toEqual({
       supplied: 257,
