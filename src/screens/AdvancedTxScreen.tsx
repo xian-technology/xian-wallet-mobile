@@ -15,7 +15,9 @@ import { colors } from "../theme/colors";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Card } from "../components/Card";
+import { UnusedChiBanner } from "../components/UnusedChiBanner";
 import { chiToSupply, type ChiEstimate } from "../lib/rpc-client";
+import { formatChiWithXian } from "../lib/unused-chi";
 import { useWallet } from "../lib/wallet-context";
 import { loadUnlockedWalletMaterial } from "../lib/wallet-controller";
 import { lightTap, successTap, errorTap } from "../lib/haptics";
@@ -56,6 +58,8 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
   const [chiRate, setChiRate] = useState<number | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [estimate, setEstimate] = useState<ChiEstimate | null>(null);
+  // The simulation of a call sent with a manual chi limit, to say what its unused chi costs.
+  const [manualEstimate, setManualEstimate] = useState<ChiEstimate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [methods, setMethods] = useState<ContractMethod[]>([]);
   const [methodsLoading, setMethodsLoading] = useState(false);
@@ -127,6 +131,12 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
       }
       setError(null);
       setEstimate(null);
+      setManualEstimate(
+        // Only to tell what the limit's unused chi costs: no simulation, no warning.
+        await rpc
+          .estimateChi({ sender: state.publicKey!, contract: contract.trim(), function: func.trim(), kwargs: kw })
+          .catch(() => null)
+      );
       loadChiRate();
       lightTap();
       setStep("review");
@@ -185,7 +195,7 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
     const kw = parseKwargs(args);
     const kwEntries = Object.entries(kw);
     const manualChi = chi.trim() ? parsePositiveIntegerInput(chi.trim()) : null;
-    const chiValue = formatChi(manualChi ?? estimate?.estimated ?? null, chiRate);
+    const chiValue = formatChiWithXian(manualChi ?? estimate?.estimated ?? null, chiRate);
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scroll}>
@@ -203,6 +213,20 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
           <Card title="Transaction fee">
             <Row label="Chi" value={chiValue} />
           </Card>
+
+          {typeof manualChi === "number" ? (
+            <UnusedChiBanner
+              supplied={manualChi}
+              estimate={manualEstimate}
+              chiRate={chiRate}
+              onUseEstimate={() => {
+                lightTap();
+                setChi("");
+                setEstimate(manualEstimate);
+                setManualEstimate(null);
+              }}
+            />
+          ) : null}
         </ScrollView>
         <View style={styles.stickyBottom}>
           <Button title="Send Transaction" onPress={handleSend} />
@@ -258,7 +282,7 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
           </Card>
         )}
 
-        <Card title="Chi" subtitle="Leave empty to estimate automatically.">
+        <Card title="Chi" subtitle="Leave empty to estimate automatically. Chi you supply but leave unused is half charged.">
           <Input value={chi} onChangeText={setChi} placeholder="Auto-estimate" keyboardType="number-pad" />
         </Card>
 
@@ -276,12 +300,6 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
   return (<View style={styles.detailRow}><Text style={styles.detailLabel}>{label}</Text><Text style={[styles.detailValue, mono && styles.mono]} numberOfLines={1}>{value}</Text></View>);
 }
 
-function formatChi(value: number | bigint | null, chiRate: number | null): string {
-  if (value == null) return "Not provided";
-  const formatted = value.toLocaleString();
-  if (typeof value !== "number" || !chiRate) return formatted;
-  return `${formatted} (~${(value / chiRate).toLocaleString(undefined, { maximumFractionDigits: 8 })} XIAN)`;
-}
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg0 },

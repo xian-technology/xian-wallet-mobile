@@ -61,6 +61,38 @@ describe("AdvancedTxScreen", () => {
     jest.useRealTimers();
   });
 
+  it("warns what a generous manual chi limit costs and sends the estimate on request", async () => {
+    mockGetContractMethods.mockImplementation(async () => [{ name: "ping", arguments: [] }]);
+    mockEstimateChi.mockImplementation(async () => ({ estimated: 312, supply: 314 }));
+    mockSendTransaction.mockImplementation(async () => ({
+      submitted: true,
+      accepted: true,
+      finalized: true,
+      txHash: "ABC"
+    }));
+    const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof AdvancedTxScreen>["navigation"];
+    const route = {} as unknown as React.ComponentProps<typeof AdvancedTxScreen>["route"];
+    const screen = await render(<AdvancedTxScreen navigation={navigation} route={route} />);
+
+    await fireEvent.changeText(screen.getByPlaceholderText("e.g. currency"), "con_token");
+    await act(async () => {
+      jest.advanceTimersByTime(500);
+    });
+    await waitFor(() => expect(screen.getByText("ping")).toBeTruthy());
+    await fireEvent.press(screen.getByText("ping"));
+    await fireEvent.changeText(screen.getByPlaceholderText("Auto-estimate"), "50000");
+    await fireEvent.press(screen.getByText("Review Transaction"));
+
+    await waitFor(() => expect(screen.getByText(/x what the call needs \(312 chi\)/)).toBeTruthy());
+    await fireEvent.press(screen.getByText("Use estimate (314 chi)"));
+    expect(screen.queryByText(/what the call needs/)).toBeNull();
+    await fireEvent.press(screen.getByText("Send Transaction"));
+
+    await waitFor(() =>
+      expect(mockSendTransaction).toHaveBeenCalledWith(expect.objectContaining({ function: "ping", chi: 314 }))
+    );
+  });
+
   it("loads contract methods and preserves typed kwargs with manual bigint chi", async () => {
     mockGetContractMethods.mockImplementation(async () => [
       {
@@ -105,7 +137,8 @@ describe("AdvancedTxScreen", () => {
     await fireEvent.changeText(screen.getByPlaceholderText("Auto-estimate"), "9007199254740995");
     await fireEvent.press(screen.getByText("Review Transaction"));
 
-    expect(mockEstimateChi).not.toHaveBeenCalled();
+    // The manual limit is simulated only to tell what its unused chi costs.
+    await waitFor(() => expect(mockEstimateChi).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByText("Send Transaction")).toBeTruthy());
 
     await fireEvent.press(screen.getByText("Send Transaction"));
