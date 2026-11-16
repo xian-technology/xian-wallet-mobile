@@ -47,7 +47,7 @@ import {
   loadDexAvailability,
   saveDexAvailability,
 } from "../lib/storage";
-import { loadUnlockedWalletMaterial } from "../lib/wallet-controller";
+import { useTransactionReview } from "../lib/transaction-review";
 import {
   scheduleTransactionStatusToast,
   showTransactionSentToast,
@@ -78,15 +78,16 @@ function formatTradeNumber(value: number | string): string {
 }
 
 function formatBps(bps: number): string {
-  return `${(bps / 100).toLocaleString(undefined, {
-    minimumFractionDigits: bps % 100 === 0 ? 0 : 2,
-    maximumFractionDigits: 2,
-  })}%`;
+  return percentText(bps / 100, bps % 100 === 0 ? 0 : 2);
 }
 
 function formatPriceImpact(value: number): string {
-  return `${value >= 0 ? "-" : ""}${Math.abs(value).toLocaleString(undefined, {
-    minimumFractionDigits: 0,
+  return `${value >= 0 ? "-" : ""}${percentText(Math.abs(value), 0)}`;
+}
+
+function percentText(value: number, minimumFractionDigits: number): string {
+  return `${value.toLocaleString(undefined, {
+    minimumFractionDigits,
     maximumFractionDigits: 2,
   })}%`;
 }
@@ -132,6 +133,7 @@ function tradeSwapFunction(snapshot: WalletDexSnapshot, quote: DexQuote): string
 export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
   const { state, rpc, refreshBalances, showToast, notifyActivityChanged } = useWallet();
   const [step, setStep] = useState<Step>("draft");
+  const review = useTransactionReview(state, () => setStep("draft"));
   const [snapshot, setSnapshot] = useState<WalletDexSnapshot | null>(null);
   const [snapshotLoading, setSnapshotLoading] = useState(true);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
@@ -267,6 +269,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
   };
 
   const handleApprove = async () => {
+    review.confirm(review.capture());
     if (!from || !quoteState.quote) {
       setError("Enter a valid trade amount.");
       return;
@@ -274,8 +277,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
     setStep("approving");
     setError(null);
     try {
-      const material = await loadUnlockedWalletMaterial();
-      if (!material) throw new Error("Wallet is locked");
+      const material = await review.loadMaterial();
       const kwargs = {
         amount: fixed(quoteState.quote.amountIn),
         to: DEX_ROUTER,
@@ -345,6 +347,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
   };
 
   const handleReview = async () => {
+    const context = review.capture();
     if (!snapshot?.available) {
       await refreshSnapshot(true);
     }
@@ -396,6 +399,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
         setError(nativeShortfallMessage(shortfall));
         return;
       }
+      if (!review.confirm(context)) return;
       setReviewQuote(quote);
       setReviewKwargs(kwargs);
       setEstimate(nextEstimate);
@@ -414,8 +418,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
     }
     setStep("swapping");
     try {
-      const material = await loadUnlockedWalletMaterial();
-      if (!material) throw new Error("Wallet is locked");
+      const material = await review.loadMaterial();
       const fn = tradeSwapFunction(snapshot, reviewQuote);
       const result = await rpc.sendTransaction({
         privateKey: material.privateKey,

@@ -10,6 +10,7 @@ const mockEstimateChi = jest.fn() as jest.Mock;
 const mockBuildTx = jest.fn() as jest.Mock;
 const mockSignTx = jest.fn() as jest.Mock;
 const mockBroadcastTx = jest.fn() as jest.Mock;
+const mockSendTx = jest.fn() as jest.Mock;
 const mockWaitForTx = jest.fn() as jest.Mock;
 jest.mock("@xian-tech/client", () => ({
   // The real chi rule, so these tests pin the margin and the cap.
@@ -34,6 +35,7 @@ jest.mock("@xian-tech/client", () => ({
     buildTx = mockBuildTx;
     signTx = mockSignTx;
     broadcastTx = mockBroadcastTx;
+    sendTx = mockSendTx;
     waitForTx = mockWaitForTx;
   }
 }));
@@ -57,6 +59,7 @@ describe("XianRpcClient", () => {
 
   beforeEach(() => {
     mockGetChainId.mockReset();
+    mockGetChainId.mockImplementation(async () => "xian-local");
     mockGetTokenMetadata.mockReset();
     mockGetBalance.mockReset();
     mockGetContractMethods.mockReset();
@@ -66,6 +69,8 @@ describe("XianRpcClient", () => {
     mockBuildTx.mockReset();
     mockSignTx.mockReset();
     mockBroadcastTx.mockReset();
+    mockSendTx.mockReset();
+    mockSendTx.mockImplementation(async () => mockBroadcastTx());
     mockWaitForTx.mockReset();
   });
 
@@ -107,21 +112,16 @@ describe("XianRpcClient", () => {
       chi: 75_000
     });
 
-    expect(mockBuildTx).toHaveBeenCalledWith({
+    expect(mockSendTx).toHaveBeenCalledWith({
       sender: "addr-11111111",
+      signer: expect.objectContaining({ address: "addr-11111111" }),
+      chainId: "xian-local",
       contract: "currency",
       function: "transfer",
       kwargs: { to: "alice", amount: 9007199254740993n },
-      chi: 75_000
+      chi: 75_000,
+      mode: "checktx"
     });
-    expect(mockSignTx).toHaveBeenCalledWith(
-      expect.objectContaining({ payload: expect.objectContaining({ nonce: 7 }) }),
-      expect.objectContaining({ address: "addr-11111111" })
-    );
-    expect(mockBroadcastTx).toHaveBeenCalledWith(
-      expect.objectContaining({ metadata: { signature: "sig" } }),
-      { mode: "checktx" }
-    );
     expect(mockWaitForTx).toHaveBeenCalledWith("ABC123", {
       timeoutMs: 10_000,
       pollIntervalMs: 1_000
@@ -196,6 +196,15 @@ describe("XianRpcClient", () => {
     await client.buildTransaction({ sender: "a".repeat(64), contract: "currency", function: "transfer", kwargs: {} });
 
     expect(mockBuildTx).toHaveBeenCalledWith(expect.objectContaining({ chainId: "xian-expected" }));
+  });
+
+  it("rejects a conflicting explicit chain on an automatic call", async () => {
+    const client = new XianRpcClient("http://127.0.0.1:26657");
+    await expect(client.sendCall({
+      privateKey: "11".repeat(32), chainId: "another-chain",
+      contract: "currency", function: "transfer", kwargs: {}, chi: 500
+    })).rejects.toThrow("not the configured another-chain");
+    expect(mockSendTx).not.toHaveBeenCalled();
   });
 
   it("returns submission failures without fabricating a receipt", async () => {

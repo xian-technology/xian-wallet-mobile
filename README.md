@@ -57,6 +57,12 @@ npm run ios              # build and run on the iOS simulator
 
 ## Product Workflows
 
+Simple sends normalize hex public-key recipients to their spendable lowercase
+spelling before review. Transfer, advanced-call and swap reviews are bound to
+their account and network; a context change requires a fresh review. Screens
+and WalletConnect share the SDK's automatic nonce owner for each immutable
+network configuration, including nonce quarantine after an uncertain send.
+
 The mobile wallet is a full wallet product, not a thin SDK demo. The current
 app covers:
 

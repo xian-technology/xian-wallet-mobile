@@ -19,7 +19,7 @@ import { UnusedChiBanner } from "../components/UnusedChiBanner";
 import { chiToSupply, type ChiEstimate } from "../lib/rpc-client";
 import { formatChiWithXian } from "../lib/unused-chi";
 import { useWallet } from "../lib/wallet-context";
-import { loadUnlockedWalletMaterial } from "../lib/wallet-controller";
+import { useTransactionReview } from "../lib/transaction-review";
 import { lightTap, successTap, errorTap } from "../lib/haptics";
 import { parsePositiveIntegerInput, parseTypedInput } from "../lib/runtime-input";
 import {
@@ -40,7 +40,7 @@ interface ContractMethod {
 interface Arg { id: string; name: string; value: string; type: string; fixed?: boolean; }
 
 function parseKwargs(args: Arg[]): Record<string, unknown> {
-  const kw: Record<string, unknown> = {};
+  const kw: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   for (const a of args) {
     if (!a.name.trim()) continue;
     kw[a.name] = parseTypedInput(a.value, a.type);
@@ -51,6 +51,7 @@ function parseKwargs(args: Arg[]): Record<string, unknown> {
 export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedTx">) {
   const { state, rpc, refreshBalances, showToast, notifyActivityChanged } = useWallet();
   const [step, setStep] = useState<Step>("draft");
+  const review = useTransactionReview(state, () => setStep("draft"));
   const [contract, setContract] = useState("");
   const [func, setFunc] = useState("");
   const [args, setArgs] = useState<Arg[]>([]);
@@ -114,6 +115,7 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
   const updateArg = (id: string, val: string) => setArgs(args.map((a) => a.id === id ? { ...a, value: val } : a));
 
   const handleReview = async () => {
+    const context = review.capture();
     if (!contract.trim() || !func.trim()) { setError("Contract and function are required."); return; }
     let kw: Record<string, unknown>;
     try {
@@ -138,6 +140,7 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
           .catch(() => null)
       );
       loadChiRate();
+      if (!review.confirm(context)) return;
       lightTap();
       setStep("review");
       return;
@@ -146,6 +149,7 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
     setError(null); setEstimating(true);
     try {
       const est = await rpc.estimateChi({ sender: state.publicKey!, contract: contract.trim(), function: func.trim(), kwargs: kw });
+      if (!review.confirm(context)) return;
       setEstimate(est); loadChiRate(); lightTap(); setStep("review");
     } catch (e) { setError(e instanceof Error ? e.message : "Estimation failed"); }
     finally { setEstimating(false); }
@@ -154,8 +158,7 @@ export function AdvancedTxScreen({ navigation }: RootStackScreenProps<"AdvancedT
   const handleSend = async () => {
     setStep("sending");
     try {
-      const material = await loadUnlockedWalletMaterial();
-      if (!material) throw new Error("Wallet is locked");
+      const material = await review.loadMaterial();
       const kw = parseKwargs(args);
       const s = chi ? parsePositiveIntegerInput(chi) : chiToSupply(estimate);
       if (s == null) throw new Error("Chi must be a positive integer");

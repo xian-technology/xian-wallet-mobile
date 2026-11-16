@@ -136,6 +136,13 @@ jest.mock("../rpc-client", () => ({
     async broadcastSignedTransaction(...args: unknown[]) {
       return mockBroadcast(...args);
     }
+    async sendCall(input: Record<string, unknown>) {
+      return mockBroadcast({ payload: {
+        sender: MOCK_ACCOUNT, contract: input.contract, function: input.function,
+        kwargs: input.kwargs, chain_id: input.chainId, nonce: 1,
+        chi_supplied: input.chiSupplied ?? input.chi
+      } });
+    }
   },
 }));
 jest.mock("../network-security", () => ({
@@ -234,6 +241,16 @@ describe("WalletConnect request resolution", () => {
     mockStorage.upsertTrustedDappPolicy.mockClear();
     mockProvider.createXianDappPolicyForRequest.mockClear();
     mockProvider.findMatchingXianDappPolicy.mockClear();
+  });
+
+  it("refuses an intent for another chain even when the WalletConnect session chain is approved", async () => {
+    const id = await queueSendCall({
+      contract: "currency", function: "transfer", kwargs: { to: "bob", amount: 5 },
+      chi: 1000, chainId: "another-chain"
+    });
+    mockBroadcast.mockImplementation(async () => ({ accepted: true, finalized: false }));
+    await expect(approveWalletConnectRequest(id)).rejects.toThrow("intent chain does not match");
+    expect(mockBroadcast).not.toHaveBeenCalled();
   });
 
   it("does not let a rejection overtake an approval that is already executing", async () => {

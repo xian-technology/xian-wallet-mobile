@@ -34,6 +34,9 @@ describe("SendScreen", () => {
     mockUseWallet.mockReturnValue({
       state: {
         publicKey: "sender",
+        rpcUrl: "http://127.0.0.1:26657",
+        activeNetworkId: "local",
+        networkPresets: [{ id: "local", chainId: "local-chain" }, { id: "other", chainId: "other-chain" }],
         watchedAssets: [{ contract: "currency", name: "Xian", symbol: "XIAN" }],
         assetBalances: { currency: "9007199254741993" },
         contacts: [],
@@ -49,6 +52,7 @@ describe("SendScreen", () => {
       notifyActivityChanged: mockNotifyActivityChanged
     });
     mockLoadUnlockedWalletMaterial.mockImplementation(async () => ({
+      state: (mockUseWallet() as { state: Record<string, unknown> }).state,
       privateKey: "11".repeat(32),
       sessionKey: "session-key",
       expiresAt: Date.now() + 60_000
@@ -57,6 +61,90 @@ describe("SendScreen", () => {
 
   afterEach(() => {
     jest.useRealTimers();
+  });
+
+  it.each([
+    { publicKey: "other-account" },
+    { rpcUrl: "http://127.0.0.1:27657" },
+    { networkPresets: [{ id: "local", chainId: "changed-chain" }, { id: "other", chainId: "other-chain" }] }
+  ])(
+    "requires a new review when the signing context changes: %j", async (change) => {
+      mockEstimateChi.mockImplementation(async () => ({ estimated: 12, supply: 14 }));
+      const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof SendScreen>["navigation"];
+      const route = { params: { token: "currency" } } as unknown as React.ComponentProps<typeof SendScreen>["route"];
+      const screen = await render(<SendScreen navigation={navigation} route={route} />);
+      await fireEvent.changeText(screen.getByPlaceholderText("Wallet address"), "ab".repeat(32));
+      await fireEvent.changeText(screen.getByPlaceholderText("0.00"), "1");
+      await fireEvent.press(screen.getByText("Review"));
+      await waitFor(() => expect(screen.getByText("Send Transaction")).toBeTruthy());
+      const previous = mockUseWallet() as { state: Record<string, unknown> };
+      mockUseWallet.mockReturnValue({ ...previous, state: { ...previous.state, ...change } });
+      await screen.rerender(<SendScreen navigation={navigation} route={route} />);
+      expect(screen.queryByText("Send Transaction")).toBeNull();
+      expect(screen.getByText("Review")).toBeTruthy();
+      expect(mockSendTransaction).not.toHaveBeenCalled();
+    }
+  );
+
+  it("discards a simulation that completes after its reviewed account changed", async () => {
+    let finish!: (value: { estimated: number; supply: number }) => void;
+    mockEstimateChi.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof SendScreen>["navigation"];
+    const route = { params: { token: "currency" } } as unknown as React.ComponentProps<typeof SendScreen>["route"];
+    const screen = await render(<SendScreen navigation={navigation} route={route} />);
+    await fireEvent.changeText(screen.getByPlaceholderText("Wallet address"), "ab".repeat(32));
+    await fireEvent.changeText(screen.getByPlaceholderText("0.00"), "1");
+    const pendingReview = fireEvent.press(screen.getByText("Review"));
+    await waitFor(() => expect(mockEstimateChi).toHaveBeenCalled());
+    const previous = mockUseWallet() as { state: Record<string, unknown> };
+    mockUseWallet.mockReturnValue({ ...previous, state: { ...previous.state, publicKey: "other-account" } });
+    await screen.rerender(<SendScreen navigation={navigation} route={route} />);
+    await act(async () => { finish({ estimated: 12, supply: 14 }); });
+    await pendingReview;
+    expect(screen.queryByText("Send Transaction")).toBeNull();
+    expect(screen.getByText("Review")).toBeTruthy();
+  });
+
+  it("does not sign with an account that changes while unlocked material is loaded", async () => {
+    mockEstimateChi.mockImplementation(async () => ({ estimated: 12, supply: 14 }));
+    const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof SendScreen>["navigation"];
+    const route = { params: { token: "currency" } } as unknown as React.ComponentProps<typeof SendScreen>["route"];
+    const screen = await render(<SendScreen navigation={navigation} route={route} />);
+    await fireEvent.changeText(screen.getByPlaceholderText("Wallet address"), "ab".repeat(32));
+    await fireEvent.changeText(screen.getByPlaceholderText("0.00"), "1");
+    await fireEvent.press(screen.getByText("Review"));
+    await waitFor(() => expect(screen.getByText("Send Transaction")).toBeTruthy());
+    mockLoadUnlockedWalletMaterial.mockImplementation(async () => ({
+      state: { publicKey: "other-account" }, privateKey: "22".repeat(32)
+    }));
+    await fireEvent.press(screen.getByText("Send Transaction"));
+    expect(mockSendTransaction).not.toHaveBeenCalled();
+    expect(mockShowToast).toHaveBeenCalledWith(
+      "Transaction failed.", "danger", expect.objectContaining({
+        detail: "Wallet account or network changed. Review the transaction again."
+      })
+    );
+  });
+
+  it("reviews and submits the spendable lowercase spelling of a mixed-case address", async () => {
+    mockEstimateChi.mockImplementation(async () => ({ estimated: 12, supply: 14 }));
+    mockSendTransaction.mockImplementation(async () => ({
+      submitted: true, accepted: true, finalized: true, txHash: "CANONICAL"
+    }));
+    const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof SendScreen>["navigation"];
+    const route = { params: { token: "currency" } } as unknown as React.ComponentProps<typeof SendScreen>["route"];
+    const screen = await render(<SendScreen navigation={navigation} route={route} />);
+    await fireEvent.changeText(screen.getByPlaceholderText("Wallet address"), "aB".repeat(32));
+    await fireEvent.changeText(screen.getByPlaceholderText("0.00"), "1");
+    await fireEvent.press(screen.getByText("Review"));
+    await waitFor(() => expect(screen.getByText("Send Transaction")).toBeTruthy());
+    expect(mockEstimateChi).toHaveBeenCalledWith(expect.objectContaining({
+      kwargs: { to: "ab".repeat(32), amount: 1 }
+    }));
+    await fireEvent.press(screen.getByText("Send Transaction"));
+    await waitFor(() => expect(mockSendTransaction).toHaveBeenCalledWith(expect.objectContaining({
+      kwargs: { to: "ab".repeat(32), amount: 1 }
+    })));
   });
 
   // Execution reserves the fee from the XIAN balance first; sending the whole

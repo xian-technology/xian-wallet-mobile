@@ -136,21 +136,14 @@ function executedOutcome(txHash: string | undefined, receipt: TransactionReceipt
 }
 
 export class XianRpcClient {
-  private client: XianClient;
-  private allowInsecureHttp: boolean;
-  private expectedChainId: string | undefined;
+  private readonly client: XianClient;
+  private readonly allowInsecureHttp: boolean;
+  private readonly expectedChainId: string | undefined;
 
-  constructor(private rpcUrl: string, options: RpcClientOptions = {}) {
+  constructor(private readonly rpcUrl: string, options: RpcClientOptions = {}) {
     this.allowInsecureHttp = options.allowInsecureHttp === true;
     this.expectedChainId = options.expectedChainId;
     this.client = new XianClient({ rpcUrl, vmProfile: "xian_vm_v2" });
-  }
-
-  setRpcUrl(url: string, options: RpcClientOptions = {}): void {
-    this.allowInsecureHttp = options.allowInsecureHttp === true;
-    this.expectedChainId = options.expectedChainId;
-    this.rpcUrl = url;
-    this.client = new XianClient({ rpcUrl: url, vmProfile: "xian_vm_v2" });
   }
 
   /** The chain the RPC serves, which every signature is bound to; refused when it is not the configured one. */
@@ -423,21 +416,7 @@ export class XianRpcClient {
     kwargs: Record<string, unknown>;
     chi: number | bigint;
   }): Promise<SendOutcome> {
-    this.assertTransportAllowed();
-    const signer = new Ed25519Signer(opts.privateKey);
-    const chainId = await this.signingChainId();
-    const tx = await this.client.buildTx({
-      chainId,
-      sender: signer.address,
-      contract: opts.contract,
-      function: opts.function,
-      kwargs: opts.kwargs,
-      chi: opts.chi
-    });
-    const signedTx = await this.client.signTx(tx, signer);
-    const submission = await this.client.broadcastTx(signedTx, {
-      mode: "checktx"
-    });
+    const submission = await this.sendCall({ ...opts, mode: "checktx" });
     if (!submission.submitted || !submission.accepted) {
       return {
         submitted: submission.submitted,
@@ -448,6 +427,30 @@ export class XianRpcClient {
       };
     }
     return executedOutcome(submission.txHash, await this.receiptWithin(submission.txHash, 10_000));
+  }
+
+  /** Automatic calls use the SDK's serialized release/quarantine nonce lifecycle. */
+  async sendCall(opts: {
+    privateKey: string;
+    contract: string;
+    function: string;
+    kwargs: Record<string, unknown>;
+    chainId?: string;
+    chi?: number | bigint;
+    chiSupplied?: number | bigint;
+    mode?: BroadcastMode;
+    waitForTx?: boolean;
+    timeoutMs?: number;
+    pollIntervalMs?: number;
+  }): Promise<TransactionSubmission> {
+    this.assertTransportAllowed();
+    const { privateKey, chainId: requestedChainId, ...request } = opts;
+    const chainId = await this.signingChainId();
+    if (requestedChainId !== undefined && requestedChainId !== chainId) {
+      throw new ChainMismatchError(chainId, requestedChainId);
+    }
+    const signer = new Ed25519Signer(privateKey);
+    return this.client.sendTx({ ...request, chainId, sender: signer.address, signer });
   }
 
   /** The receipt of an admitted transaction, or null when none arrives in time. */

@@ -13,6 +13,7 @@ import {
   FlatList,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { normalizeXianRecipient } from "@xian-tech/client";
 import { colors } from "../theme/colors";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
@@ -22,7 +23,7 @@ import { AppDialog } from "../components/AppDialog";
 import { chiToSupply, type ChiEstimate } from "../lib/rpc-client";
 import { NATIVE_TOKEN_CONTRACT, nativeShortfallMessage, nativeSpendShortfall } from "../lib/native-fee";
 import { useWallet } from "../lib/wallet-context";
-import { loadUnlockedWalletMaterial } from "../lib/wallet-controller";
+import { useTransactionReview } from "../lib/transaction-review";
 import { visibleAssetsForActiveNetwork } from "../lib/assets";
 import { lightTap, successTap, errorTap } from "../lib/haptics";
 import {
@@ -53,6 +54,7 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
   const [chiRate, setChiRate] = useState<number | null>(null);
   const [showContacts, setShowContacts] = useState(false);
   const [unrecognizedRecipient, setUnrecognizedRecipient] = useState<string | null>(null);
+  const review = useTransactionReview(state, () => setStep("draft"));
 
   const visibleTokens = visibleAssetsForActiveNetwork(state);
   const activeToken = visibleTokens.some((asset) => asset.contract === selectedToken)
@@ -70,6 +72,7 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
   const handleMax = () => { lightTap(); setAmount(tokenBal && tokenBal !== "null" ? tokenBal : "0"); };
 
   const startReview = async (trimmedTo: string) => {
+    const context = review.capture();
     const parsedAmount = parseAmountInput(amount);
     if (parsedAmount == null) { setError("Enter a valid amount."); return; }
     setError(null); setEstimating(true);
@@ -87,13 +90,15 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
           })
         : null;
       if (shortfall) { setError(nativeShortfallMessage(shortfall)); return; }
+      if (!review.confirm(context)) return;
       setEstimate(est); setChiRate(rate); lightTap(); setStep("review");
     } catch (e) { setError(e instanceof Error ? e.message : "Estimation failed"); }
     finally { setEstimating(false); }
   };
 
   const handleReview = async () => {
-    const trimmedTo = to.trim();
+    const trimmedTo = normalizeXianRecipient(to);
+    setTo(trimmedTo);
     if (!trimmedTo) { setError("Recipient address is required."); return; }
     if (trimmedTo === state.publicKey) {
       setError("You can't send tokens to your own address.");
@@ -117,11 +122,10 @@ export function SendScreen({ navigation, route }: RootStackScreenProps<"Send">) 
   const handleSend = async () => {
     setStep("sending");
     try {
-      const material = await loadUnlockedWalletMaterial();
-      if (!material) throw new Error("Wallet is locked");
+      const material = await review.loadMaterial();
       const parsedAmount = parseAmountInput(amount);
       if (parsedAmount == null) throw new Error("Enter a valid amount");
-      const kwargs = { to: to.trim(), amount: parsedAmount };
+      const kwargs = { to: normalizeXianRecipient(to), amount: parsedAmount };
       const r = await rpc.sendTransaction({ privateKey: material.privateKey, contract: activeToken, function: "transfer", kwargs, chi: chiToSupply(estimate) });
       const sentShown = showTransactionSentToast(showToast, state.dashboardUrl, r);
       scheduleTransactionStatusToast(showToast, state.dashboardUrl, r, sentShown ? 1600 : 0);

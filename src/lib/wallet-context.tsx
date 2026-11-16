@@ -31,7 +31,7 @@ import {
   messageFromUnknown,
   updateAssetNetworkState,
 } from "./assets";
-import { rpcOptionsForState } from "./network-security";
+import { rpcClientForState } from "./network-client";
 
 export type { StoredWalletState, Contact };
 
@@ -227,7 +227,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const contacts = await loadContacts();
 
     if (walletState) {
-      rpcRef.current.setRpcUrl(walletState.rpcUrl, rpcOptionsForState(walletState));
+      rpcRef.current = rpcClientForState(walletState);
       walletState = await hydrateWatchedAssetIcons(walletState);
     }
 

@@ -38,7 +38,7 @@ import {
 } from "./storage";
 import { loadUnlockedWalletMaterial } from "./wallet-controller";
 import { ChainMismatchError, XianRpcClient } from "./rpc-client";
-import { rpcOptionsForState } from "./network-security";
+import { rpcClientForState } from "./network-client";
 import {
   activityNetworkKey,
   makeLocalActivityTx,
@@ -62,10 +62,6 @@ const WALLETCONNECT_ORIGIN_PREFIX = "wc:";
 const TRUSTED_DAPP_POLICY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 type WalletKitClient = Awaited<ReturnType<typeof WalletKit.init>>;
-
-function rpcClientForState(state: StoredWalletState): XianRpcClient {
-  return new XianRpcClient(state.rpcUrl, rpcOptionsForState(state));
-}
 
 interface WalletConnectMetadata {
   name?: string;
@@ -341,16 +337,16 @@ async function executionContext(expectedChainId?: string): Promise<{
 
 async function recordSubmittedTransaction(
   state: StoredWalletState,
-  tx: XianUnsignedTransaction,
+  payload: Pick<XianUnsignedTransaction["payload"], "sender" | "contract" | "function" | "kwargs">,
   result: TransactionSubmission
 ): Promise<void> {
   const executionFailed = submissionExecutionFailed(result);
   const localTx = makeLocalActivityTx({
     txHash: result.txHash,
-    sender: tx.payload.sender,
-    contract: tx.payload.contract,
-    function: tx.payload.function,
-    kwargs: tx.payload.kwargs,
+    sender: payload.sender,
+    contract: payload.contract,
+    function: payload.function,
+    kwargs: payload.kwargs,
     accepted: result.accepted === true,
     finalized: result.finalized,
     executionFailed,
@@ -358,6 +354,12 @@ async function recordSubmittedTransaction(
   });
   if (localTx) {
     await saveLocalActivityTx(activityNetworkKey(state), localTx);
+  }
+}
+
+function requireIntentChain(intent: XianTransactionIntent, chainId: string): void {
+  if (intent.chainId !== undefined && intent.chainId !== chainId) {
+    throw new Error("transaction intent chain does not match the active wallet chain");
   }
 }
 
@@ -419,6 +421,7 @@ async function executeXianRequest(
     case "xian_prepareTransaction": {
       const { intent } = firstParamObject(request.params);
       const txIntent = intent as XianTransactionIntent;
+      requireIntentChain(txIntent, chainId);
       return rpc.buildTransaction({
         sender: state.publicKey,
         contract: txIntent.contract,
@@ -461,7 +464,7 @@ async function executeXianRequest(
         timeoutMs: timeoutMs as number | undefined,
         pollIntervalMs: pollIntervalMs as number | undefined
       });
-      await recordSubmittedTransaction(state, unsignedTx, result);
+      await recordSubmittedTransaction(state, unsignedTx.payload, result);
       return result;
     }
 
@@ -469,23 +472,24 @@ async function executeXianRequest(
       const { intent, mode, waitForTx, timeoutMs, pollIntervalMs } =
         firstParamObject(request.params);
       const txIntent = intent as XianTransactionIntent;
-      const unsignedTx = await rpc.buildTransaction({
-        sender: state.publicKey,
+      requireIntentChain(txIntent, chainId);
+      const result = await rpc.sendCall({
+        privateKey,
         contract: txIntent.contract,
         function: txIntent.function,
         kwargs: txIntent.kwargs,
         chainId,
         chi: parseXianNumber(txIntent.chi),
-        chiSupplied: parseXianNumber(txIntent.chiSupplied)
-      });
-      const signedTx = await rpc.signTransaction(privateKey, unsignedTx);
-      const result = await rpc.broadcastSignedTransaction(signedTx, {
+        chiSupplied: parseXianNumber(txIntent.chiSupplied),
         mode: mode as BroadcastMode | undefined,
         waitForTx: waitForTx as boolean | undefined,
         timeoutMs: timeoutMs as number | undefined,
         pollIntervalMs: pollIntervalMs as number | undefined
       });
-      await recordSubmittedTransaction(state, unsignedTx, result);
+      await recordSubmittedTransaction(state, {
+        sender: state.publicKey, contract: txIntent.contract,
+        function: txIntent.function, kwargs: txIntent.kwargs
+      }, result);
       return result;
     }
 

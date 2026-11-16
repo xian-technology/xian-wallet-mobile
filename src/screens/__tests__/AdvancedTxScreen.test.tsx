@@ -50,6 +50,7 @@ describe("AdvancedTxScreen", () => {
       notifyActivityChanged: mockNotifyActivityChanged
     });
     mockLoadUnlockedWalletMaterial.mockImplementation(async () => ({
+      state: (mockUseWallet() as { state: Record<string, unknown> }).state,
       privateKey: "11".repeat(32),
       sessionKey: "session-key",
       expiresAt: Date.now() + 60_000
@@ -59,6 +60,24 @@ describe("AdvancedTxScreen", () => {
 
   afterEach(() => {
     jest.useRealTimers();
+  });
+
+  it("preserves a dictionary argument named __proto__ as an own transaction field", async () => {
+    mockGetContractMethods.mockImplementation(async () => [{ name: "inspect", arguments: [{ name: "__proto__", type: "dict" }] }]);
+    mockEstimateChi.mockImplementation(async () => ({ estimated: 100, supply: 102 }));
+    const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof AdvancedTxScreen>["navigation"];
+    const route = {} as unknown as React.ComponentProps<typeof AdvancedTxScreen>["route"];
+    const screen = await render(<AdvancedTxScreen navigation={navigation} route={route} />);
+    await fireEvent.changeText(screen.getByPlaceholderText("e.g. currency"), "con_inspect");
+    await act(async () => { jest.advanceTimersByTime(500); });
+    await waitFor(() => expect(screen.getByText("inspect")).toBeTruthy());
+    await fireEvent.press(screen.getByText("inspect"));
+    await fireEvent.changeText(screen.getByPlaceholderText("dict value"), '{"amount":1}');
+    await fireEvent.press(screen.getByText("Review Transaction"));
+    await waitFor(() => expect(mockEstimateChi).toHaveBeenCalled());
+    const kwargs = (mockEstimateChi.mock.calls[0][0] as { kwargs: Record<string, unknown> }).kwargs;
+    expect(Object.hasOwn(kwargs, "__proto__")).toBe(true);
+    expect(kwargs["__proto__"]).toEqual({ amount: 1 });
   });
 
   it("warns what a generous manual chi limit costs and sends the estimate on request", async () => {

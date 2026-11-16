@@ -16,6 +16,10 @@ store, biometrics, QR scanning, sharing, and WalletConnect sessions.
 - `src/lib/wallet-context.tsx`: React context wrapper around the controller.
 - `src/lib/storage.ts`, `src/lib/preferences.ts`: local persistence helpers.
 - `src/lib/rpc-client.ts`: mobile wrapper around `@xian-tech/client`.
+- `src/lib/network-client.ts`: immutable per-network client ownership shared by
+  screens and WalletConnect, preserving the SDK's automatic nonce lifecycle.
+- `src/lib/transaction-review.ts`: reviewed account/network binding and stale
+  simulation rejection before loading signing material.
 - `src/lib/walletconnect.ts`, `src/lib/walletconnect-policy.ts`,
   `src/lib/signing-policy.ts`: dapp sessions, required-only namespace scope,
   live request authorization, and request-approval policy.

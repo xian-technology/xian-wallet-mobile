@@ -52,6 +52,7 @@ describe("TradeScreen", () => {
     mockLoadDexAvailability.mockImplementation(async () => null);
     mockSaveDexAvailability.mockImplementation(async () => undefined);
     mockLoadUnlockedWalletMaterial.mockImplementation(async () => ({
+      state: (mockUseWallet() as { state: Record<string, unknown> }).state,
       privateKey: "11".repeat(32),
       sessionKey: "session-key",
       expiresAt: Date.now() + 60_000
