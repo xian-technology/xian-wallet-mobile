@@ -21,6 +21,7 @@ import {
 } from "@xian-tech/provider";
 
 import { AppDialog } from "../components/AppDialog";
+import { UnusedChiBanner } from "../components/UnusedChiBanner";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { colors } from "../theme/colors";
@@ -552,6 +553,13 @@ export function AppsScreen() {
               <>
                 <Text style={styles.dialogLabel}>Chi</Text>
                 <Text style={styles.dialogValue}>{activeRequest.chi ?? "Not estimated"}</Text>
+                {activeRequest.chi != null && activeRequest.chiEstimate ? (
+                  <UnusedChiBanner
+                    supplied={Number(activeRequest.chi)}
+                    estimate={activeRequest.chiEstimate}
+                    chiRate={activeRequest.chiRate ?? null}
+                  />
+                ) : null}
               </>
             ) : null}
             {activeRequest.trustSuggestion ? (

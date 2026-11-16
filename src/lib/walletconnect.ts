@@ -115,6 +115,10 @@ export interface DappSessionRequest {
   // Chi limit a transaction request will sign: null when unknown, undefined
   // for requests that do not send a transaction.
   chi?: string | null;
+  // The simulation of a send-call whose site chose the chi, and the chi rate,
+  // so the approval can say what the limit's unused chi costs.
+  chiEstimate?: { estimated: number; supply: number };
+  chiRate?: number | null;
   trustSuggestion?: {
     label: string;
     description: string;
@@ -599,6 +603,37 @@ function hasChi(chi: unknown): boolean {
   return chi != null && chi !== "";
 }
 
+function siteChiSendCall(request: XianProviderRequest): Record<string, unknown> | null {
+  const params = firstParamObject(request.params);
+  const intent = isRecord(params.intent) ? params.intent : null;
+  return request.method === "xian_sendCall" && intent != null && (hasChi(intent.chi) || hasChi(intent.chiSupplied))
+    ? intent
+    : null;
+}
+
+/** The simulation and chi rate for a site-chosen chi; nothing when it cannot be simulated. */
+async function siteChiEstimate(
+  intent: Record<string, unknown>
+): Promise<Pick<DappSessionRequest, "chiEstimate" | "chiRate">> {
+  try {
+    const state = await loadWalletState();
+    if (!state || typeof intent.contract !== "string" || typeof intent.function !== "string") {
+      return {};
+    }
+    const rpc = rpcClientForState(state);
+    const chiEstimate = await rpc.estimateChi({
+      sender: state.publicKey,
+      contract: intent.contract,
+      function: intent.function,
+      kwargs: isRecord(intent.kwargs) ? intent.kwargs : {},
+    });
+    const chiRate = await rpc.getChiRate().catch(() => null);
+    return { chiEstimate, chiRate };
+  } catch {
+    return {};
+  }
+}
+
 function chiLessSendCall(
   request: XianProviderRequest
 ): { params: Record<string, unknown>; intent: Record<string, unknown> } | null {
@@ -789,8 +824,12 @@ function attachListeners(client: WalletKitClient): void {
         emitChange();
         return;
       }
+      const siteChi = siteChiSendCall(pending.request);
       try {
         pending = requestSummary(event, await requestWithEstimatedChi(pending.request));
+        if (siteChi) {
+          pending = { ...pending, ...(await siteChiEstimate(siteChi)) };
+        }
       } catch (error) {
         await respondWithError(client, pending, error);
         emitChange();

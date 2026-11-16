@@ -215,5 +215,29 @@ describe("AppsScreen", () => {
     await waitFor(() => expect(screen.getByText("777")).toBeTruthy());
     expect(screen.queryByText(/invisible or text-direction/)).toBeNull();
   });
+
+  // Half of a limit's unused chi is charged: the in-app dialog says what the
+  // site's limit costs, without rewriting the site's request.
+  it("warns what a site's generous chi limit costs, without offering to change it", async () => {
+    stateWith({
+      requests: [{
+        id: 10,
+        topic: "topic-1",
+        origin: "wc:topic-1",
+        sessionName: "Swap dapp",
+        chainId: "xian-local",
+        chi: "50000",
+        chiEstimate: { estimated: 312, supply: 314 },
+        chiRate: 20,
+        verification: { status: "verified", origin: "https://app.example" },
+        request: { method: "xian_sendCall", params: { intent: {} } },
+      }],
+    });
+
+    const screen = await render(<AppsScreen />);
+
+    await waitFor(() => expect(screen.getByText(/x what the call needs \(312 chi\)/)).toBeTruthy());
+    expect(screen.queryByText(/Use estimate/)).toBeNull();
+  });
 });
 

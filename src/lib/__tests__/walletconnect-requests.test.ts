@@ -114,6 +114,9 @@ jest.mock("../rpc-client", () => ({
     async estimateChi(...args: unknown[]) {
       return mockEstimateChi(...args);
     }
+    async getChiRate() {
+      return 20;
+    }
     async buildTransaction(input: Record<string, unknown>) {
       return {
         payload: {
@@ -413,6 +416,30 @@ describe("WalletConnect request resolution", () => {
     expect(mockBroadcast).not.toHaveBeenCalled();
   });
 
+  // A site-chosen chi is kept; its simulation only lets the approval say
+  // what the limit's unused chi costs (half of it is charged).
+  it("simulates a send-call whose site chose the chi and keeps that chi", async () => {
+    mockEstimateChi.mockImplementation(async () => ({ estimated: 312, supply: 314 }));
+
+    const id = await queueSendCall({ contract: "currency", function: "transfer", kwargs: { to: "bob" }, chi: 50_000 });
+
+    const queued = queuedRequest(id);
+    expect((queued?.request.params as { intent: { chi?: number } }).intent.chi).toBe(50_000);
+    expect(queued?.chi).toBe("50000");
+    expect(queued?.chiEstimate).toEqual({ estimated: 312, supply: 314 });
+  });
+
+  it("still asks about a site-chosen chi whose simulation fails, without an estimate", async () => {
+    mockEstimateChi.mockImplementation(async () => {
+      throw new SimulationFailedError({ estimated: 130, supply: 132 }, "AssertionError('x')");
+    });
+
+    const id = await queueSendCall({ contract: "currency", function: "transfer", kwargs: {}, chi: 900 });
+
+    expect(queuedRequest(id)?.chi).toBe("900");
+    expect(queuedRequest(id)?.chiEstimate).toBeUndefined();
+  });
+
   it("estimates chi for a send-call before asking the user", async () => {
     mockEstimateChi.mockImplementation(async () => ({ estimated: 777, supply: 779 }));
 
@@ -595,12 +622,16 @@ describe("WalletConnect request resolution", () => {
     throw new Error("request was not queued");
   }
 
-  it("does not estimate requests that already carry chi or send no call", async () => {
-    await queueSendCall({ contract: "currency", function: "transfer", chi: 5 });
-    await queueSendCall({ contract: "currency", function: "transfer", chiSupplied: 6 });
+  it("keeps the chi a request already carries and estimates nothing for a non-call", async () => {
+    mockEstimateChi.mockImplementation(async () => ({ estimated: 2, supply: 4 }));
+    const chi = await queueSendCall({ contract: "currency", function: "transfer", chi: 5 });
+    const chiSupplied = await queueSendCall({ contract: "currency", function: "transfer", chiSupplied: 6 });
     const message = await queueRequest({ method: "xian_signMessage", params: { message: "hi" } });
 
-    expect(mockEstimateChi).not.toHaveBeenCalled();
+    expect(queuedRequest(chi)?.chi).toBe("5");
+    expect(queuedRequest(chiSupplied)?.chi).toBe("6");
+    // Only the two calls are simulated (to tell what their unused chi costs).
+    expect(mockEstimateChi).toHaveBeenCalledTimes(2);
     expect(queuedRequest(message)?.chi).toBeUndefined();
     expect(queuedRequest(message)?.trustSuggestion).toBeUndefined();
   });
