@@ -15,7 +15,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "buildNumber": "4",
+      "buildNumber": "5",
       "bundleIdentifier": "org.xian.wallet.mobile",
       "entitlements": {
         "keychain-access-groups": [
