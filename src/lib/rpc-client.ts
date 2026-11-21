@@ -5,6 +5,7 @@
 import {
   chiToSupply as chiForEstimate,
   Ed25519Signer,
+  fixedValueText,
   type SimulateRequest,
   type TransactionReceipt,
   type TransactionSubmission,
@@ -290,7 +291,7 @@ export class XianRpcClient {
       }
       return {
         contract,
-        balance: String(result),
+        balance: fixedValueText(result) ?? String(result),
         status: "available",
       };
     } catch (error) {

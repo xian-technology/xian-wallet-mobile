@@ -176,6 +176,11 @@ npm run typecheck         # tsc --noEmit
 npm run test              # Jest (jest-expo, react-test-renderer)
 ```
 
+For a live RPC check, set `XIAN_LIVE_SDK_RPC` to a disposable V2 node and
+`XIAN_WALLET_TEST_FUNDING_KEY` to a funded development key, then run
+`npm run test:live`. The test submits a transfer through the mobile wallet
+client and reads the recipient's balance after finalization.
+
 For full mobile validation, run the Expo dev server and exercise the app
 on a real device or emulator:
 

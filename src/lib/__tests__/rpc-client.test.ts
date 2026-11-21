@@ -13,8 +13,7 @@ const mockBroadcastTx = jest.fn() as jest.Mock;
 const mockSendTx = jest.fn() as jest.Mock;
 const mockWaitForTx = jest.fn() as jest.Mock;
 jest.mock("@xian-tech/client", () => ({
-  // The real chi rule, so these tests pin the margin and the cap.
-  chiToSupply: jest.requireActual<typeof import("@xian-tech/client")>("@xian-tech/client").chiToSupply,
+  ...jest.requireActual<typeof import("@xian-tech/client")>("@xian-tech/client"),
   Ed25519Signer: class {
     address: string;
 

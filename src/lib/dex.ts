@@ -1,4 +1,4 @@
-import { fixed } from "@xian-tech/client";
+import { fixed, fixedValueText } from "@xian-tech/client";
 import {
   minimumAmountOutV2,
   selectBestXianDexV2ExactInRoute,
@@ -120,9 +120,9 @@ async function readDexPair(
     id,
     token0,
     token1,
-    reserve0: String(reserve0 ?? 0),
-    reserve1: String(reserve1 ?? 0),
-    totalSupply: String(totalSupply ?? 0),
+    reserve0: fixedValueText(reserve0) ?? String(reserve0 ?? 0),
+    reserve1: fixedValueText(reserve1) ?? String(reserve1 ?? 0),
+    totalSupply: fixedValueText(totalSupply) ?? String(totalSupply ?? 0),
     blockTimestampLast: blockTimestampLast == null ? null : String(blockTimestampLast),
     creationTime: creationTime == null ? null : String(creationTime),
   };
@@ -204,7 +204,7 @@ async function readDexTokenInfo(
     logoSvg: metadata.logoSvg,
     precision,
     balance: String(balanceResult.balance ?? 0),
-    allowance: String(allowanceRaw ?? 0),
+    allowance: fixedValueText(allowanceRaw) ?? String(allowanceRaw ?? 0),
     feeOnTransfer: feeOnTransferRaw === true,
   };
 }
