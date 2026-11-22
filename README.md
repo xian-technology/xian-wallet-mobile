@@ -214,7 +214,7 @@ npm run test
 npx expo run:android --variant release
 ```
 
-Local iOS build:
+Build the native iOS app locally with Xcode. The app requires iOS 16.4 or later.
 
 ```bash
 npm install
