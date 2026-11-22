@@ -87,13 +87,6 @@ function normalizePrivateKeyInput(value?: string): string | undefined {
   return normalized;
 }
 
-function requirePrivateKey(value: string | undefined): string {
-  if (!value) {
-    throw new Error("missing private key after decryption");
-  }
-  return value;
-}
-
 function trimOptionalString(value?: string): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
