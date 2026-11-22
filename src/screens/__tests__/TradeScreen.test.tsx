@@ -41,6 +41,7 @@ describe("TradeScreen", () => {
   const mockShowToast = jest.fn() as jest.Mock;
   const mockNotifyActivityChanged = jest.fn() as jest.Mock;
   let approved = false;
+  let feeOnTransfer = false;
   // Enough XIAN for the swaps below and their fee (12_002 chi supplied at 20 = 600.1 XIAN).
   let xianBalance = "1000";
 
@@ -48,6 +49,7 @@ describe("TradeScreen", () => {
     jest.clearAllMocks();
     jest.useFakeTimers();
     approved = false;
+    feeOnTransfer = false;
     xianBalance = "1000";
     mockLoadDexAvailability.mockImplementation(async () => null);
     mockSaveDexAvailability.mockImplementation(async () => undefined);
@@ -76,7 +78,7 @@ describe("TradeScreen", () => {
         "con_wtt.metadata:precision": 8,
         "currency.approvals:sender:con_dex": approved ? "10" : "0",
         "con_wtt.approvals:sender:con_dex": "0",
-        "con_dex.fee_on_transfer_tokens:currency": false,
+        "con_dex.fee_on_transfer_tokens:currency": feeOnTransfer,
         "con_dex.fee_on_transfer_tokens:con_wtt": false,
       };
       return values[key] ?? null;
@@ -171,6 +173,33 @@ describe("TradeScreen", () => {
       expect(screen.getByText("Your XIAN balance does not cover the network fee (600.1 XIAN).")).toBeTruthy()
     );
     expect(screen.queryByText("Swap summary")).toBeNull();
+  });
+
+  it("keeps the simulated swap function when market data refreshes during review", async () => {
+    approved = true;
+    const navigation = { navigate: jest.fn() } as unknown as React.ComponentProps<typeof TradeScreen>["navigation"];
+    const route = {} as unknown as React.ComponentProps<typeof TradeScreen>["route"];
+    const view = <TradeScreen navigation={navigation} route={route} />;
+    const screen = await render(view);
+    await waitFor(() => expect(screen.getByText("Enter amount")).toBeTruthy());
+    await fireEvent.changeText(screen.getAllByPlaceholderText("0.00")[0], "1");
+    await fireEvent.press(screen.getByText("Review Swap"));
+    await waitFor(() => expect(screen.getByText("swapExactTokensForTokens")).toBeTruthy());
+    expect(mockEstimateChi).toHaveBeenCalledWith(expect.objectContaining({
+      function: "swapExactTokensForTokens",
+    }));
+
+    feeOnTransfer = true;
+    const { state, ...wallet } = mockUseWallet() as { state: Record<string, unknown> };
+    mockUseWallet.mockReturnValue({ ...wallet, state: { ...state } });
+    await screen.rerender(<TradeScreen navigation={navigation} route={route} />);
+    await waitFor(() => expect(mockSaveDexAvailability).toHaveBeenCalledTimes(2));
+
+    expect(screen.getByText("swapExactTokensForTokens")).toBeTruthy();
+    await fireEvent.press(screen.getByText("Send Swap"));
+    await waitFor(() => expect(mockSendTransaction).toHaveBeenCalledWith(expect.objectContaining({
+      function: "swapExactTokensForTokens",
+    })));
   });
 
   it("approves the input token and sends the swap through con_dex", async () => {

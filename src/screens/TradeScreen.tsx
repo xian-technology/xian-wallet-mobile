@@ -60,6 +60,17 @@ import type { RootStackScreenProps } from "../navigation/types";
 type Step = "draft" | "review" | "approving" | "swapping";
 type PickerKind = "from" | "to";
 
+interface ReviewedSwap {
+  snapshot: WalletDexSnapshot;
+  fromToken: string;
+  toToken: string;
+  quote: DexQuote;
+  function: string;
+  kwargs: Record<string, unknown>;
+  estimate: ChiEstimate;
+  chiRate: number | null;
+}
+
 const SLIPPAGE_OPTIONS = [50, 100, 300, 500];
 const DEADLINE_OPTIONS = [10, 20, 30, 60];
 
@@ -144,10 +155,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
   const [deadlineMinutes, setDeadlineMinutes] = useState(DEFAULT_DEADLINE_MINUTES);
   const [pickerKind, setPickerKind] = useState<PickerKind | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [estimate, setEstimate] = useState<ChiEstimate | null>(null);
-  const [chiRate, setChiRate] = useState<number | null>(null);
-  const [reviewQuote, setReviewQuote] = useState<DexQuote | null>(null);
-  const [reviewKwargs, setReviewKwargs] = useState<Record<string, unknown> | null>(null);
+  const [reviewedSwap, setReviewedSwap] = useState<ReviewedSwap | null>(null);
   const [approvalNotice, setApprovalNotice] = useState<string | null>(null);
 
   const networkKey = dexNetworkKey(state);
@@ -251,9 +259,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
   const handleMax = () => {
     lightTap();
     setAmount(from ? String(from.balance) : "0");
-    setEstimate(null);
-    setReviewQuote(null);
-    setReviewKwargs(null);
+    setReviewedSwap(null);
     setApprovalNotice(null);
   };
 
@@ -262,9 +268,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
     setFromToken(toToken);
     setToToken(fromToken);
     setAmount("");
-    setEstimate(null);
-    setReviewQuote(null);
-    setReviewKwargs(null);
+    setReviewedSwap(null);
     setApprovalNotice(null);
   };
 
@@ -400,10 +404,10 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
         return;
       }
       if (!review.confirm(context)) return;
-      setReviewQuote(quote);
-      setReviewKwargs(kwargs);
-      setEstimate(nextEstimate);
-      setChiRate(nextChiRate);
+      setReviewedSwap({
+        snapshot, fromToken, toToken, quote, function: fn, kwargs,
+        estimate: nextEstimate, chiRate: nextChiRate,
+      });
       lightTap();
       setStep("review");
     } catch (caught) {
@@ -412,19 +416,19 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
   };
 
   const handleSend = async () => {
-    if (!snapshot || !reviewQuote || !reviewKwargs) {
+    if (!reviewedSwap) {
       setStep("draft");
       return;
     }
     setStep("swapping");
     try {
       const material = await review.loadMaterial();
-      const fn = tradeSwapFunction(snapshot, reviewQuote);
+      const { function: fn, kwargs, estimate } = reviewedSwap;
       const result = await rpc.sendTransaction({
         privateKey: material.privateKey,
         contract: DEX_ROUTER,
         function: fn,
-        kwargs: reviewKwargs,
+        kwargs,
         chi: chiToSupply(estimate),
       });
       const sentShown = showTransactionSentToast(showToast, state.dashboardUrl, result, {
@@ -448,16 +452,14 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
           sender: state.publicKey!,
           contract: DEX_ROUTER,
           function: fn,
-          kwargs: reviewKwargs,
+          kwargs,
           accepted: result.accepted,
           finalized: result.finalized,
           message: result.message,
         });
         void refreshBalances();
         setAmount("");
-        setEstimate(null);
-        setReviewQuote(null);
-        setReviewKwargs(null);
+        setReviewedSwap(null);
         setApprovalNotice(null);
         setStep("draft");
         navigation.navigate("Main");
@@ -495,9 +497,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
         setFromToken(toToken);
       }
     }
-    setEstimate(null);
-    setReviewQuote(null);
-    setReviewKwargs(null);
+    setReviewedSwap(null);
     setApprovalNotice(null);
     setPickerKind(null);
   };
@@ -561,24 +561,24 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
     );
   }
 
-  if (step === "review" && reviewQuote && reviewKwargs && snapshot) {
+  if (step === "review" && reviewedSwap) {
+    const { snapshot, fromToken, toToken, quote, function: fn, kwargs, estimate, chiRate } = reviewedSwap;
     const reviewFrom = tokenByContract(snapshot, fromToken);
     const reviewTo = tokenByContract(snapshot, toToken);
-    const minOut = (reviewKwargs.amountOutMin as { __fixed__: string }).__fixed__;
-    const fn = tradeSwapFunction(snapshot, reviewQuote);
+    const minOut = (kwargs.amountOutMin as { __fixed__: string }).__fixed__;
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scroll}>
           <Card title="Swap summary">
-            <Row label="From" value={`${formatTradeNumber(reviewQuote.amountIn)} ${tokenSymbol(reviewFrom)}`} />
-            <Row label="To" value={`~${formatTradeNumber(reviewQuote.amountOut)} ${tokenSymbol(reviewTo)}`} />
+            <Row label="From" value={`${formatTradeNumber(quote.amountIn)} ${tokenSymbol(reviewFrom)}`} />
+            <Row label="To" value={`~${formatTradeNumber(quote.amountOut)} ${tokenSymbol(reviewTo)}`} />
             <Row label="Minimum received" value={`${formatTradeNumber(minOut)} ${tokenSymbol(reviewTo)}`} />
-            <Row label="Price impact" value={formatPriceImpact(Number(reviewQuote.priceImpact) * 100)} tone={Number(reviewQuote.priceImpact) >= 0.05 ? "danger" : undefined} />
+            <Row label="Price impact" value={formatPriceImpact(Number(quote.priceImpact) * 100)} tone={Number(quote.priceImpact) >= 0.05 ? "danger" : undefined} />
             <View style={styles.sectionLabelWrap}>
               <Text style={styles.sectionLabel}>Route</Text>
             </View>
             <View style={styles.routeWrap}>
-              {routeContracts(reviewQuote).map((contract, index, contracts) => {
+              {routeContracts(quote).map((contract, index, contracts) => {
                 const token = tokenByContract(snapshot, contract);
                 return (
                   <React.Fragment key={`${contract}-${index}`}>
@@ -596,7 +596,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
           </Card>
 
           <Card title="Transaction fee">
-            <Row label="Chi" value={formatChi(estimate?.estimated ?? null, chiRate)} />
+            <Row label="Chi" value={formatChi(estimate.estimated, chiRate)} />
           </Card>
 
           {error && <View style={styles.errorBanner}><Text style={styles.errorText}>{error}</Text></View>}
@@ -660,9 +660,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
             balanceAction={handleMax}
             onAmountChange={(value) => {
               setAmount(value);
-              setEstimate(null);
-              setReviewQuote(null);
-              setReviewKwargs(null);
+              setReviewedSwap(null);
               setApprovalNotice(null);
             }}
             onSelectToken={() => {
@@ -696,9 +694,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
               onChange={(next) => {
                 lightTap();
                 setSlippageBps(next);
-                setEstimate(null);
-                setReviewQuote(null);
-                setReviewKwargs(null);
+                setReviewedSwap(null);
               }}
             />
             <OptionGroup
@@ -709,9 +705,7 @@ export function TradeScreen({ navigation }: RootStackScreenProps<"Trade">) {
               onChange={(next) => {
                 lightTap();
                 setDeadlineMinutes(next);
-                setEstimate(null);
-                setReviewQuote(null);
-                setReviewKwargs(null);
+                setReviewedSwap(null);
               }}
             />
           </View>
